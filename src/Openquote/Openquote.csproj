@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>A domain-neutral engine for ongoing records kept as immutable change files: merging, classification revisions, and statistics that trace back to their records.</Description>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Openquote.Tests" />
+  </ItemGroup>
+
+</Project>
