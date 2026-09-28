@@ -97,12 +97,12 @@ public static partial class VaultReader
         return new VaultContent(changes, schemes, crosswalks, reports, unreadable, runs);
     }
 
-    // practitioners/<file>.json, subjects/<subject-id>/<file>.json
+    // practitioners/<file>.json, devices/<file>.json, subjects/<subject-id>/<file>.json
     private static bool IsChangePath(string path)
     {
         if (!path.EndsWith(".json", StringComparison.Ordinal)) return false;
         var parts = path.Split('/');
-        return (parts.Length == 2 && parts[0] == "practitioners")
+        return (parts.Length == 2 && parts[0] is "practitioners" or "devices")
             || (parts.Length == 3 && parts[0] == "subjects");
     }
 

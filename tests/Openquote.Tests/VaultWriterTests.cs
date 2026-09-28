@@ -174,6 +174,32 @@ public class VaultWriterTests
     }
 
     [Fact]
+    public void A_device_is_named_by_the_device_entity_it_created_and_anyone_may_rename_it()
+    {
+        var one = Writer("pcone");
+        var two = Writer("pctwo");
+        var named = one.CreateDevice(Fields(("name", "Counselling room")));
+        var unnamed = two.CreateDevice(Fields(("name", "  ")));
+        var (content, entities) = Read([named, unnamed]);
+
+        Assert.StartsWith("devices/", named.Path, StringComparison.Ordinal);
+        Assert.Equal(new Dictionary<string, string> { ["pcone"] = "Counselling room" }, DeviceNames.Of(entities.Values));
+        var mine = DeviceNames.EntityOf(entities.Values, "pcone")!;
+        Assert.Null(DeviceNames.EntityOf(entities.Values, "pcthree"));
+
+        // The other device renames it; the name still belongs to the device that made the entity.
+        var renamed = two.Update(mine, Fields(("name", "Front desk")));
+        var (_, after) = Read([named, unnamed, renamed]);
+        Assert.Equal("Front desk", DeviceNames.Of(after.Values)["pcone"]);
+        Assert.Single(DeviceNames.Of(after.Values));
+        Assert.Empty(content.Unreadable);
+    }
+
+    [Fact]
+    public void A_device_entity_is_not_kept_in_a_subject_folder() =>
+        Assert.Throws<ArgumentException>(() => Writer().CreateInSubject("s1", DeviceNames.EntityType, Fields()));
+
+    [Fact]
     public void Refuses_changes_that_would_not_read_back()
     {
         var w = Writer();

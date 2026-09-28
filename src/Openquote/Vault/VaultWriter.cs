@@ -50,7 +50,7 @@ public sealed class VaultWriter
     {
         ArgumentException.ThrowIfNullOrEmpty(subjectId);
         ArgumentException.ThrowIfNullOrEmpty(type);
-        if (type is "subject" or "practitioner") throw new ArgumentException($"a {type} is not kept in a subject folder", nameof(type));
+        if (type is "subject" or "practitioner" or DeviceNames.EntityType) throw new ArgumentException($"a {type} is not kept in a subject folder", nameof(type));
         var (id, at) = Stamp();
         return ChangeFile(id, at, new EntityRef(type, id), "create", [], fields, sources, $"subjects/{subjectId}");
     }
@@ -60,6 +60,16 @@ public sealed class VaultWriter
     {
         var (id, at) = Stamp();
         return ChangeFile(id, at, new EntityRef("practitioner", id), "create", [], fields, null, "practitioners");
+    }
+
+    /// <summary>
+    /// A new device entity: the name people see for the device this writer writes as. See
+    /// <see cref="DeviceNames"/>.
+    /// </summary>
+    public VaultFile CreateDevice(IReadOnlyDictionary<string, JsonNode?> fields)
+    {
+        var (id, at) = Stamp();
+        return ChangeFile(id, at, new EntityRef(DeviceNames.EntityType, id), "create", [], fields, null, "devices");
     }
 
     /// <summary>
