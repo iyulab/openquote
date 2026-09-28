@@ -146,7 +146,7 @@ public class VaultWriterTests
         Assert.Equal(earlier.Total, kept.Run.Total);
         Assert.Null(kept.Run.Cells[1].Column);
 
-        var diff = ReportDiff.Compare(content.Runs[0].Run, content.Runs[1].Run);
+        var diff = ReportDiff.Compare(content.Runs[0].Run, content.Runs[1].Run, content.Catalog());
         Assert.Equal(["r5"], diff.Late);
         Assert.Equal(["r2", "r4"], diff.Moved);
         Assert.Equal(["r1", "r3"], diff.Unchanged);

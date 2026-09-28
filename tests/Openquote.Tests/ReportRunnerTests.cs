@@ -129,20 +129,77 @@ public class ReportRunnerTests
     }
 
     [Fact]
-    public void The_diff_separates_late_records_from_moved_ones()
+    public void The_diff_separates_late_records_from_those_the_revision_moved()
     {
         var early = Entities([.. Item("i1", "2026-03-02", "a"), .. Item("i2", "2026-03-03", "c")]).ToList();
         var later = early.Concat(Entities(Item("i3", "2026-03-04", "a"))).ToList();
 
         var before = ReportRunner.RunMonth(Form(1), 2026, 3, early, Catalog);
         var after = ReportRunner.RunMonth(Form(2), 2026, 3, later, Catalog);
-        var diff = ReportDiff.Compare(before, after);
+        var diff = ReportDiff.Compare(before, after, Catalog);
 
         Assert.Equal(["i3"], diff.Late);
         Assert.Empty(diff.Removed);
-        Assert.Equal(["i1", "i2"], diff.Moved); // a → x, and c → pending
+        Assert.Equal(["i1", "i2"], diff.Revised); // a → x, and c → pending
+        Assert.Empty(diff.Moved);
         Assert.Empty(diff.Unchanged);
-        Assert.Empty(ReportDiff.Compare(after, after).Moved);
+        Assert.Empty(ReportDiff.Compare(after, after, Catalog).Revised);
+    }
+
+    private static ReportRun Run(int version, ReportCell[] cells, string[]? pending = null, string[]? unmapped = null) =>
+        new(Form(version), new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), version == 1 ? [] : ["1-2"],
+            cells, pending ?? [], unmapped ?? []);
+
+    [Fact]
+    public void A_code_with_no_link_is_revised_into_unmapped()
+    {
+        var diff = ReportDiff.Compare(Run(1, [new("h", "o1", ["i1"])]), Run(2, [], unmapped: ["i1"]), Catalog);
+
+        Assert.Equal(["i1"], diff.Revised);
+        Assert.Empty(diff.Moved);
+    }
+
+    [Fact]
+    public void A_place_the_crosswalks_do_not_reach_is_a_move()
+    {
+        // a carries to x; the record now counts under p, so someone changed it.
+        var diff = ReportDiff.Compare(Run(1, [new("a", "o1", ["i1"])]), Run(2, [new("p", "o1", ["i1"])]), Catalog);
+
+        Assert.Empty(diff.Revised);
+        Assert.Equal(["i1"], diff.Moved);
+    }
+
+    [Fact]
+    public void Another_column_is_a_move_even_when_the_row_was_carried()
+    {
+        var diff = ReportDiff.Compare(Run(1, [new("a", "o1", ["i1"])]), Run(2, [new("x", "o2", ["i1"])]), Catalog);
+
+        Assert.Empty(diff.Revised);
+        Assert.Equal(["i1"], diff.Moved);
+    }
+
+    [Fact]
+    public void A_pending_record_a_person_placed_is_a_move()
+    {
+        var diff = ReportDiff.Compare(Run(2, [], pending: ["i1"]), Run(2, [new("q", "o1", ["i1"])]), Catalog);
+
+        Assert.Empty(diff.Revised);
+        Assert.Equal(["i1"], diff.Moved);
+    }
+
+    [Fact]
+    public void Without_a_later_version_nothing_is_revised()
+    {
+        // Same version, and the reverse order: no revision lies between the runs.
+        var v1 = Run(1, [new("a", "o1", ["i1"])]);
+        var v2 = Run(2, [], unmapped: ["i1"]);
+        var sameVersion = ReportDiff.Compare(Run(2, [new("x", "o1", ["i1"])]), Run(2, [new("p", "o1", ["i1"])]), Catalog);
+        var reversed = ReportDiff.Compare(v2, v1, Catalog);
+
+        Assert.Empty(sameVersion.Revised);
+        Assert.Equal(["i1"], sameVersion.Moved);
+        Assert.Empty(reversed.Revised);
+        Assert.Equal(["i1"], reversed.Moved);
     }
 
     [Fact]
