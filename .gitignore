@@ -1,0 +1,25 @@
+# .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+TestResults/
+artifacts/
+
+# Node / web UI
+node_modules/
+dist/
+
+# Desktop shell build output (add per shell once chosen)
+
+# Editors / OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.DS_Store
+Thumbs.db
+
+# Local-only notes (development tracking lives outside this repository)
+claudedocs/
+.claude/
