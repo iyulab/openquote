@@ -11,14 +11,15 @@ public sealed record VaultContent(
     IReadOnlyList<Scheme> Schemes,
     IReadOnlyList<Crosswalk> Crosswalks,
     IReadOnlyList<ReportDefinition> Reports,
-    IReadOnlyList<UnreadableFile> Unreadable)
+    IReadOnlyList<UnreadableFile> Unreadable,
+    IReadOnlyList<KeptRun> Runs)
 {
     /// <summary>The schemes and crosswalks, ready to carry values between versions.</summary>
     public SchemeCatalog Catalog() => new(Schemes, Crosswalks);
 }
 
 /// <summary>
-/// Reads a vault: change files, scheme versions, crosswalks and report forms. A file that cannot
+/// Reads a vault: change files, scheme versions, crosswalks, report forms and run records. A file that cannot
 /// be used never stops the read: it is reported in <see cref="VaultContent.Unreadable"/> and
 /// everything else is still returned.
 /// </summary>
@@ -36,6 +37,7 @@ public static partial class VaultReader
         var schemes = new List<Scheme>();
         var crosswalks = new List<Crosswalk>();
         var reports = new List<ReportDefinition>();
+        var runFiles = new List<VaultFile>();
 
         foreach (var file in files.OrderBy(f => f.Path, StringComparer.Ordinal))
         {
@@ -50,6 +52,12 @@ public static partial class VaultReader
                 case DefinitionKind.Report:
                     Collect(ParseReport(file), reports, unreadable);
                     continue;
+            }
+
+            if (IsRunPath(file.Path))
+            {
+                runFiles.Add(file); // read once every report form is known
+                continue;
             }
 
             if (!IsChangePath(file.Path)) continue;
@@ -80,9 +88,13 @@ public static partial class VaultReader
                 c.Change.Path, UnreadableReason.DuplicateId, $"{copies.Count} files carry id {id} with different content")));
         }
 
+        var runs = new List<KeptRun>();
+        foreach (var file in runFiles) Collect(ParseRun(file, reports), runs, unreadable);
+        runs.Sort((a, b) => string.CompareOrdinal(a.Id, b.Id));
+
         changes.Sort((a, b) => string.CompareOrdinal(a.Id, b.Id));
         unreadable.Sort((a, b) => string.CompareOrdinal(a.Path, b.Path));
-        return new VaultContent(changes, schemes, crosswalks, reports, unreadable);
+        return new VaultContent(changes, schemes, crosswalks, reports, unreadable, runs);
     }
 
     // practitioners/<file>.json, subjects/<subject-id>/<file>.json

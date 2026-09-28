@@ -122,6 +122,48 @@ public class VaultWriterTests
         Assert.Contains("\"openquote.run/0\"", System.Text.Encoding.UTF8.GetString(file.Content.Span), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void A_run_record_reads_back_as_the_run_it_records_and_explains_a_later_one()
+    {
+        var form = new ReportDefinition("monthly", 1, "M", "session", "day", "kind", "kind", 1, "who");
+        var formFile = new VaultFile("reports/monthly/v1.json", System.Text.Encoding.UTF8.GetBytes(
+            """{"format":"openquote.report/0","report":"monthly","version":1,"label":"M","counts":"session","period":{"unit":"month","field":"day"},"rows":{"field":"kind","scheme":"kind","version":1},"columns":{"field":"who"}}"""));
+        var earlier = new ReportRun(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), ["1-2"],
+            [new ReportCell("a", "p1", ["r1", "r2"]), new ReportCell("b", null, ["r3"])], ["r4"], []);
+        var later = new ReportRun(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), ["1-2"],
+            [new ReportCell("a", "p1", ["r1"]), new ReportCell("b", null, ["r2", "r3"])], [], ["r4", "r5"]);
+        var w = Writer();
+        var files = new[] { w.RunRecord(earlier), w.RunRecord(later), formFile };
+
+        var content = Read(files).Content;
+
+        Assert.Equal(2, content.Runs.Count);
+        var kept = content.Runs[0];
+        Assert.Equal(files[0].Path, kept.Path);
+        Assert.Equal("dev1", kept.Device);
+        Assert.Equal(form, kept.Run.Report);
+        Assert.Equal(["1-2"], kept.Run.Crosswalks);
+        Assert.Equal(earlier.Total, kept.Run.Total);
+        Assert.Null(kept.Run.Cells[1].Column);
+
+        var diff = ReportDiff.Compare(content.Runs[0].Run, content.Runs[1].Run);
+        Assert.Equal(["r5"], diff.Late);
+        Assert.Equal(["r2", "r4"], diff.Moved);
+        Assert.Equal(["r1", "r3"], diff.Unchanged);
+    }
+
+    [Fact]
+    public void A_run_record_without_its_report_form_is_unreadable()
+    {
+        var form = new ReportDefinition("monthly", 1, "M", "session", "day", "kind", "kind", 1, null);
+        var file = Writer().RunRecord(new ReportRun(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), [], [], [], []));
+
+        var content = VaultReader.Read([file]);
+
+        Assert.Empty(content.Runs);
+        Assert.Equal(file.Path, Assert.Single(content.Unreadable).Path);
+    }
+
     [Theory]
     [InlineData("DEV1")]
     [InlineData("abc")]
