@@ -42,6 +42,8 @@ public class VaultWriterTests
         Assert.StartsWith($"subjects/{subjectId}/", item.Path, StringComparison.Ordinal);
         Assert.EndsWith(".dev1.json", item.Path, StringComparison.Ordinal);
         Assert.Equal("someone", entities[new EntityRef("subject", subjectId)].Fields["name"].GetString());
+        Assert.Equal(subjectId, entities[new EntityRef("subject", subjectId)].Subject);
+        Assert.All(entities.Values.Where(e => e.Reference.Type == "session"), e => Assert.Equal(subjectId, e.Subject));
         var session = content.Changes.Single(c => c.Entity.Type == "session");
         Assert.Equal("suggestion", session.Source["day"]);
         Assert.Equal(new DateTimeOffset(2026, 4, 1, 0, 0, 1, TimeSpan.FromHours(9)), session.At); // local time (UTC 15:00:01 is the next day at +09:00), whole seconds
@@ -56,6 +58,7 @@ public class VaultWriterTests
         Assert.Equal(50, files.Select(f => f.Path).Distinct().Count());
         Assert.Equal(files.Select(f => f.Path), files.Select(f => f.Path).Order(StringComparer.Ordinal));
         Assert.All(files, f => Assert.StartsWith("practitioners/", f.Path, StringComparison.Ordinal));
+        Assert.All(Read(files).Entities.Values, e => Assert.Null(e.Subject));
     }
 
     [Fact]

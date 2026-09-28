@@ -28,6 +28,20 @@ public sealed class Entity
     /// <summary>The entity's type and id.</summary>
     public EntityRef Reference { get; }
 
+    /// <summary>
+    /// The subject whose folder holds this entity: its own id for a subject, the subject it was
+    /// recorded under for a case or a session, and null for a practitioner. Moving a subject's
+    /// folder moves everything recorded under it.
+    /// </summary>
+    public string? Subject
+    {
+        get
+        {
+            var parts = Changes[0].Path.Split('/');
+            return parts is ["subjects", var subject, _] ? subject : null;
+        }
+    }
+
     /// <summary>The entity's changes, oldest id first.</summary>
     public IReadOnlyList<Change> Changes { get; }
 
