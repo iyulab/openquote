@@ -31,6 +31,14 @@ public sealed class Entity
     /// <summary>The entity's changes, oldest id first.</summary>
     public IReadOnlyList<Change> Changes { get; }
 
+    /// <summary>
+    /// The changes no other change of this entity has seen, in ascending id order. A new change
+    /// that names all of them as its base has seen everything, and so settles any conflict.
+    /// </summary>
+    public IReadOnlyList<string> Heads => _heads ??= [.. _graph.Heads(Changes).Select(c => c.Id)];
+
+    private IReadOnlyList<string>? _heads;
+
     /// <summary>True once a person has destroyed the entity; it then has no fields.</summary>
     public bool Destroyed { get; }
 
