@@ -21,25 +21,10 @@ public static class EntityMerger
 
     private static Entity MergeOne(EntityRef reference, List<Change> changes)
     {
-        var byId = changes.ToDictionary(c => c.Id, StringComparer.Ordinal);
-        var ancestors = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
-
-        HashSet<string> AncestorsOf(string id)
-        {
-            if (ancestors.TryGetValue(id, out var known)) return known;
-            var result = new HashSet<string>(StringComparer.Ordinal);
-            ancestors[id] = result; // guards against a malformed cycle in base references
-            foreach (var parent in byId[id].Base)
-            {
-                if (!byId.ContainsKey(parent)) continue; // not synced here yet
-                result.Add(parent);
-                result.UnionWith(AncestorsOf(parent));
-            }
-            return result;
-        }
+        var graph = new ChangeGraph(changes);
 
         if (changes.Any(c => c.Op == ChangeOp.Destroy))
-            return new Entity(reference, changes, destroyed: true,
+            return new Entity(reference, changes, graph, destroyed: true,
                 new Dictionary<string, JsonElement>(), new Dictionary<string, IReadOnlyList<FieldHead>>());
 
         var fields = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
@@ -47,16 +32,12 @@ public static class EntityMerger
 
         foreach (var field in changes.SelectMany(c => c.Fields.Keys).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal))
         {
-            var setters = changes.Where(c => c.Fields.ContainsKey(field)).ToList();
-            var heads = setters
-                .Where(c => !setters.Any(other => other.Id != c.Id && AncestorsOf(other.Id).Contains(c.Id)))
-                .ToList(); // already in ascending id order
-
-            fields[field] = heads[^1].Fields[field];
+            var heads = graph.Heads(changes.Where(c => c.Fields.ContainsKey(field)).ToList());
+            fields[field] = heads[^1].Fields[field]; // heads keep ascending id order
             if (heads.Count > 1)
                 conflicts[field] = heads.Select(h => new FieldHead(h.Id, h.Device, h.Fields[field])).ToArray();
         }
 
-        return new Entity(reference, changes, destroyed: false, fields, conflicts);
+        return new Entity(reference, changes, graph, destroyed: false, fields, conflicts);
     }
 }

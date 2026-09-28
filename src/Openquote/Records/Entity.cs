@@ -12,9 +12,12 @@ public sealed record FieldHead(string ChangeId, string Device, JsonElement Value
 /// </summary>
 public sealed class Entity
 {
-    internal Entity(EntityRef reference, IReadOnlyList<Change> changes, bool destroyed,
+    private readonly ChangeGraph _graph;
+
+    internal Entity(EntityRef reference, IReadOnlyList<Change> changes, ChangeGraph graph, bool destroyed,
         IReadOnlyDictionary<string, JsonElement> fields, IReadOnlyDictionary<string, IReadOnlyList<FieldHead>> conflicts)
     {
+        _graph = graph;
         Reference = reference;
         Changes = changes;
         Destroyed = destroyed;
@@ -43,4 +46,20 @@ public sealed class Entity
     /// person can choose; none is silently lost.
     /// </summary>
     public IReadOnlyDictionary<string, IReadOnlyList<FieldHead>> Conflicts { get; }
+
+    /// <summary>
+    /// The most recent value of <paramref name="field"/> among the values that satisfy
+    /// <paramref name="accept"/>, ignoring any later value that does not. Earlier values are never
+    /// lost, so a record reclassified to a newer version still answers with the value it had in an
+    /// older one. Null when no accepted value exists or the entity is destroyed. Ties between
+    /// concurrent values go to the highest change id, as in <see cref="Fields"/>.
+    /// </summary>
+    public JsonElement? LatestValue(string field, Func<JsonElement, bool> accept)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+        ArgumentNullException.ThrowIfNull(accept);
+        if (Destroyed) return null;
+        var setters = Changes.Where(c => c.Fields.TryGetValue(field, out var v) && accept(v)).ToList();
+        return setters.Count == 0 ? null : _graph.Heads(setters)[^1].Fields[field];
+    }
 }

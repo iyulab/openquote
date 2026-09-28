@@ -1,29 +1,57 @@
 using System.Globalization;
 using System.Text.Json;
+using Openquote.Classification;
+using Openquote.Reports;
 
 namespace Openquote.Vault;
 
 /// <summary>What <see cref="VaultReader.Read"/> found in a vault.</summary>
-public sealed record VaultContent(IReadOnlyList<Change> Changes, IReadOnlyList<UnreadableFile> Unreadable);
+public sealed record VaultContent(
+    IReadOnlyList<Change> Changes,
+    IReadOnlyList<Scheme> Schemes,
+    IReadOnlyList<Crosswalk> Crosswalks,
+    IReadOnlyList<ReportDefinition> Reports,
+    IReadOnlyList<UnreadableFile> Unreadable)
+{
+    /// <summary>The schemes and crosswalks, ready to carry values between versions.</summary>
+    public SchemeCatalog Catalog() => new(Schemes, Crosswalks);
+}
 
 /// <summary>
-/// Reads the change files of a vault. A file that cannot be used never stops the read: it is
-/// reported in <see cref="VaultContent.Unreadable"/> and everything else is still returned.
+/// Reads a vault: change files, scheme versions, crosswalks and report forms. A file that cannot
+/// be used never stops the read: it is reported in <see cref="VaultContent.Unreadable"/> and
+/// everything else is still returned.
 /// </summary>
-public static class VaultReader
+public static partial class VaultReader
 {
     internal const string ChangeFormat = "openquote.change/0";
 
-    /// <summary>Reads every change file among <paramref name="files"/>. Files outside the vault layout are ignored.</summary>
+    /// <summary>Reads every vault file among <paramref name="files"/>. Files outside the vault layout are ignored.</summary>
     public static VaultContent Read(IEnumerable<VaultFile> files)
     {
         ArgumentNullException.ThrowIfNull(files);
 
         var unreadable = new List<UnreadableFile>();
         var byId = new Dictionary<string, List<(Change Change, JsonElement Json)>>(StringComparer.Ordinal);
+        var schemes = new List<Scheme>();
+        var crosswalks = new List<Crosswalk>();
+        var reports = new List<ReportDefinition>();
 
         foreach (var file in files.OrderBy(f => f.Path, StringComparer.Ordinal))
         {
+            switch (DefinitionKindOf(file.Path))
+            {
+                case DefinitionKind.Scheme:
+                    Collect(ParseScheme(file), schemes, unreadable);
+                    continue;
+                case DefinitionKind.Crosswalk:
+                    Collect(ParseCrosswalk(file), crosswalks, unreadable);
+                    continue;
+                case DefinitionKind.Report:
+                    Collect(ParseReport(file), reports, unreadable);
+                    continue;
+            }
+
             if (!IsChangePath(file.Path)) continue;
 
             var parsed = ParseChange(file);
@@ -54,7 +82,7 @@ public static class VaultReader
 
         changes.Sort((a, b) => string.CompareOrdinal(a.Id, b.Id));
         unreadable.Sort((a, b) => string.CompareOrdinal(a.Path, b.Path));
-        return new VaultContent(changes, unreadable);
+        return new VaultContent(changes, schemes, crosswalks, reports, unreadable);
     }
 
     // practitioners/<file>.json, subjects/<subject-id>/<file>.json
@@ -66,9 +94,9 @@ public static class VaultReader
             || (parts.Length == 3 && parts[0] == "subjects");
     }
 
-    private readonly record struct Parsed((Change, JsonElement)? Value, UnreadableFile? Error);
+    internal readonly record struct Parsed((Change, JsonElement)? Value, UnreadableFile? Error);
 
-    private static Parsed Fail(VaultFile file, UnreadableReason reason, string detail) =>
+    internal static Parsed Fail(VaultFile file, UnreadableReason reason, string detail) =>
         new(null, new UnreadableFile(file.Path, reason, detail));
 
     private static Parsed ParseChange(VaultFile file)
@@ -140,7 +168,7 @@ public static class VaultReader
         return new Parsed((change, root), null);
     }
 
-    private static bool TryString(JsonElement obj, string name, out string value)
+    internal static bool TryString(JsonElement obj, string name, out string value)
     {
         if (obj.TryGetProperty(name, out var e) && e.ValueKind == JsonValueKind.String && e.GetString() is { Length: > 0 } s)
         {
