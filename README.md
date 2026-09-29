@@ -6,7 +6,7 @@ Openquote reads a folder of records — a *vault* — where every edit is a new 
 
 It knows nothing about any particular field. What a record means, which schemes classify it, and which report or export forms exist are data in the vault, supplied by the applications and packs built on top of it.
 
-> Status: early development. The vault format is at version 0 and nothing is released yet.
+> Status: early development. The vault format is at version 0. Versions are tagged here; the package is not on nuget.org yet — see [Getting it](#getting-it).
 
 ## What it does
 
@@ -32,6 +32,19 @@ var records = EntityMerger.Merge(content.Changes);
 var form = content.Reports.Single(r => r.Name == "monthly-topic" && r.Version == 2);
 var run = ReportRunner.RunMonth(form, 2026, 4, records.Values, content.Catalog());
 ```
+
+## Getting it
+
+It targets .NET 10. Until the package is published, pack it from a version tag into a local package source:
+
+```sh
+git clone --branch v0.2.0 https://github.com/iyulab/openquote
+dotnet pack openquote/src/Openquote/Openquote.csproj -c Release -o ./packages
+dotnet nuget add source "$(pwd)/packages" --name openquote-local
+dotnet add package Openquote --version 0.2.0
+```
+
+To build and test the engine itself: `dotnet test --solution Openquote.slnx`.
 
 ## Documentation
 
