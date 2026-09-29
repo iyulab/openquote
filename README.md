@@ -6,7 +6,7 @@ Openquote reads a folder of records — a *vault* — where every edit is a new 
 
 It knows nothing about any particular field. What a record means, which schemes classify it, and which report or export forms exist are data in the vault, supplied by the applications and packs built on top of it.
 
-> Status: early development. The vault format is at version 0. Versions are tagged here; the package is not on nuget.org yet — see [Getting it](#getting-it).
+> Status: early development. The vault format is at version 0.
 
 ## What it does
 
@@ -35,22 +35,19 @@ var run = ReportRunner.RunMonth(form, 2026, 4, records.Values, content.Catalog()
 
 ## Getting it
 
-It targets .NET 10. Until the package is published, pack it from a version tag into a local package source:
+It targets .NET 10.
 
 ```sh
-git clone --branch v0.2.0 https://github.com/iyulab/openquote
-dotnet pack openquote/src/Openquote/Openquote.csproj -c Release -o ./packages
-dotnet nuget add source "$(pwd)/packages" --name openquote-local
-dotnet add package Openquote --version 0.2.0
+dotnet add package Openquote
 ```
 
 To build and test the engine itself: `dotnet test --solution Openquote.slnx`.
 
 ## Documentation
 
-- [Concepts](docs/concepts.md) — records and changes, classification versions and crosswalks, reports and exports
-- [Vault format](docs/format.md) — the files, their JSON, and the rules for reading and writing them
+- [Concepts](https://github.com/iyulab/openquote/blob/main/docs/concepts.md) — records and changes, classification versions and crosswalks, reports and exports
+- [Vault format](https://github.com/iyulab/openquote/blob/main/docs/format.md) — the files, their JSON, and the rules for reading and writing them
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://github.com/iyulab/openquote/blob/main/LICENSE)

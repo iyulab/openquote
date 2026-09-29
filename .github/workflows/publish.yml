@@ -1,0 +1,50 @@
+name: Publish
+
+# Packs the engine from the tag this runs on and pushes it to nuget.org.
+# Run by hand on a version tag: gh workflow run publish.yml --ref v<version>
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check the API key is available
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          if [ -z "$NUGET_API_KEY" ]; then echo "NUGET_API_KEY is not available to this repository"; exit 1; fi
+
+      - name: Refuse anything but a version tag
+        run: |
+          case "$GITHUB_REF" in refs/tags/v*) ;; *) echo "run this on a version tag, not $GITHUB_REF"; exit 1;; esac
+
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          global-json-file: global.json
+
+      - name: Check the tag names the package version
+        run: |
+          version=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then echo "tag $GITHUB_REF_NAME does not match version $version"; exit 1; fi
+
+      - name: Test
+        run: dotnet test --solution Openquote.slnx -c Release
+
+      - name: Pack
+        run: dotnet pack src/Openquote/Openquote.csproj -c Release -o nupkg
+
+      - name: Push
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: dotnet nuget push "nupkg/*.nupkg" --api-key "$NUGET_API_KEY" --source https://api.nuget.org/v3/index.json --skip-duplicate
