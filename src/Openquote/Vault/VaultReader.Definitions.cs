@@ -2,13 +2,14 @@ using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Openquote.Classification;
+using Openquote.Exports;
 using Openquote.Reports;
 
 namespace Openquote.Vault;
 
 public static partial class VaultReader
 {
-    private enum DefinitionKind { None, Scheme, Crosswalk, Report }
+    private enum DefinitionKind { None, Scheme, Crosswalk, Report, Export }
 
     private readonly record struct Definition<T>(T? Value, UnreadableFile? Error) where T : class;
 
@@ -19,11 +20,15 @@ public static partial class VaultReader
     [GeneratedRegex(@"^reports/(?<name>[^/]+)/v(?<version>[1-9][0-9]*)\.json$")]
     private static partial Regex ReportPath();
 
+    [GeneratedRegex(@"^exports/(?<name>[^/]+)/v(?<version>[1-9][0-9]*)\.json$")]
+    private static partial Regex ExportPath();
+
     private static DefinitionKind DefinitionKindOf(string path)
     {
         if (SchemePath().Match(path) is { Success: true } m)
             return m.Groups["to"].Success ? DefinitionKind.Crosswalk : DefinitionKind.Scheme;
-        return ReportPath().IsMatch(path) ? DefinitionKind.Report : DefinitionKind.None;
+        if (ReportPath().IsMatch(path)) return DefinitionKind.Report;
+        return ExportPath().IsMatch(path) ? DefinitionKind.Export : DefinitionKind.None;
     }
 
     private static void Collect<T>(Definition<T> parsed, List<T> into, List<UnreadableFile> unreadable) where T : class
@@ -161,5 +166,59 @@ public static partial class VaultReader
         }
 
         return new(new ReportDefinition(name, version, label, counts, periodField, rowField, rowScheme, rowVersion, columnField), null);
+    }
+
+    private static Definition<ExportDefinition> ParseExport(VaultFile file)
+    {
+        if (!TryRoot(file, "openquote.export/0", out var root, out var error)) return new(null, error);
+        var path = ExportPath().Match(file.Path);
+
+        if (!TryString(root, "export", out var name) || !TryInt(root, "version", out var version) || version < 1
+            || !TryString(root, "label", out var label) || !TryString(root, "rows", out var rows))
+            return Bad<ExportDefinition>(file, UnreadableReason.Invalid, "an export needs a name, a version, a label and what it lists");
+        if (name != path.Groups["name"].Value || version.ToString(CultureInfo.InvariantCulture) != path.Groups["version"].Value)
+            return Bad<ExportDefinition>(file, UnreadableReason.NameMismatch, $"the path should be exports/{name}/v{version}.json");
+        if (!root.TryGetProperty("period", out var period) || period.ValueKind != JsonValueKind.Object || !TryString(period, "field", out var periodField))
+            return Bad<ExportDefinition>(file, UnreadableReason.Invalid, "period must name a calendar-date field");
+        if (!root.TryGetProperty("columns", out var columnsJson) || columnsJson.ValueKind != JsonValueKind.Array || columnsJson.GetArrayLength() == 0)
+            return Bad<ExportDefinition>(file, UnreadableReason.Invalid, "columns must be a non-empty array");
+
+        var columns = new List<ExportColumn>();
+        foreach (var c in columnsJson.EnumerateArray())
+        {
+            if (c.ValueKind != JsonValueKind.Object || !TryString(c, "label", out var heading))
+                return Bad<ExportDefinition>(file, UnreadableReason.Invalid, "every column needs a label");
+            if (ParseColumn(c, heading) is not { } column)
+                return Bad<ExportDefinition>(file, UnreadableReason.Invalid, $"column {heading}: say where its cells come from");
+            columns.Add(column);
+        }
+
+        return new(new ExportDefinition(name, version, label, rows, periodField, columns), null);
+    }
+
+    // A column names one source: a field (optionally a classified one, or a reference), the people
+    // the record is about, or the year a date falls in.
+    private static ExportColumn? ParseColumn(JsonElement c, string label)
+    {
+        if (TryString(c, "people", out var people))
+            return people == "count" ? new PeopleCountColumn(label) : null;
+        if (TryString(c, "person", out var personField))
+            return new PersonColumn(label, personField, c.TryGetProperty("all", out var all) && all.ValueKind == JsonValueKind.True);
+        if (TryString(c, "year", out var yearField))
+            return TryInt(c, "startMonth", out var start) && start is >= 1 and <= 12 ? new YearColumn(label, yearField, start) : null;
+        if (!TryString(c, "field", out var field)) return null;
+        if (TryString(c, "ref", out var referenced)) return new ReferenceColumn(label, field, referenced);
+        if (TryString(c, "scheme", out var scheme))
+        {
+            if (!TryInt(c, "version", out var version) || version < 1) return null;
+            var top = false;
+            if (TryString(c, "part", out var part))
+            {
+                if (part is not ("top" or "item")) return null;
+                top = part == "top";
+            }
+            return new CodedColumn(label, field, scheme, version, top);
+        }
+        return new FieldColumn(label, field);
     }
 }

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Openquote.Classification;
+using Openquote.Exports;
 using Openquote.Reports;
 
 namespace Openquote.Vault;
@@ -12,14 +13,15 @@ public sealed record VaultContent(
     IReadOnlyList<Crosswalk> Crosswalks,
     IReadOnlyList<ReportDefinition> Reports,
     IReadOnlyList<UnreadableFile> Unreadable,
-    IReadOnlyList<KeptRun> Runs)
+    IReadOnlyList<KeptRun> Runs,
+    IReadOnlyList<ExportDefinition> Exports)
 {
     /// <summary>The schemes and crosswalks, ready to carry values between versions.</summary>
     public SchemeCatalog Catalog() => new(Schemes, Crosswalks);
 }
 
 /// <summary>
-/// Reads a vault: change files, scheme versions, crosswalks, report forms and run records. A file that cannot
+/// Reads a vault: change files, scheme versions, crosswalks, report forms, run records and export forms. A file that cannot
 /// be used never stops the read: it is reported in <see cref="VaultContent.Unreadable"/> and
 /// everything else is still returned.
 /// </summary>
@@ -37,6 +39,7 @@ public static partial class VaultReader
         var schemes = new List<Scheme>();
         var crosswalks = new List<Crosswalk>();
         var reports = new List<ReportDefinition>();
+        var exports = new List<ExportDefinition>();
         var runFiles = new List<VaultFile>();
 
         foreach (var file in files.OrderBy(f => f.Path, StringComparer.Ordinal))
@@ -51,6 +54,9 @@ public static partial class VaultReader
                     continue;
                 case DefinitionKind.Report:
                     Collect(ParseReport(file), reports, unreadable);
+                    continue;
+                case DefinitionKind.Export:
+                    Collect(ParseExport(file), exports, unreadable);
                     continue;
             }
 
@@ -94,7 +100,7 @@ public static partial class VaultReader
 
         changes.Sort((a, b) => string.CompareOrdinal(a.Id, b.Id));
         unreadable.Sort((a, b) => string.CompareOrdinal(a.Path, b.Path));
-        return new VaultContent(changes, schemes, crosswalks, reports, unreadable, runs);
+        return new VaultContent(changes, schemes, crosswalks, reports, unreadable, runs, exports);
     }
 
     // practitioners/<file>.json, devices/<file>.json, subjects/<subject-id>/<file>.json, groups/<group-id>/<file>.json
