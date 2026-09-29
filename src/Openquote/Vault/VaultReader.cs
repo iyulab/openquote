@@ -29,10 +29,24 @@ public static partial class VaultReader
 {
     internal const string ChangeFormat = "openquote.change/0";
 
-    /// <summary>Reads every vault file among <paramref name="files"/>. Files outside the vault layout are ignored.</summary>
+    /// <summary>The vault format this engine reads, as a vault's declaration names it.</summary>
+    public const string VaultFormat = "openquote.vault/0";
+
+    private const string DeclarationPath = "vault.json";
+    private const string VaultFormatPrefix = "openquote.vault/";
+    private const int VaultFormatVersion = 0;
+
+    /// <summary>
+    /// Reads every vault file among <paramref name="files"/>. Files outside the vault layout are ignored.
+    /// When the vault's declaration (<c>vault.json</c>) is among them it is checked first; a host that
+    /// checks the declaration itself may leave it out.
+    /// </summary>
+    /// <exception cref="VaultFormatException">The declaration names a newer or an unknown format.</exception>
     public static VaultContent Read(IEnumerable<VaultFile> files)
     {
         ArgumentNullException.ThrowIfNull(files);
+        var all = files as IReadOnlyCollection<VaultFile> ?? [.. files];
+        if (all.FirstOrDefault(f => f.Path == DeclarationPath) is { } declaration) CheckDeclaration(declaration);
 
         var unreadable = new List<UnreadableFile>();
         var byId = new Dictionary<string, List<(Change Change, JsonElement Json)>>(StringComparer.Ordinal);
@@ -42,7 +56,7 @@ public static partial class VaultReader
         var exports = new List<ExportDefinition>();
         var runFiles = new List<VaultFile>();
 
-        foreach (var file in files.OrderBy(f => f.Path, StringComparer.Ordinal))
+        foreach (var file in all.OrderBy(f => f.Path, StringComparer.Ordinal))
         {
             switch (DefinitionKindOf(file.Path))
             {
@@ -101,6 +115,29 @@ public static partial class VaultReader
         changes.Sort((a, b) => string.CompareOrdinal(a.Id, b.Id));
         unreadable.Sort((a, b) => string.CompareOrdinal(a.Path, b.Path));
         return new VaultContent(changes, schemes, crosswalks, reports, unreadable, runs, exports);
+    }
+
+    // A per-file format this engine does not know makes that one file unreadable (§7 of the format);
+    // a declaration it does not know refuses the whole vault, since every count could be wrong.
+    private static void CheckDeclaration(VaultFile file)
+    {
+        string? declared = null;
+        try
+        {
+            using var doc = JsonDocument.Parse(file.Content);
+            if (doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("format", out var format) && format.ValueKind == JsonValueKind.String)
+                declared = format.GetString();
+        }
+        catch (JsonException)
+        {
+        }
+
+        if (declared == VaultFormat) return;
+        var newer = declared is not null && declared.StartsWith(VaultFormatPrefix, StringComparison.Ordinal)
+            && int.TryParse(declared.AsSpan(VaultFormatPrefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out var version)
+            && version > VaultFormatVersion;
+        throw new VaultFormatException(declared, newer);
     }
 
     // practitioners/<file>.json, devices/<file>.json, subjects/<subject-id>/<file>.json, groups/<group-id>/<file>.json

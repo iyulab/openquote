@@ -152,4 +152,49 @@ public class VaultReaderTests
             Directory.Delete(root, recursive: true);
         }
     }
+
+    [Fact]
+    public void Reads_a_vault_declared_in_the_format_it_knows()
+    {
+        var content = VaultReader.Read(
+        [
+            File("vault.json", """{ "format": "openquote.vault/0", "encryption": "age" }"""),
+            File(Json(1, "e1", "create")),
+        ]);
+
+        Assert.Single(content.Changes);
+        Assert.Empty(content.Unreadable);
+    }
+
+    [Fact]
+    public void Reads_a_vault_whose_host_left_the_declaration_out()
+    {
+        Assert.Single(VaultReader.Read([File(Json(1, "e1", "create"))]).Changes);
+    }
+
+    [Fact]
+    public void Refuses_a_vault_declared_in_a_newer_format()
+    {
+        var e = Assert.Throws<VaultFormatException>(() => VaultReader.Read(
+        [
+            File("vault.json", """{"format":"openquote.vault/1","encryption":"age"}"""),
+            File(Json(1, "e1", "create")),
+        ]));
+
+        Assert.True(e.IsNewer);
+        Assert.Equal("openquote.vault/1", e.Declared);
+    }
+
+    [Theory]
+    [InlineData("""{"format":"something-else/0"}""", "something-else/0")]
+    [InlineData("""{"encryption":"age"}""", null)]
+    [InlineData("""not json""", null)]
+    [InlineData("""{"format":"openquote.vault/x"}""", "openquote.vault/x")]
+    public void Refuses_a_declaration_that_names_no_known_format(string declaration, string? declared)
+    {
+        var e = Assert.Throws<VaultFormatException>(() => VaultReader.Read([File("vault.json", declaration)]));
+
+        Assert.False(e.IsNewer);
+        Assert.Equal(declared, e.Declared);
+    }
 }
