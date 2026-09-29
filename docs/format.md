@@ -245,7 +245,7 @@ How values are carried across versions is described in [Concepts](concepts.md#cr
 
 ## Reading rules
 
-The reader never stops on a bad file. A file whose path matches the layout but cannot be used is listed as unreadable with a reason, and every other file is still read:
+The reader never stops on a bad file. A file whose path matches the layout but cannot be used is listed as unreadable with a reason and what it was for — a subject's or group's records, a scheme version, a crosswalk, a form or a run record, read from the path alone (`VaultFileKind.Of`, which also reads a sync client's copy by the start of its name) — and every other file is still read:
 
 | Reason | When |
 |---|---|

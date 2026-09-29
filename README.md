@@ -10,7 +10,7 @@ It knows nothing about any particular field. What a record means, which schemes 
 
 ## What it does
 
-- **Reads a vault** (`VaultReader.Read`) — change files, classification schemes and their crosswalks, report and export forms, and kept report runs. A file it cannot use is listed as unreadable rather than stopping the read; a vault declared in a newer or unknown format is refused as a whole.
+- **Reads a vault** (`VaultReader.Read`) — change files, classification schemes and their crosswalks, report and export forms, and kept report runs. A file it cannot use is listed as unreadable — with why, and what it was for as read from its path (`VaultFileKind`) — rather than stopping the read; a vault declared in a newer or unknown format is refused as a whole.
 - **Merges changes into records** (`EntityMerger.Merge`) — replays each record's change history, and keeps conflicting edits made on different devices as named heads until one is chosen.
 - **Carries classified values across scheme versions** (`SchemeCatalog`) — one-to-one and many-to-one links are followed automatically; a value whose category was split waits for a person instead of being guessed.
 - **Runs reports** (`ReportRunner`) — counts records by a classified field for a period, with the records behind each cell and the number of different people they concern, and compares two runs of the same form (`ReportDiff`).
