@@ -18,6 +18,10 @@ public sealed record ReportCell(string Row, string? Column, IReadOnlyList<string
 /// <param name="Cells">Non-empty cells, ordered by row then column.</param>
 /// <param name="Pending">Records whose value maps to several codes and waits for a person.</param>
 /// <param name="Unmapped">Records whose value has no code in the form's scheme version.</param>
+/// <param name="People">
+/// For every record in the period, the subjects it is about (see <see cref="Records.Entity.People"/>);
+/// null when the run did not record them, as with runs kept before people were counted.
+/// </param>
 public sealed record ReportRun(
     ReportDefinition Report,
     DateOnly From,
@@ -25,9 +29,25 @@ public sealed record ReportRun(
     IReadOnlyList<string> Crosswalks,
     IReadOnlyList<ReportCell> Cells,
     IReadOnlyList<string> Pending,
-    IReadOnlyList<string> Unmapped)
+    IReadOnlyList<string> Unmapped,
+    IReadOnlyDictionary<string, IReadOnlyList<string>>? People = null)
 {
     /// <summary>Every record in the period: the cells, then pending, then unmapped.</summary>
     public IReadOnlyList<string> Total { get; } =
         Cells.SelectMany(c => c.Records).Concat(Pending).Concat(Unmapped).Order(StringComparer.Ordinal).ToArray();
+
+    /// <summary>
+    /// The distinct subjects behind <paramref name="records"/> — a cell's, pending's or the total's
+    /// records — ordered; their number is the head count beside the record count. Null when the
+    /// run did not record people.
+    /// </summary>
+    public IReadOnlyList<string>? PeopleOf(IEnumerable<string> records)
+    {
+        ArgumentNullException.ThrowIfNull(records);
+        if (People is null) return null;
+        return [.. records
+            .SelectMany(r => People.TryGetValue(r, out var subjects) ? subjects : [])
+            .Distinct(StringComparer.Ordinal)
+            .Order(StringComparer.Ordinal)];
+    }
 }

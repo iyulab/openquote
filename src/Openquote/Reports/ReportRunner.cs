@@ -13,7 +13,8 @@ public static class ReportRunner
     /// <paramref name="to"/> inclusive. An entity is in the period when its period field holds a
     /// date in range. Its row is its classified value carried to the form's scheme version: one
     /// code places it in a cell, several leave it pending, none leave it unmapped. Destroyed
-    /// entities are not counted.
+    /// entities are not counted. Each counted record also carries the subjects it is about, so the
+    /// run gives a head count beside every record count.
     /// </summary>
     public static ReportRun Run(ReportDefinition report, DateOnly from, DateOnly to,
         IEnumerable<Entity> entities, SchemeCatalog catalog)
@@ -27,6 +28,7 @@ public static class ReportRunner
         var pending = new List<string>();
         var unmapped = new List<string>();
         var crosswalks = new SortedSet<string>(StringComparer.Ordinal);
+        var people = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
 
         foreach (var entity in entities)
         {
@@ -35,6 +37,7 @@ public static class ReportRunner
                 || date < from || date > to) continue;
 
             var id = entity.Reference.Id;
+            people[id] = entity.People;
             var value = entity.LatestValue(report.RowField, v =>
                 CodedValue.From(v) is { } c && c.Scheme == report.RowScheme && c.Version <= report.RowVersion);
             if (value is null || CodedValue.From(value.Value) is not { } coded)
@@ -66,7 +69,8 @@ public static class ReportRunner
             crosswalks.ToArray(),
             cells.Select(kv => new ReportCell(kv.Key.Row, kv.Key.Column.Length == 0 ? null : kv.Key.Column, Sorted(kv.Value))).ToArray(),
             Sorted(pending),
-            Sorted(unmapped));
+            Sorted(unmapped),
+            people);
     }
 
     /// <summary>Runs <paramref name="report"/> over one calendar month.</summary>

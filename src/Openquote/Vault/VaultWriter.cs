@@ -46,13 +46,37 @@ public sealed class VaultWriter
 
     /// <summary>A new entity of <paramref name="type"/> (a case or a session) kept in its subject's folder.</summary>
     public VaultFile CreateInSubject(string subjectId, string type, IReadOnlyDictionary<string, JsonNode?> fields,
-        IReadOnlyDictionary<string, string>? sources = null)
+        IReadOnlyDictionary<string, string>? sources = null) =>
+        CreateIn("subjects", subjectId, type, fields, sources);
+
+    /// <summary>
+    /// A new group: several subjects served together, such as a group counselling session. Its id
+    /// is the id of this change, and its folder holds its cases and sessions — a subject's folder
+    /// never carries a record that names other subjects.
+    /// </summary>
+    public VaultFile CreateGroup(IReadOnlyDictionary<string, JsonNode?> fields, IReadOnlyDictionary<string, string>? sources = null)
     {
-        ArgumentException.ThrowIfNullOrEmpty(subjectId);
-        ArgumentException.ThrowIfNullOrEmpty(type);
-        if (type is "subject" or "practitioner" or DeviceNames.EntityType) throw new ArgumentException($"a {type} is not kept in a subject folder", nameof(type));
         var (id, at) = Stamp();
-        return ChangeFile(id, at, new EntityRef(type, id), "create", [], fields, sources, $"subjects/{subjectId}");
+        return ChangeFile(id, at, new EntityRef("group", id), "create", [], fields, sources, $"groups/{id}");
+    }
+
+    /// <summary>
+    /// A new entity of <paramref name="type"/> (a case or a session) kept in its group's folder. A
+    /// session lists the subjects who took part in <see cref="Entity.AttendeesField"/>.
+    /// </summary>
+    public VaultFile CreateInGroup(string groupId, string type, IReadOnlyDictionary<string, JsonNode?> fields,
+        IReadOnlyDictionary<string, string>? sources = null) =>
+        CreateIn("groups", groupId, type, fields, sources);
+
+    private VaultFile CreateIn(string container, string ownerId, string type, IReadOnlyDictionary<string, JsonNode?> fields,
+        IReadOnlyDictionary<string, string>? sources)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(ownerId);
+        ArgumentException.ThrowIfNullOrEmpty(type);
+        if (type is "subject" or "group" or "practitioner" or DeviceNames.EntityType)
+            throw new ArgumentException($"a {type} is not kept in another entity's folder", nameof(type));
+        var (id, at) = Stamp();
+        return ChangeFile(id, at, new EntityRef(type, id), "create", [], fields, sources, $"{container}/{ownerId}");
     }
 
     /// <summary>A new practitioner.</summary>

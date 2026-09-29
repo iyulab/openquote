@@ -69,6 +69,14 @@ public static class ReportRunJson
             WriteSet(w, "pending", run.Pending);
             WriteSet(w, "unmapped", run.Unmapped);
             WriteSet(w, "total", run.Total);
+
+            if (run.People is { } people)
+            {
+                w.WriteStartObject("people");
+                foreach (var record in run.Total)
+                    WriteIds(w, record, people.TryGetValue(record, out var subjects) ? subjects : []);
+                w.WriteEndObject();
+            }
             w.WriteEndObject();
         }
         buffer.WriteByte((byte)'\n');

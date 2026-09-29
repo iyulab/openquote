@@ -42,6 +42,42 @@ public sealed class Entity
         }
     }
 
+    /// <summary>
+    /// The group whose folder holds this entity: its own id for a group, the group it was recorded
+    /// under for a case or a session, and null otherwise. A session held by a group names the
+    /// subjects who took part in its <c>attendees</c> field.
+    /// </summary>
+    public string? Group
+    {
+        get
+        {
+            var parts = Changes[0].Path.Split('/');
+            return parts is ["groups", var group, _] ? group : null;
+        }
+    }
+
+    /// <summary>
+    /// The subjects this entity is about: the subject itself, the subject whose folder holds it,
+    /// or — for an entity held by a group — the subjects listed in its <c>attendees</c> field.
+    /// Distinct and ordered; empty when none are known.
+    /// </summary>
+    public IReadOnlyList<string> People
+    {
+        get
+        {
+            if (Subject is { } subject) return [subject];
+            if (Group is null || !Fields.TryGetValue(AttendeesField, out var attendees) || attendees.ValueKind != JsonValueKind.Array) return [];
+            return [.. attendees.EnumerateArray()
+                .Where(a => a.ValueKind == JsonValueKind.String && a.GetString() is { Length: > 0 })
+                .Select(a => a.GetString()!)
+                .Distinct(StringComparer.Ordinal)
+                .Order(StringComparer.Ordinal)];
+        }
+    }
+
+    /// <summary>The field of a group-held entity that lists the subjects who took part.</summary>
+    public const string AttendeesField = "attendees";
+
     /// <summary>The entity's changes, oldest id first.</summary>
     public IReadOnlyList<Change> Changes { get; }
 

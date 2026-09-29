@@ -49,6 +49,81 @@ public class VaultWriterTests
         Assert.Equal(new DateTimeOffset(2026, 4, 1, 0, 0, 1, TimeSpan.FromHours(9)), session.At); // local time (UTC 15:00:01 is the next day at +09:00), whole seconds
     }
 
+    private static JsonObject Coded(int version, string code) => new() { ["scheme"] = "kind", ["version"] = version, ["code"] = code };
+
+    [Fact]
+    public void A_group_keeps_its_sessions_in_its_own_folder_and_counts_its_attendees()
+    {
+        var w = Writer();
+        var a = w.CreateSubject(Fields(("name", "a")));
+        var b = w.CreateSubject(Fields(("name", "b")));
+        var (aId, bId) = (Read([a]).Content.Changes[0].Entity.Id, Read([b]).Content.Changes[0].Entity.Id);
+        var group = w.CreateGroup(Fields(("name", "friendship")));
+        var groupId = Read([group]).Content.Changes[0].Entity.Id;
+        var together = w.CreateInGroup(groupId, "session",
+            Fields(("day", "2026-03-10"), ("kind", Coded(1, "a")), ("attendees", new JsonArray(bId, aId, aId))));
+        var alone = w.CreateInSubject(aId, "session", Fields(("day", "2026-03-11"), ("kind", Coded(1, "a"))));
+
+        var (content, entities) = Read([a, b, group, together, alone]);
+
+        Assert.StartsWith($"groups/{groupId}/", together.Path, StringComparison.Ordinal);
+        var session = entities.Values.Single(e => e.Reference.Type == "session" && e.Group is not null);
+        Assert.Equal(groupId, session.Group);
+        Assert.Null(session.Subject);
+        Assert.Equal(new[] { aId, bId }.Order(StringComparer.Ordinal), session.People);
+        Assert.Equal(groupId, entities[new EntityRef("group", groupId)].Group);
+        Assert.Empty(entities[new EntityRef("group", groupId)].People);
+
+        var form = new ReportDefinition("monthly", 1, "M", "session", "day", "kind", "kind", 1, null);
+        var catalog = new SchemeCatalog([new Scheme("kind", 1, [new("a", "A", null, false)])], []);
+        var run = ReportRunner.RunMonth(form, 2026, 3, entities.Values, catalog);
+        var cell = Assert.Single(run.Cells);
+        Assert.Equal(2, cell.Count);                            // two sessions
+        Assert.Equal(2, run.PeopleOf(cell.Records)!.Count);     // two people, a counted once
+        Assert.Equal(2, run.PeopleOf(run.Total)!.Count);
+    }
+
+    [Fact]
+    public void Nothing_but_a_case_or_a_session_is_kept_in_another_entitys_folder()
+    {
+        var w = Writer();
+        Assert.Throws<ArgumentException>(() => w.CreateInGroup("g", "subject", Fields(("name", "x"))));
+        Assert.Throws<ArgumentException>(() => w.CreateInSubject("s", "group", Fields(("name", "x"))));
+    }
+
+    [Fact]
+    public void A_run_record_keeps_who_each_record_is_about()
+    {
+        var form = new ReportDefinition("monthly", 1, "M", "session", "day", "kind", "kind", 1, null);
+        var formFile = new VaultFile("reports/monthly/v1.json", System.Text.Encoding.UTF8.GetBytes(
+            """{"format":"openquote.report/0","report":"monthly","version":1,"label":"M","counts":"session","period":{"unit":"month","field":"day"},"rows":{"field":"kind","scheme":"kind","version":1}}"""));
+        var people = new Dictionary<string, IReadOnlyList<string>> { ["r1"] = ["s1"], ["r2"] = ["s1", "s2"], ["r3"] = [] };
+        var run = new ReportRun(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), [],
+            [new ReportCell("a", null, ["r1", "r2"])], ["r3"], [], people);
+        var without = new ReportRun(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), [], [new ReportCell("a", null, ["r1"])], [], []);
+        var w = Writer();
+
+        var content = Read([w.RunRecord(run), w.RunRecord(without), formFile]).Content;
+
+        var kept = content.Runs[0].Run;
+        Assert.Equal(["s1", "s2"], kept.PeopleOf(kept.Cells[0].Records));
+        Assert.Empty(kept.PeopleOf(kept.Pending)!);
+        Assert.Null(content.Runs[1].Run.PeopleOf(content.Runs[1].Run.Total)); // kept before people were counted: unknown, not zero
+    }
+
+    [Fact]
+    public void A_run_record_whose_people_miss_a_record_is_unreadable()
+    {
+        var formFile = new VaultFile("reports/monthly/v1.json", System.Text.Encoding.UTF8.GetBytes(
+            """{"format":"openquote.report/0","report":"monthly","version":1,"label":"M","counts":"session","period":{"unit":"month","field":"day"},"rows":{"field":"kind","scheme":"kind","version":1}}"""));
+        var run = """{"format":"openquote.run/0","id":"0192f400-0000-7000-8000-000000000001","device":"dev1","at":"2026-04-01T09:00:00+09:00","report":{"report":"monthly","version":1},"period":{"from":"2026-03-01","to":"2026-03-31"},"cells":[{"row":"a","column":null,"count":2,"records":["r1","r2"]}],"pending":{"count":0,"records":[]},"unmapped":{"count":0,"records":[]},"total":{"count":2,"records":["r1","r2"]},"people":{"r1":["s1"]}}""";
+
+        var content = VaultReader.Read([formFile, new VaultFile("runs/2026/0192f400-0000-7000-8000-000000000001.dev1.json", System.Text.Encoding.UTF8.GetBytes(run))]);
+
+        Assert.Empty(content.Runs);
+        Assert.Equal(UnreadableReason.Invalid, Assert.Single(content.Unreadable).Reason);
+    }
+
     [Fact]
     public void Every_file_gets_a_new_path_in_time_order()
     {

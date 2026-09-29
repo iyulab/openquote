@@ -68,9 +68,25 @@ public static partial class VaultReader
         if (!TrySet(root, "pending", out var pending) || !TrySet(root, "unmapped", out var unmapped) || !TrySet(root, "total", out var total))
             return Bad<KeptRun>(file, UnreadableReason.Invalid, "pending, unmapped and total each list their records");
 
-        var run = new ReportRun(report, from, to, crosswalks, cells, pending, unmapped);
+        Dictionary<string, IReadOnlyList<string>>? people = null;
+        if (root.TryGetProperty("people", out var peopleJson))
+        {
+            if (peopleJson.ValueKind != JsonValueKind.Object)
+                return Bad<KeptRun>(file, UnreadableReason.Invalid, "people maps each record to its subjects");
+            people = new(StringComparer.Ordinal);
+            foreach (var entry in peopleJson.EnumerateObject())
+            {
+                if (!TryIds(entry.Value, out var subjects))
+                    return Bad<KeptRun>(file, UnreadableReason.Invalid, "people maps each record to its subjects");
+                people[entry.Name] = subjects;
+            }
+        }
+
+        var run = new ReportRun(report, from, to, crosswalks, cells, pending, unmapped, people);
         if (!run.Total.SequenceEqual(total.Order(StringComparer.Ordinal), StringComparer.Ordinal))
             return Bad<KeptRun>(file, UnreadableReason.Invalid, "the total is not the cells plus pending plus unmapped");
+        if (people is not null && !people.Keys.Order(StringComparer.Ordinal).SequenceEqual(run.Total, StringComparer.Ordinal))
+            return Bad<KeptRun>(file, UnreadableReason.Invalid, "people must name exactly the records in the total");
         return new(new KeptRun(id, device, at, file.Path, run), null);
     }
 
