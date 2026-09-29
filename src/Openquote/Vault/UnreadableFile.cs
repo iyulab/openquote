@@ -12,7 +12,10 @@ public enum UnreadableReason
     /// <summary>A required key is missing or has the wrong type.</summary>
     Invalid,
 
-    /// <summary>The file name does not match the id, device or version inside it.</summary>
+    /// <summary>
+    /// The file name does not match the id, device or version inside it — or it is named like a vault
+    /// file with something added, as a sync client names the losing side of a conflict.
+    /// </summary>
     NameMismatch,
 
     /// <summary>Another file carries the same id with different content.</summary>

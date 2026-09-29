@@ -197,4 +197,41 @@ public class VaultReaderTests
         Assert.False(e.IsNewer);
         Assert.Equal(declared, e.Declared);
     }
+
+    [Theory]
+    [InlineData("schemes/topic/v2.json (conflicted copy 2026-04-02)")]
+    [InlineData("reports/monthly/v1.json.sync-conflict-20260402-101500-ABCDEFG")]
+    [InlineData("runs/2026/0198f0e0-0000-7000-8000-000000000001.dev1.json-LAPTOP")]
+    public void Lists_a_sync_clients_copy_of_a_definition_or_run_instead_of_ignoring_it(string path)
+    {
+        var content = VaultReader.Read([File(Json(1, "e1", "create")), File(path, "{}")]);
+
+        Assert.Single(content.Changes);
+        var copy = Assert.Single(content.Unreadable);
+        Assert.Equal(path, copy.Path);
+        Assert.Equal(UnreadableReason.NameMismatch, copy.Reason);
+    }
+
+    [Theory]
+    [InlineData(" (conflicted copy 2026-04-02)")]
+    [InlineData(".sync-conflict-20260402-101500-ABCDEFG")]
+    [InlineData("-LAPTOP")]
+    public void Reads_a_sync_clients_copy_of_a_change_named_with_something_after_json(string added)
+    {
+        var change = Json(1, "e1", "create");
+        var original = File(change);
+
+        var content = VaultReader.Read([original, File(original.Path + added, change.ToJsonString())]);
+
+        Assert.Single(content.Changes);
+        Assert.Empty(content.Unreadable);
+    }
+
+    [Fact]
+    public void A_copy_named_for_another_change_is_a_name_mismatch()
+    {
+        var copy = File("subjects/s1/" + Id(9) + ".dev1.json-LAPTOP", Json(1, "e1", "create").ToJsonString());
+
+        Assert.Equal(UnreadableReason.NameMismatch, Assert.Single(VaultReader.Read([copy]).Unreadable).Reason);
+    }
 }

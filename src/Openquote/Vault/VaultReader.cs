@@ -80,7 +80,13 @@ public static partial class VaultReader
                 continue;
             }
 
-            if (!IsChangePath(file.Path)) continue;
+            if (!IsChangePath(file.Path))
+            {
+                if (IsCopyOfVaultFile(file.Path))
+                    unreadable.Add(new UnreadableFile(file.Path, UnreadableReason.NameMismatch,
+                        "named like a vault file with something added, as a sync client names a conflicting copy"));
+                continue;
+            }
 
             var parsed = ParseChange(file);
             if (parsed.Error is { } error)
@@ -140,10 +146,30 @@ public static partial class VaultReader
         throw new VaultFormatException(declared, newer);
     }
 
+    private static readonly string[] LayoutFolders = ["schemes", "reports", "exports", "practitioners", "devices", "subjects", "groups", "runs"];
+
+    // A sync client keeps the losing side of a conflict under the same name with something added
+    // after ".json" (" (conflicted copy …)", ".sync-conflict-…", "-<computer>"). A change file's copy
+    // is read like the change (identical copies count once); a copy of a scheme, form or run record
+    // may differ from the file it copies, and ignoring it like a stray file would lose it without a
+    // word, so it is listed for a person to look at.
+    private static bool IsCopyOfVaultFile(string path)
+    {
+        var slash = path.IndexOf('/', StringComparison.Ordinal);
+        if (slash < 0 || !LayoutFolders.Contains(path[..slash])) return false;
+        var name = path[(path.LastIndexOf('/') + 1)..];
+        var json = name.IndexOf(".json", StringComparison.Ordinal);
+        return json > 0 && json + ".json".Length < name.Length;
+    }
+
     // practitioners/<file>.json, devices/<file>.json, subjects/<subject-id>/<file>.json, groups/<group-id>/<file>.json
+    // — or a sync client's copy of one, with something added after ".json".
     private static bool IsChangePath(string path)
     {
-        if (!path.EndsWith(".json", StringComparison.Ordinal)) return false;
+        var json = path.LastIndexOf(".json", StringComparison.Ordinal);
+        if (json < 0) return false;
+        var after = json + ".json".Length;
+        if (after < path.Length && (char.IsAsciiLetterOrDigit(path[after]) || path.IndexOf('/', after) >= 0)) return false;
         var parts = path.Split('/');
         return (parts.Length == 2 && parts[0] is "practitioners" or "devices")
             || (parts.Length == 3 && parts[0] is "subjects" or "groups");
@@ -203,9 +229,11 @@ public static partial class VaultReader
             }
         }
 
-        // A sync client may append to the name ("<id>.<device> (conflicted copy).json"), but the
-        // name must still begin with the id and device the content claims.
-        var stem = file.Path[(file.Path.LastIndexOf('/') + 1)..^".json".Length];
+        // A sync client may add to the name, before ".json" ("<id>.<device> (conflicted copy).json")
+        // or after it ("<id>.<device>.json-LAPTOP"), but the name must still begin with the id and
+        // device the content claims.
+        var name = file.Path[(file.Path.LastIndexOf('/') + 1)..];
+        var stem = name[..name.LastIndexOf(".json", StringComparison.Ordinal)];
         var expected = $"{id}.{device}";
         if (!(stem == expected || (stem.StartsWith(expected, StringComparison.Ordinal) && !char.IsAsciiLetterOrDigit(stem[expected.Length]))))
             return Fail(file, UnreadableReason.NameMismatch, $"the name should begin with {expected}");

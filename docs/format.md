@@ -255,7 +255,7 @@ The reader never stops on a bad file. A file whose path matches the layout but c
 | `NameMismatch` | The file name or path disagrees with the id, device, name or version inside. |
 | `DuplicateId` | Two change files carry the same id with different content. |
 
-A sync client's conflicted copy of a change file is read as a valid input: its name may extend `<id>.<device>` with any suffix that begins with a character other than a letter or digit (for example `<id>.<device> (conflicted copy).json`). Copies with identical content count once. Run record names must match exactly.
+A sync client's conflicted copy of a change file is read as a valid input: its name may add, before or after `.json`, anything that begins with a character other than a letter or digit (for example `<id>.<device> (conflicted copy).json` or `<id>.<device>.json-LAPTOP`). Copies with identical content count once. A copy of any other vault file — a scheme, crosswalk, form or run record named with something added after `.json` — is listed as `NameMismatch` rather than ignored, since it may differ from the file it copies and should be looked at by a person.
 
 The only condition that refuses the whole read is the declaration check described under [Declaration](#declaration-vaultjson).
 
