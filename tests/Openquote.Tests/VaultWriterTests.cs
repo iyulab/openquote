@@ -111,6 +111,37 @@ public class VaultWriterTests
         Assert.Null(content.Runs[1].Run.PeopleOf(content.Runs[1].Run.Total)); // kept before people were counted: unknown, not zero
     }
 
+    [Theory]
+    [InlineData("""["r1"]""")]          // a record of the cells left out of the total
+    [InlineData("""["r1","r2","r9"]""")] // a record in the total that no cell, pending or unmapped holds
+    public void A_run_record_whose_total_is_not_its_parts_is_unreadable(string totalRecords)
+    {
+        var run = RunJson(total: $$"""{"count":2,"records":{{totalRecords}}}""");
+
+        var content = VaultReader.Read([MonthlyForm, new VaultFile("runs/2026/0192f400-0000-7000-8000-000000000001.dev1.json", System.Text.Encoding.UTF8.GetBytes(run))]);
+
+        Assert.Empty(content.Runs);
+        Assert.Equal(UnreadableReason.Invalid, Assert.Single(content.Unreadable).Reason);
+    }
+
+    [Fact]
+    public void A_run_records_stored_counts_are_not_trusted_over_its_records()
+    {
+        var run = RunJson(cellCount: 99, total: """{"count":99,"records":["r1","r2"]}""");
+
+        var content = VaultReader.Read([MonthlyForm, new VaultFile("runs/2026/0192f400-0000-7000-8000-000000000001.dev1.json", System.Text.Encoding.UTF8.GetBytes(run))]);
+
+        var kept = Assert.Single(content.Runs).Run;
+        Assert.Equal(["r1", "r2"], kept.Cells[0].Records);
+        Assert.Equal(2, kept.Total.Count);
+    }
+
+    private static readonly VaultFile MonthlyForm = new("reports/monthly/v1.json", System.Text.Encoding.UTF8.GetBytes(
+        """{"format":"openquote.report/0","report":"monthly","version":1,"label":"M","counts":"session","period":{"unit":"month","field":"day"},"rows":{"field":"kind","scheme":"kind","version":1}}"""));
+
+    private static string RunJson(string total, int cellCount = 2) =>
+        $$"""{"format":"openquote.run/0","id":"0192f400-0000-7000-8000-000000000001","device":"dev1","at":"2026-04-01T09:00:00+09:00","report":{"report":"monthly","version":1},"period":{"from":"2026-03-01","to":"2026-03-31"},"cells":[{"row":"a","column":null,"count":{{cellCount}},"records":["r1","r2"]}],"pending":{"count":0,"records":[]},"unmapped":{"count":0,"records":[]},"total":{{total}}}""";
+
     [Fact]
     public void A_run_record_whose_people_miss_a_record_is_unreadable()
     {
