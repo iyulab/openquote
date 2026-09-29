@@ -91,6 +91,6 @@ An export counts nothing, but it follows the same rule as reports: a classified 
 
 Reading a vault (`VaultReader.Read`) is tolerant of individual files and strict about the vault as a whole:
 
-- **An unreadable file is listed, not fatal.** Invalid JSON, an unknown per-file format, a missing key, a name that disagrees with the content, or two different files claiming the same id: each is reported in `VaultContent.Unreadable` with its reason, and the rest of the vault is read normally.
+- **An unreadable file is listed, not fatal.** Invalid JSON, an unknown per-file format, a missing key, a name that disagrees with the content, or two different files claiming the same id: each is reported in `VaultContent.Unreadable` with its reason and what the file was for (`Kind`, read from its path — a subject's or group's records, a scheme version, a crosswalk, a report or export form, a run record), and the rest of the vault is read normally.
 - **A newer or unknown vault declaration refuses the whole read.** A later format may lay records out in a way this engine would count wrongly without noticing, so `VaultFormatException` is thrown and nothing is returned.
 - Files outside the vault layout are ignored.

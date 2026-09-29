@@ -26,4 +26,8 @@ public enum UnreadableReason
 /// A file the reader skipped. The rest of the vault is still read; these are shown to a person
 /// rather than silently dropped.
 /// </summary>
-public sealed record UnreadableFile(string Path, UnreadableReason Reason, string Detail);
+public sealed record UnreadableFile(string Path, UnreadableReason Reason, string Detail)
+{
+    /// <summary>What the file was for, from its path — to name it to a person by the records it holds.</summary>
+    public VaultFileKind Kind => VaultFileKind.Of(Path);
+}
