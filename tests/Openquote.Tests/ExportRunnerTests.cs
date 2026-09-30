@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using Openquote.Classification;
 using Openquote.Exports;
+using Openquote.Fields;
 using Openquote.Records;
 using Openquote.Vault;
 
@@ -131,5 +132,37 @@ public class ExportRunnerTests
 
         Assert.Empty(content.Exports);
         Assert.Equal(UnreadableReason.Invalid, Assert.Single(content.Unreadable).Reason);
+    }
+
+    private static FieldCatalog Narrative(params (string Type, string Field)[] fields) =>
+        new(fields.GroupBy(f => f.Type).Select(g => new FieldSet("care", g.Key, 1,
+                [.. g.Select(f => new FieldDefinition(f.Field, FieldKind.Text, null, null, false, false, FieldTier.Narrative, null, null, "care"))], [])),
+            []);
+
+    [Fact]
+    public void Written_content_leaves_the_record_by_no_route_and_the_withheld_columns_are_named()
+    {
+        var v = Build();
+        var form = Form(
+            new FieldColumn("date", "date"),
+            new FieldColumn("title", "title"),              // the record's own written field
+            new PersonColumn("names", "name", All: true),   // the subject's written field
+            new ReferenceColumn("by", "practitioner", "name"));
+
+        var table = ExportRunner.Run(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), v.Entities, Catalog,
+            Narrative(("session", "title"), ("subject", "name"), ("practitioner", "name")));
+
+        Assert.All(table.Rows, r => Assert.Equal(["", "", ""], r.Cells.Skip(1)));
+        Assert.Equal(["title", "names", "by"], table.Withheld);
+    }
+
+    [Fact]
+    public void Without_field_definitions_nothing_is_withheld()
+    {
+        var v = Build();
+        var table = ExportRunner.Run(Form(new FieldColumn("title", "title")), new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), v.Entities, Catalog);
+
+        Assert.Empty(table.Withheld);
+        Assert.Contains(table.Rows, r => r.Cells[0] == "first");
     }
 }
