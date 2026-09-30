@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using Openquote.Classification;
 using Openquote.Exports;
+using Openquote.Packs;
 using Openquote.Reports;
 
 namespace Openquote.Vault;
@@ -14,7 +15,8 @@ public sealed record VaultContent(
     IReadOnlyList<ReportDefinition> Reports,
     IReadOnlyList<UnreadableFile> Unreadable,
     IReadOnlyList<KeptRun> Runs,
-    IReadOnlyList<ExportDefinition> Exports)
+    IReadOnlyList<ExportDefinition> Exports,
+    IReadOnlyList<PackManifest> Packs)
 {
     /// <summary>The schemes and crosswalks, ready to carry values between versions.</summary>
     public SchemeCatalog Catalog() => new(Schemes, Crosswalks);
@@ -54,6 +56,7 @@ public static partial class VaultReader
         var crosswalks = new List<Crosswalk>();
         var reports = new List<ReportDefinition>();
         var exports = new List<ExportDefinition>();
+        var packs = new List<PackManifest>();
         var runFiles = new List<VaultFile>();
 
         foreach (var file in all.OrderBy(f => f.Path, StringComparer.Ordinal))
@@ -71,6 +74,9 @@ public static partial class VaultReader
                     continue;
                 case DefinitionKind.Export:
                     Collect(ParseExport(file), exports, unreadable);
+                    continue;
+                case DefinitionKind.Pack:
+                    Collect(ParsePack(file), packs, unreadable);
                     continue;
             }
 
@@ -120,7 +126,7 @@ public static partial class VaultReader
 
         changes.Sort((a, b) => string.CompareOrdinal(a.Id, b.Id));
         unreadable.Sort((a, b) => string.CompareOrdinal(a.Path, b.Path));
-        return new VaultContent(changes, schemes, crosswalks, reports, unreadable, runs, exports);
+        return new VaultContent(changes, schemes, crosswalks, reports, unreadable, runs, exports, packs);
     }
 
     // A per-file format this engine does not know makes that one file unreadable (§7 of the format);
@@ -146,7 +152,7 @@ public static partial class VaultReader
         throw new VaultFormatException(declared, newer);
     }
 
-    private static readonly string[] LayoutFolders = ["schemes", "reports", "exports", "practitioners", "devices", "subjects", "groups", "runs"];
+    private static readonly string[] LayoutFolders = ["schemes", "reports", "exports", "practitioners", "devices", "subjects", "groups", "runs", "packs", "labels", "fields"];
 
     // A sync client keeps the losing side of a conflict under the same name with something added
     // after ".json" (" (conflicted copy …)", ".sync-conflict-…", "-<computer>"). A change file's copy
