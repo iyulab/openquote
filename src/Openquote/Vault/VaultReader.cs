@@ -20,6 +20,15 @@ public sealed record VaultContent(
 {
     /// <summary>The schemes and crosswalks, ready to carry values between versions.</summary>
     public SchemeCatalog Catalog() => new(Schemes, Crosswalks);
+
+    /// <summary>Checks the vault's packs against each other and against the definitions the vault could read.</summary>
+    public IReadOnlyList<PackIssue> CheckPacks() => PackCheck.Check(Packs, DefinitionPaths());
+
+    private IEnumerable<string> DefinitionPaths() =>
+        Schemes.Select(s => $"schemes/{s.Name}/v{s.Version}.json")
+            .Concat(Crosswalks.Select(c => $"schemes/{c.Scheme}/v{c.From}-v{c.To}.json"))
+            .Concat(Reports.Select(r => $"reports/{r.Name}/v{r.Version}.json"))
+            .Concat(Exports.Select(e => $"exports/{e.Name}/v{e.Version}.json"));
 }
 
 /// <summary>
