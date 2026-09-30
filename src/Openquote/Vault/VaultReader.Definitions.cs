@@ -111,8 +111,25 @@ public static partial class VaultReader
             if (item.Parent is { } parent && !codes.Contains(parent))
                 return Bad<Scheme>(file, UnreadableReason.Invalid, $"{item.Code}: parent {parent} is not an item");
 
-        return new(new Scheme(name, version, items), null);
+        DateOnly? from = null, to = null;
+        if (root.TryGetProperty("effective", out var effective))
+        {
+            if (effective.ValueKind != JsonValueKind.Object || !TryString(effective, "from", out var fromText) || Day(fromText) is not { } f)
+                return Bad<Scheme>(file, UnreadableReason.Invalid, "effective needs a from date (yyyy-MM-dd)");
+            from = f;
+            if (effective.TryGetProperty("to", out _))
+            {
+                if (!TryString(effective, "to", out var toText) || Day(toText) is not { } t || t < f)
+                    return Bad<Scheme>(file, UnreadableReason.Invalid, "effective.to must be a date on or after from");
+                to = t;
+            }
+        }
+
+        return new(new Scheme(name, version, items, from, to), null);
     }
+
+    private static DateOnly? Day(string text) =>
+        DateOnly.TryParseExact(text, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day) ? day : null;
 
     private static Definition<Crosswalk> ParseCrosswalk(VaultFile file)
     {

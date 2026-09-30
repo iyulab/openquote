@@ -24,6 +24,18 @@ public sealed class SchemeCatalog
     public Scheme? Find(string name, int version) => _schemes.GetValueOrDefault((name, version));
 
     /// <summary>
+    /// The version of <paramref name="name"/> to offer for a value entered on <paramref name="date"/>: the
+    /// highest version in force that day, where a version without dates is in force throughout. Null when
+    /// the vault holds no version in force that day.
+    /// </summary>
+    public Scheme? InForce(string name, DateOnly date) =>
+        _schemes.Values
+            .Where(s => s.Name == name
+                && (s.EffectiveFrom ?? DateOnly.MinValue) <= date
+                && date <= (s.EffectiveTo ?? DateOnly.MaxValue))
+            .MaxBy(s => s.Version);
+
+    /// <summary>
     /// Carries <paramref name="value"/> to <paramref name="targetVersion"/> of its scheme. A value
     /// lands on a code only when every step leaves exactly one candidate: an old code with one link
     /// is assigned, with two or more it waits for a person, and with none it is unmapped.

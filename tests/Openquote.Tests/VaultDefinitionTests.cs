@@ -87,4 +87,25 @@ public class VaultDefinitionTests
         Assert.Equal(UnreadableReason.Malformed, Assert.Single(content.Unreadable).Reason);
         Assert.Single(content.Reports);
     }
+
+    [Fact]
+    public void Reads_when_a_scheme_version_is_in_force()
+    {
+        var json = """
+            { "format": "openquote.scheme/0", "scheme": "kind", "version": 1, "effective": { "from": "2026-03-01", "to": "2027-02-28" },
+              "items": [ { "code": "a", "label": "A" } ] }
+            """;
+        var scheme = Assert.Single(VaultReader.Read([File("schemes/kind/v1.json", json)]).Schemes);
+        Assert.Equal((new DateOnly(2026, 3, 1), new DateOnly(2027, 2, 28)), (scheme.EffectiveFrom!.Value, scheme.EffectiveTo!.Value));
+    }
+
+    [Theory]
+    [InlineData("""{ "to": "2027-02-28" }""")]
+    [InlineData("""{ "from": "2026-3-1" }""")]
+    [InlineData("""{ "from": "2026-03-01", "to": "2026-02-28" }""")]
+    public void An_invalid_effective_range_is_reported(string effective)
+    {
+        var json = $$"""{ "format": "openquote.scheme/0", "scheme": "kind", "version": 1, "effective": {{effective}}, "items": [] }""";
+        Assert.Equal(UnreadableReason.Invalid, Assert.Single(VaultReader.Read([File("schemes/kind/v1.json", json)]).Unreadable).Reason);
+    }
 }

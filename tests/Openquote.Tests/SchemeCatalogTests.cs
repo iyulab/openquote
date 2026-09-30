@@ -98,4 +98,29 @@ public class SchemeCatalogTests
         Assert.Equal("x", catalog.Resolve(new CodedValue("kind", 1, "a"), 2).Code);
         Assert.Equal(ResolutionKind.Unmapped, catalog.Resolve(new CodedValue("kind", 1, "b"), 2).Kind);
     }
+
+    [Fact]
+    public void The_version_in_force_is_the_highest_one_whose_dates_hold_that_day()
+    {
+        var catalog = new SchemeCatalog(
+            [
+                new Scheme("kind", 1, []),                                                   // no dates: in force throughout
+                new Scheme("kind", 2, [], new DateOnly(2026, 3, 1)),
+                new Scheme("kind", 3, [], new DateOnly(2027, 3, 1), new DateOnly(2027, 12, 31)),
+            ],
+            []);
+
+        Assert.Equal(1, catalog.InForce("kind", new DateOnly(2025, 12, 1))!.Version);
+        Assert.Equal(2, catalog.InForce("kind", new DateOnly(2026, 4, 1))!.Version);
+        Assert.Equal(3, catalog.InForce("kind", new DateOnly(2027, 6, 1))!.Version);
+        Assert.Equal(2, catalog.InForce("kind", new DateOnly(2028, 1, 1))!.Version);
+        Assert.Null(catalog.InForce("other", new DateOnly(2026, 1, 1)));
+    }
+
+    [Fact]
+    public void No_version_in_force_when_every_version_is_dated_elsewhere()
+    {
+        var catalog = new SchemeCatalog([new Scheme("kind", 1, [], new DateOnly(2026, 3, 1))], []);
+        Assert.Null(catalog.InForce("kind", new DateOnly(2026, 2, 28)));
+    }
 }
