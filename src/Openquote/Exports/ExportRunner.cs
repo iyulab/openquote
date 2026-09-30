@@ -20,7 +20,7 @@ public sealed record ExportRow(string Record, IReadOnlyList<string> Cells);
 /// <param name="Rows">The listed records, by date then id.</param>
 /// <param name="Pending">Records with a classified cell waiting for a person.</param>
 /// <param name="Unmapped">Records with a classified cell that has no code in the form's version.</param>
-/// <param name="Withheld">The columns left empty because they would carry written content, by label, in column order.</param>
+/// <param name="Withheld">The columns whose cells were left empty in the rows produced because they would carry written content, by label, in column order; a period with no rows names none.</param>
 public sealed record ExportTable(
     ExportDefinition Export,
     DateOnly From,

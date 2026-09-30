@@ -23,7 +23,7 @@ public sealed record FieldIssue(FieldIssueKind Kind, string Type, string Field, 
 
 /// <summary>
 /// The fields of each entity type, merged from a vault's packs: packs in the order they build on each
-/// other (unrelated packs by id, packs without a manifest last), each at its highest version. A pack
+/// other (<see cref="PackGraph.Order"/>; packs without a manifest last), each at its highest version. A pack
 /// may narrow a field of a pack it builds on — make it required or hide it — and nothing more.
 /// </summary>
 public sealed class FieldCatalog

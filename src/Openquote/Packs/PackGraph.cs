@@ -38,8 +38,10 @@ public sealed class PackGraph
     }
 
     /// <summary>
-    /// Pack ids, each after the packs it builds on; packs that do not depend on each other keep id order.
-    /// Packs caught in a cycle come last, in id order (<see cref="PackCheck"/> reports the cycle).
+    /// Pack ids, each after the packs it builds on. A pack is placed as soon as everything it builds on
+    /// is placed, taking ids in order, so a pack can come before one whose id sorts earlier if that one
+    /// still waits on something. Packs caught in a cycle come last, in id order (<see cref="PackCheck"/>
+    /// reports the cycle).
     /// </summary>
     public IReadOnlyList<string> Order()
     {

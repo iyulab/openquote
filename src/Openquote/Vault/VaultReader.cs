@@ -44,7 +44,8 @@ public sealed record VaultContent(
 }
 
 /// <summary>
-/// Reads a vault: change files, scheme versions, crosswalks, report forms, run records and export forms. A file that cannot
+/// Reads a vault: change files, scheme versions, crosswalks, report forms, run records, export forms, pack manifests, labels
+/// and field definitions. A file that cannot
 /// be used never stops the read: it is reported in <see cref="VaultContent.Unreadable"/> and
 /// everything else is still returned.
 /// </summary>

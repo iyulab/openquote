@@ -133,7 +133,7 @@ A `device` entity, kept in `devices/`, carries a human-readable name in its `nam
 - Every item has a `code` and a `label`. Codes are unique within a version. The code is the item's identity; the label is what people see.
 - `parent`, if present, must be the code of another item in the same version. Writing a child code as `parent/child` is a naming convention; hierarchy comes from `parent`.
 - `suggest` (default `false`) marks items a host may offer as suggestions.
-- `effective` (optional): `from` (required) and `to` (optional, on or after `from`), calendar dates on which the body that issues the scheme puts this version in force. A version without it is in force throughout. It guides which version a host offers for input (`SchemeCatalog.InForce`, the highest version in force on a given date); reports never use it.
+- `effective` (optional): `from` (required) and `to` (optional, on or after `from`), calendar dates on which the body that issues the scheme puts this version in force. Both dates are inclusive: the version is in force on `from` and on `to`. A version without it is in force throughout. It guides which version a host offers for input (`SchemeCatalog.InForce`, the highest version in force on a given date); reports never use it.
 
 ## Crosswalks
 
@@ -265,7 +265,7 @@ A pack is a bundle of definition files (schemes, crosswalks, forms, labels and f
 
 - Path: `packs/<pack>/v<version>.json`; `pack` and `version` must match it.
 - `pack` is lowercase ASCII letters and digits in words joined by `.` or `-` (for example `care`, `care.school`, `org-x.y2`). `local` and `oq` are reserved for the vault itself and cannot name a pack. Writing a pack's own names as `<pack>.<name>` is recommended, not required.
-- `version` is an integer of 1 or more, and `label` is text a person reads.
+- `version` is an integer of 1 or more. `label` is required: text a person reads.
 - `depends` (optional) maps the ids of other packs to a minimum version, an integer of 1 or more. A pack never depends on itself. A pack only adds, so a later version holds everything an earlier one did and a minimum version is all a dependency needs.
 - `provides` lists the definition files this version added, as vault paths: schemes, crosswalks, report and export forms, labels and field definitions. It is required, and may be empty. It is what says which pack owns which definition.
 - A manifest in the vault is the record that the pack was applied; there is no separate record. Of several versions of a pack, the highest one counts.
@@ -295,7 +295,7 @@ Reading never stops on these; a host decides what to do with the list.
 }
 ```
 
-- Path: `labels/<pack>/v<version>.<locale>.json`; `pack`, `version` and `locale` must match it. `locale` is a language tag such as `fr` or `en-US`.
+- Path: `labels/<pack>/v<version>.<locale>.json`; `pack`, `version` and `locale` must match it. `pack` is a pack id as for a manifest (and not `local` or `oq`), and `locale` is a language tag such as `fr` or `en-US`; a file whose pack or locale cannot be valid is reported as unreadable.
 - `schemes` (optional) maps a scheme name to a scheme version to item codes to labels. `fields` (optional) maps an entity type to field names to labels. Every label is non-empty text.
 - Labels change what people read, never a code or what is counted, so a renamed item needs no new scheme version.
 - When several packs label the same thing in one locale, a pack that another of them builds on is set aside, so the pack that builds on the others wins. If several packs are left, none building on another, they agree when they give the same text (for example two packs that each build on a third and relabel alike); when they give different labels it is a conflict (`LabelCatalog.Conflicts`), and none of their labels is used for that locale.
@@ -331,16 +331,16 @@ A second pack that builds on the first can add fields and narrow the first pack'
 }
 ```
 
-- Path: `fields/<pack>/<type>/v<version>.json`; `pack`, `type` and `version` must match it. `type` is the entity type the fields belong to.
+- Path: `fields/<pack>/<type>/v<version>.json`; `pack`, `type` and `version` must match it. `pack` is a pack id as for a manifest (and not `local` or `oq`), and `type` is the entity type the fields belong to.
 - `fields` (optional) declares fields. A field has a `name`, unique within the file, and a `kind`, one of `text`, `date`, `number`, `coded`, `reference` and `references`.
 - A `coded` field names the `scheme` its values are classified in, and no other kind has one. A `reference` or `references` field names the entity `type` it refers to, and no other kind has one.
-- `tier` is `structured` (the default) or `narrative`. A narrative field is written content: `ExportRunner.Run` leaves every column that would carry it empty — its text, a year taken from it, the label of its code — and names the column in `ExportTable.Withheld`. Callers pass `content.FieldCatalog()` (required; `FieldCatalog.Empty` for a vault without field definitions).
+- `tier` is `structured` (the default) or `narrative`. A narrative field is written content: `ExportRunner.Run` leaves every column that would carry it empty — its text, a year taken from it, the label of its code — and names the column in `ExportTable.Withheld`, which lists the columns whose cells were withheld in the rows produced (a period with no rows names none). Callers pass `content.FieldCatalog()` (required; `FieldCatalog.Empty` for a vault without field definitions).
 - `required` (default `false`) says a value must be entered.
 - `default` (optional) is `{ "subject": "<field>" }`: the host offers, when the record is written, the value of that field of the record's subject. The record keeps the value as entered.
 - `label` (optional) is what people read for the field; [Labels](#labels) can give it per locale.
 - `constrain` (optional) narrows fields other packs declared, by `name`: `required` and `hidden` may each be set to `true`, and at least one must be. A key set to `false` is invalid, because a constraint only narrows. A pack does not constrain its own fields; it declares them as they should be.
 
-`VaultContent.FieldCatalog` merges the field files of the vault's packs, each pack at its highest version, packs in the order they build on each other (packs that do not build on each other by id, and packs without a manifest last). A field is kept from the first pack that declares it; then each constraint is applied. `FieldCatalog.Issues` lists what does not fit (`FieldIssue`):
+`VaultContent.FieldCatalog` merges the field files of the vault's packs, each pack at its highest version, packs in the order they build on each other (a pack is placed as soon as the packs it builds on are placed, taking ids in order; packs without a manifest come last). A field is kept from the first pack that declares it; then each constraint is applied. `FieldCatalog.Issues` lists what does not fit (`FieldIssue`):
 
 | Kind | When |
 |---|---|
