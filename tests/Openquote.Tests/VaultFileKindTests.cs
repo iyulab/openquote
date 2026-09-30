@@ -20,6 +20,7 @@ public class VaultFileKindTests
         { "runs/2026/0190.dev1.json", new("run", Year: 2026) },
         { "packs/care.school/v2.json", new("pack", Name: "care.school", Version: 2) },
         { "labels/kr/v1.ko.json", new("labels", Name: "kr", Version: 1) },
+        { "fields/care/session/v1.json", new("fields", Name: "care", Version: 1, Type: "session") },
         { "vault.json", new("other") },
         { "packs/care.school/latest.json", new("other") },
         { "schemes/topic/latest.json", new("other") },

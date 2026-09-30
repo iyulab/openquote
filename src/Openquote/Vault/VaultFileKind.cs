@@ -9,7 +9,7 @@ namespace Openquote.Vault;
 /// </summary>
 /// <param name="Kind">
 /// <c>subject</c>, <c>group</c>, <c>practitioners</c>, <c>devices</c>, <c>scheme</c>, <c>crosswalk</c>,
-/// <c>report</c>, <c>export</c>, <c>pack</c>, <c>labels</c>, <c>run</c> or <c>other</c>.
+/// <c>report</c>, <c>export</c>, <c>pack</c>, <c>labels</c>, <c>fields</c>, <c>run</c> or <c>other</c>.
 /// </param>
 /// <param name="Id">The subject's or group's id.</param>
 /// <param name="Name">The scheme, report form or export form.</param>
@@ -17,6 +17,7 @@ namespace Openquote.Vault;
 /// <param name="From">The earlier scheme version a crosswalk leads from.</param>
 /// <param name="To">The later scheme version a crosswalk leads to.</param>
 /// <param name="Year">The year of a run record.</param>
+/// <param name="Type">The entity type a field definition file declares fields for.</param>
 public sealed partial record VaultFileKind(
     string Kind,
     string? Id = null,
@@ -24,7 +25,8 @@ public sealed partial record VaultFileKind(
     int? Version = null,
     int? From = null,
     int? To = null,
-    int? Year = null)
+    int? Year = null,
+    string? Type = null)
 {
     // Only the start of the file name is read: a sync client's copy of a file keeps it
     // ("v2 (conflicted copy).json", "v2.json.sync-conflict-…"), and that copy is the file most
@@ -57,6 +59,8 @@ public sealed partial record VaultFileKind(
                 new("pack", Name: name, Version: Number("from")),
             ["labels", var name, _] when version.Success && !version.Groups["to"].Success =>
                 new("labels", Name: name, Version: Number("from")),
+            ["fields", var name, var type, var file] when VersionName().Match(file) is { Success: true } v && !v.Groups["to"].Success =>
+                new("fields", Name: name, Version: int.Parse(v.Groups["from"].Value, CultureInfo.InvariantCulture), Type: type),
             ["runs", var year, _] when year.Length == 4 && year.All(char.IsAsciiDigit) =>
                 new("run", Year: int.Parse(year, CultureInfo.InvariantCulture)),
             _ => new("other"),

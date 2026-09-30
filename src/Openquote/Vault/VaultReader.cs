@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using Openquote.Classification;
 using Openquote.Exports;
+using Openquote.Fields;
 using Openquote.Labels;
 using Openquote.Packs;
 using Openquote.Reports;
@@ -18,7 +19,8 @@ public sealed record VaultContent(
     IReadOnlyList<KeptRun> Runs,
     IReadOnlyList<ExportDefinition> Exports,
     IReadOnlyList<PackManifest> Packs,
-    IReadOnlyList<LabelSet> Labels)
+    IReadOnlyList<LabelSet> Labels,
+    IReadOnlyList<FieldSet> Fields)
 {
     /// <summary>The schemes and crosswalks, ready to carry values between versions.</summary>
     public SchemeCatalog Catalog() => new(Schemes, Crosswalks);
@@ -29,12 +31,16 @@ public sealed record VaultContent(
     /// <summary>The labels of the vault's packs, resolved by what each pack builds on.</summary>
     public LabelCatalog LabelCatalog() => new(Labels, Packs);
 
+    /// <summary>The fields of each entity type, merged from the vault's packs.</summary>
+    public FieldCatalog FieldCatalog() => new(Fields, Packs);
+
     private IEnumerable<string> DefinitionPaths() =>
         Schemes.Select(s => $"schemes/{s.Name}/v{s.Version}.json")
             .Concat(Crosswalks.Select(c => $"schemes/{c.Scheme}/v{c.From}-v{c.To}.json"))
             .Concat(Reports.Select(r => $"reports/{r.Name}/v{r.Version}.json"))
             .Concat(Exports.Select(e => $"exports/{e.Name}/v{e.Version}.json"))
-            .Concat(Labels.Select(l => $"labels/{l.Pack}/v{l.Version}.{l.Locale}.json"));
+            .Concat(Labels.Select(l => $"labels/{l.Pack}/v{l.Version}.{l.Locale}.json"))
+            .Concat(Fields.Select(f => $"fields/{f.Pack}/{f.Type}/v{f.Version}.json"));
 }
 
 /// <summary>
@@ -73,6 +79,7 @@ public static partial class VaultReader
         var exports = new List<ExportDefinition>();
         var packs = new List<PackManifest>();
         var labels = new List<LabelSet>();
+        var fieldSets = new List<FieldSet>();
         var runFiles = new List<VaultFile>();
 
         foreach (var file in all.OrderBy(f => f.Path, StringComparer.Ordinal))
@@ -96,6 +103,9 @@ public static partial class VaultReader
                     continue;
                 case DefinitionKind.Labels:
                     Collect(ParseLabels(file), labels, unreadable);
+                    continue;
+                case DefinitionKind.Fields:
+                    Collect(ParseFields(file), fieldSets, unreadable);
                     continue;
             }
 
@@ -145,7 +155,7 @@ public static partial class VaultReader
 
         changes.Sort((a, b) => string.CompareOrdinal(a.Id, b.Id));
         unreadable.Sort((a, b) => string.CompareOrdinal(a.Path, b.Path));
-        return new VaultContent(changes, schemes, crosswalks, reports, unreadable, runs, exports, packs, labels);
+        return new VaultContent(changes, schemes, crosswalks, reports, unreadable, runs, exports, packs, labels, fieldSets);
     }
 
     // A per-file format this engine does not know makes that one file unreadable (§7 of the format);

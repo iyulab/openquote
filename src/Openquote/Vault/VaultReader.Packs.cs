@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Openquote.Fields;
 using Openquote.Labels;
 using Openquote.Packs;
 
@@ -111,5 +112,123 @@ public static partial class VaultReader
         }
 
         return new(new LabelSet(pack, version, locale, schemes, fields), null);
+    }
+
+    [GeneratedRegex(@"^fields/(?<pack>" + PackIdPattern + @")/(?<type>[^/]+)/v(?<version>[1-9][0-9]*)\.json$")]
+    private static partial Regex FieldsPath();
+
+    private static Definition<FieldSet> ParseFields(VaultFile file)
+    {
+        if (!TryRoot(file, "openquote.fields/0", out var root, out var error)) return new(null, error);
+        var path = FieldsPath().Match(file.Path);
+
+        if (!TryString(root, "pack", out var pack) || !TryString(root, "type", out var type)
+            || !TryInt(root, "version", out var version) || version < 1)
+            return Bad<FieldSet>(file, UnreadableReason.Invalid, "field definitions need a pack, an entity type and a version of 1 or more");
+        if (pack != path.Groups["pack"].Value || type != path.Groups["type"].Value
+            || version.ToString(CultureInfo.InvariantCulture) != path.Groups["version"].Value)
+            return Bad<FieldSet>(file, UnreadableReason.NameMismatch, $"the path should be fields/{pack}/{type}/v{version}.json");
+
+        var fields = new List<FieldDefinition>();
+        if (root.TryGetProperty("fields", out var fieldsArray))
+        {
+            if (fieldsArray.ValueKind != JsonValueKind.Array)
+                return Bad<FieldSet>(file, UnreadableReason.Invalid, "fields must be an array");
+            foreach (var f in fieldsArray.EnumerateArray())
+            {
+                if (ParseField(f, pack) is not { } field)
+                    return Bad<FieldSet>(file, UnreadableReason.Invalid,
+                        "every field needs a name and a kind; coded fields name a scheme, references name a type, and nothing else does");
+                if (fields.Any(x => x.Name == field.Name))
+                    return Bad<FieldSet>(file, UnreadableReason.Invalid, $"field {field.Name} appears twice");
+                fields.Add(field);
+            }
+        }
+
+        var constraints = new List<FieldConstraint>();
+        if (root.TryGetProperty("constrain", out var constrainArray))
+        {
+            if (constrainArray.ValueKind != JsonValueKind.Array)
+                return Bad<FieldSet>(file, UnreadableReason.Invalid, "constrain must be an array");
+            foreach (var c in constrainArray.EnumerateArray())
+            {
+                if (c.ValueKind != JsonValueKind.Object || !TryString(c, "name", out var name)
+                    || !TryNarrowing(c, "required", out var required) || !TryNarrowing(c, "hidden", out var hidden)
+                    || !(required || hidden))
+                    return Bad<FieldSet>(file, UnreadableReason.Invalid, "a constraint names a field and makes it required or hidden");
+                if (fields.Any(f => f.Name == name))
+                    return Bad<FieldSet>(file, UnreadableReason.Invalid, $"{name} is this pack's own field: declare it as it should be");
+                constraints.Add(new FieldConstraint(name, required, hidden));
+            }
+        }
+
+        return new(new FieldSet(pack, type, version, fields, constraints), null);
+    }
+
+    private static FieldDefinition? ParseField(JsonElement f, string pack)
+    {
+        if (f.ValueKind != JsonValueKind.Object || !TryString(f, "name", out var name) || !TryString(f, "kind", out var kindText))
+            return null;
+        FieldKind? kind = kindText switch
+        {
+            "text" => FieldKind.Text,
+            "date" => FieldKind.Date,
+            "number" => FieldKind.Number,
+            "coded" => FieldKind.Coded,
+            "reference" => FieldKind.Reference,
+            "references" => FieldKind.References,
+            _ => null,
+        };
+        if (kind is not { } k) return null;
+
+        var scheme = TryString(f, "scheme", out var s) ? s : null;
+        var refType = TryString(f, "type", out var t) ? t : null;
+        if ((k == FieldKind.Coded) != (scheme is not null)) return null;
+        if ((k is FieldKind.Reference or FieldKind.References) != (refType is not null)) return null;
+
+        var tier = FieldTier.Structured;
+        if (f.TryGetProperty("tier", out _))
+        {
+            if (!TryString(f, "tier", out var tierText) || tierText is not ("structured" or "narrative")) return null;
+            tier = tierText == "narrative" ? FieldTier.Narrative : FieldTier.Structured;
+        }
+
+        if (!TryFlag(f, "required", out var required)) return null;
+
+        string? fromSubject = null;
+        if (f.TryGetProperty("default", out var d))
+        {
+            if (d.ValueKind != JsonValueKind.Object || !TryString(d, "subject", out var subjectField)) return null;
+            fromSubject = subjectField;
+        }
+
+        string? label = null;
+        if (f.TryGetProperty("label", out _))
+        {
+            if (!TryString(f, "label", out var l)) return null;
+            label = l;
+        }
+
+        return new FieldDefinition(name, k, scheme, refType, required, Hidden: false, tier, fromSubject, label, pack);
+    }
+
+    // An optional true/false key; absent means false.
+    private static bool TryFlag(JsonElement obj, string name, out bool value)
+    {
+        value = false;
+        if (!obj.TryGetProperty(name, out var e)) return true;
+        if (e.ValueKind is not (JsonValueKind.True or JsonValueKind.False)) return false;
+        value = e.GetBoolean();
+        return true;
+    }
+
+    // A constraint key may only narrow: absent, or true.
+    private static bool TryNarrowing(JsonElement obj, string name, out bool value)
+    {
+        value = false;
+        if (!obj.TryGetProperty(name, out var e)) return true;
+        if (e.ValueKind != JsonValueKind.True) return false;
+        value = true;
+        return true;
     }
 }
