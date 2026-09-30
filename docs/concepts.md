@@ -98,7 +98,7 @@ Most of what a vault knows about its field of work (which schemes classify a rec
 - **Precedence follows what builds on what, not the order packs were installed.** Where packs label the same thing, the one that builds on the others wins; two packs that do not build on each other and disagree are reported rather than one being preferred silently, and neither label is used (`LabelCatalog.Conflicts`). Fields work the other way: a pack that redeclares a field of a pack it builds on is reported, and the earlier pack's declaration stands (`FieldCatalog.Issues`). To narrow such a field, a pack uses `constrain`.
 - **`local` is kept for what people make in the app.** What people add to a vault themselves is meant to sit in a layer above every pack, so the id `local` (and `oq`, for the engine) cannot name a pack.
 
-Fields declared as written content (`tier: narrative`) are left out of exports by construction, wherever a column would read them from.
+Fields declared as written content (`tier: narrative`) are left out of exports, wherever a column would read them from: the field itself, a year taken from it, the label of its code. `ExportRunner.Run` takes the vault's field definitions (`content.FieldCatalog()`) as a required argument, so an export cannot be run without the guard; `FieldCatalog.Empty` is for a vault that declares no fields.
 
 ## Reading rules
 

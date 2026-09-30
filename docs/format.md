@@ -334,7 +334,7 @@ A second pack that builds on the first can add fields and narrow the first pack'
 - Path: `fields/<pack>/<type>/v<version>.json`; `pack`, `type` and `version` must match it. `type` is the entity type the fields belong to.
 - `fields` (optional) declares fields. A field has a `name`, unique within the file, and a `kind`, one of `text`, `date`, `number`, `coded`, `reference` and `references`.
 - A `coded` field names the `scheme` its values are classified in, and no other kind has one. A `reference` or `references` field names the entity `type` it refers to, and no other kind has one.
-- `tier` is `structured` (the default) or `narrative`. A narrative field is written content: an export leaves a column that would carry it empty and names it in `ExportTable.Withheld` (pass the `FieldCatalog` to `ExportRunner.Run`).
+- `tier` is `structured` (the default) or `narrative`. A narrative field is written content: `ExportRunner.Run` leaves every column that would carry it empty — its text, a year taken from it, the label of its code — and names the column in `ExportTable.Withheld`. Callers pass `content.FieldCatalog()` (required; `FieldCatalog.Empty` for a vault without field definitions).
 - `required` (default `false`) says a value must be entered.
 - `default` (optional) is `{ "subject": "<field>" }`: the host offers, when the record is written, the value of that field of the record's subject. The record keeps the value as entered.
 - `label` (optional) is what people read for the field; [Labels](#labels) can give it per locale.

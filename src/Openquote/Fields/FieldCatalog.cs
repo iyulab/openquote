@@ -30,6 +30,9 @@ public sealed class FieldCatalog
 {
     private readonly Dictionary<string, List<FieldDefinition>> _byType = new(StringComparer.Ordinal);
 
+    /// <summary>A catalog with no field definitions and no packs, for a vault that declares none.</summary>
+    public static FieldCatalog Empty { get; } = new([], []);
+
     /// <summary>Builds the catalog from a vault's field files and pack manifests.</summary>
     public FieldCatalog(IEnumerable<FieldSet> sets, IEnumerable<PackManifest> packs)
     {

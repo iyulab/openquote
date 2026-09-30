@@ -37,15 +37,18 @@ public static class ExportRunner
     /// Lists the <see cref="ExportDefinition.Rows"/> entities whose period field falls from
     /// <paramref name="from"/> to <paramref name="to"/> inclusive. <paramref name="entities"/> is every
     /// entity of the vault, so references (a practitioner, the subjects a record is about) resolve.
-    /// Destroyed entities are not listed. When <paramref name="fields"/> is given, a column that would carry a field
-    /// declared as written content is left empty and named in <see cref="ExportTable.Withheld"/>.
+    /// Destroyed entities are not listed. A column that would carry a field <paramref name="fields"/> declares as written
+    /// content, in any form — the field's own text, a year taken from it, the label of its code — is left empty and named in
+    /// <see cref="ExportTable.Withheld"/>. Pass the vault's field definitions; <see cref="FieldCatalog.Empty"/> is for a vault
+    /// that declares none.
     /// </summary>
     public static ExportTable Run(ExportDefinition export, DateOnly from, DateOnly to, IEnumerable<Entity> entities, SchemeCatalog catalog,
-        FieldCatalog? fields = null)
+        FieldCatalog fields)
     {
         ArgumentNullException.ThrowIfNull(export);
         ArgumentNullException.ThrowIfNull(entities);
         ArgumentNullException.ThrowIfNull(catalog);
+        ArgumentNullException.ThrowIfNull(fields);
         if (to < from) throw new ArgumentException("the period ends before it starts", nameof(to));
 
         var all = entities.Where(e => !e.Destroyed).ToList();
@@ -74,7 +77,7 @@ public static class ExportRunner
     }
 
     private sealed record CellContext(
-        Dictionary<string, Entity> ById, SchemeCatalog Catalog, FieldCatalog? Fields,
+        Dictionary<string, Entity> ById, SchemeCatalog Catalog, FieldCatalog Fields,
         SortedSet<string> Pending, SortedSet<string> Unmapped, HashSet<ExportColumn> Withheld);
 
     private static string Cell(ExportColumn column, Entity record, CellContext x) => column switch
@@ -90,17 +93,18 @@ public static class ExportRunner
                 .Select(s => x.ById.TryGetValue(s, out var subject) ? Guarded(x, column, subject, p.Field, () => Text(subject, p.Field)) : "")
                 .Where(t => t.Length > 0))
             : "",
-        YearColumn y => record.Fields.TryGetValue(y.Field, out var v) && ParseDate(v) is { } date
-            ? (date.Month >= y.StartMonth ? date.Year : date.Year - 1).ToString(CultureInfo.InvariantCulture)
-            : "",
-        CodedColumn c => Coded(c, record, x.Catalog, x.Pending, x.Unmapped),
+        YearColumn y => Guarded(x, column, record, y.Field, () =>
+            record.Fields.TryGetValue(y.Field, out var v) && ParseDate(v) is { } date
+                ? (date.Month >= y.StartMonth ? date.Year : date.Year - 1).ToString(CultureInfo.InvariantCulture)
+                : ""),
+        CodedColumn c => Guarded(x, column, record, c.Field, () => Coded(c, record, x.Catalog, x.Pending, x.Unmapped)),
         _ => throw new NotSupportedException(column.GetType().Name),
     };
 
     // A field declared as written content never reaches a cell: the cell stays empty and the column is named.
     private static string Guarded(CellContext x, ExportColumn column, Entity entity, string field, Func<string> value)
     {
-        if (x.Fields?.IsNarrative(entity.Reference.Type, field) != true) return value();
+        if (!x.Fields.IsNarrative(entity.Reference.Type, field)) return value();
         x.Withheld.Add(column);
         return "";
     }

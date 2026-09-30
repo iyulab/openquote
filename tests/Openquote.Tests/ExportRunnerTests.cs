@@ -68,7 +68,7 @@ public class ExportRunnerTests
             new ReferenceColumn("by", "practitioner", "name"),
             new FieldColumn("title", "title"));
 
-        var table = ExportRunner.Run(form, new DateOnly(2026, 2, 1), new DateOnly(2026, 3, 31), v.Entities, Catalog);
+        var table = ExportRunner.Run(form, new DateOnly(2026, 2, 1), new DateOnly(2026, 3, 31), v.Entities, Catalog, FieldCatalog.Empty);
 
         Assert.Collection(table.Rows,
             r => Assert.Equal(["2026-02-20", "2025", "B", "B", "1", "3", "two", "counsellor", ""], r.Cells),
@@ -84,7 +84,7 @@ public class ExportRunnerTests
         var v = Build();
         var form = Form(new FieldColumn("date", "date"), new CodedColumn("kind", "kind", "kind", 2, Top: false));
 
-        var table = ExportRunner.Run(form, new DateOnly(2026, 2, 1), new DateOnly(2026, 3, 31), v.Entities, Catalog);
+        var table = ExportRunner.Run(form, new DateOnly(2026, 2, 1), new DateOnly(2026, 3, 31), v.Entities, Catalog, FieldCatalog.Empty);
 
         Assert.Equal(["", "A2", ""], table.Rows.Select(r => r.Cells[1]));
         Assert.Single(table.Pending);   // b → p or q
@@ -95,7 +95,7 @@ public class ExportRunnerTests
     public void Only_the_period_is_listed()
     {
         var v = Build();
-        var table = ExportRunner.Run(Form(new FieldColumn("date", "date")), new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), v.Entities, Catalog);
+        var table = ExportRunner.Run(Form(new FieldColumn("date", "date")), new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), v.Entities, Catalog, FieldCatalog.Empty);
 
         Assert.Equal(["2026-03-02", "2026-03-05"], table.Rows.Select(r => r.Cells[0]));
     }
@@ -160,9 +160,51 @@ public class ExportRunnerTests
     public void Without_field_definitions_nothing_is_withheld()
     {
         var v = Build();
-        var table = ExportRunner.Run(Form(new FieldColumn("title", "title")), new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), v.Entities, Catalog);
+        var table = ExportRunner.Run(Form(new FieldColumn("title", "title")), new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), v.Entities, Catalog, FieldCatalog.Empty);
 
         Assert.Empty(table.Withheld);
         Assert.Contains(table.Rows, r => r.Cells[0] == "first");
+    }
+
+    [Fact]
+    public void A_date_or_coded_value_declared_as_written_content_does_not_leak_through_a_year_or_a_code()
+    {
+        var v = Build();
+        var form = Form(
+            new YearColumn("year", "date", 3),                       // a narrative date would show its year
+            new CodedColumn("item", "kind", "kind", 1, Top: false)); // a narrative coded field would show its label
+
+        var table = ExportRunner.Run(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), v.Entities, Catalog,
+            Narrative(("session", "date"), ("session", "kind")));
+
+        Assert.NotEmpty(table.Rows);
+        Assert.All(table.Rows, r => Assert.Equal(["", ""], r.Cells));
+        Assert.Equal(["year", "item"], table.Withheld);
+    }
+
+    [Fact]
+    public void A_column_over_a_field_that_is_not_written_content_keeps_its_value_when_a_catalog_is_given()
+    {
+        var v = Build();
+        var form = Form(
+            new FieldColumn("date", "date"),
+            new YearColumn("year", "date", 3),
+            new CodedColumn("item", "kind", "kind", 1, Top: false),
+            new FieldColumn("title", "title"));
+
+        var table = ExportRunner.Run(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), v.Entities, Catalog, Narrative(("session", "title")));
+
+        Assert.Equal(["2026-03-02", "2026-03-05"], table.Rows.Select(r => r.Cells[0]));
+        Assert.All(table.Rows, r => Assert.NotEmpty(r.Cells[1]));
+        Assert.All(table.Rows, r => Assert.NotEmpty(r.Cells[2]));
+        Assert.Equal(["title"], table.Withheld);
+    }
+
+    [Fact]
+    public void The_field_definitions_are_required_so_the_guard_cannot_be_forgotten()
+    {
+        var v = Build();
+        Assert.Throws<ArgumentNullException>(() =>
+            ExportRunner.Run(Form(new FieldColumn("date", "date")), new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), v.Entities, Catalog, null!));
     }
 }
