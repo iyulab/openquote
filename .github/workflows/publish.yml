@@ -27,9 +27,9 @@ jobs:
         run: |
           case "$GITHUB_REF" in refs/tags/v*) ;; *) echo "run this on a version tag, not $GITHUB_REF"; exit 1;; esac
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v5
+      - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
 
