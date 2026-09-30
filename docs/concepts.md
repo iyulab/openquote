@@ -76,6 +76,56 @@ Each run can be kept as a **run record**. A run record is never edited; running 
 
 Because every number keeps its evidence, two runs of the same form can be compared record by record (`ReportDiff`): records entered late, records removed or destroyed since, records moved by a scheme revision, records moved for another reason, and records unchanged.
 
+### One pass: run, settle, run again, compare
+
+A run's `Cells` hold the records behind each number, `Pending` and `Unmapped` the records in no cell, and `PeopleOf` the distinct subjects behind any of them. A pending record is settled by a person choosing one of the candidates `Entity.Classify` lists; the next run counts it where it was placed, and comparing with the kept run shows it as moved rather than entered late:
+
+```csharp
+using Openquote.Classification;
+using Openquote.Records;
+using Openquote.Reports;
+using Openquote.Vault;
+
+// Every write is a new file; this host keeps the vault in plaintext.
+void Save(VaultFile file)
+{
+    var path = Path.Combine(vault, file.Path);
+    Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+    File.WriteAllBytes(path, file.Content.ToArray());
+}
+
+var content = VaultReader.Read(VaultFiles.FromDirectory(vault));
+var records = EntityMerger.Merge(content.Changes);
+var catalog = content.Catalog();
+var form = content.Reports.Single(r => r.Name == "monthly-topic" && r.Version == 2);
+var writer = new VaultWriter("desk01");
+
+// 1. Run the form for April and keep the run.
+var before = ReportRunner.RunMonth(form, 2026, 4, records.Values, catalog);
+foreach (var cell in before.Cells)
+    Console.WriteLine($"{cell.Row} / {cell.Column}: {cell.Count} records, {before.PeopleOf(cell.Records)?.Count} people");
+Console.WriteLine($"pending {before.Pending.Count}, unmapped {before.Unmapped.Count}, total {before.Total.Count}");
+Save(writer.RunRecord(before));
+
+// 2. A person settles each pending record by choosing one of its candidates.
+foreach (var id in before.Pending)
+{
+    var record = records[new EntityRef(form.Counts, id)];
+    var waiting = record.Classify(form.RowField, form.RowScheme, form.RowVersion, catalog);
+    var chosen = waiting.Candidates[0]; // in an application, the person's choice
+    Save(writer.Reclassify(record, form.RowField, new CodedValue(form.RowScheme, form.RowVersion, chosen), catalog));
+}
+
+// 3. Read the vault again, run again, and explain the difference from the kept run.
+content = VaultReader.Read(VaultFiles.FromDirectory(vault));
+var after = ReportRunner.RunMonth(form, 2026, 4, EntityMerger.Merge(content.Changes).Values, content.Catalog());
+var kept = content.Runs.Single().Run;
+var diff = ReportDiff.Compare(kept, after, content.Catalog());
+Console.WriteLine($"moved by a person {diff.Moved.Count}, entered late {diff.Late.Count}, unchanged {diff.Unchanged.Count}");
+```
+
+`Reclassify` refuses a code that is not one of the candidates, and a record that is not pending in that version: a change file cannot be taken back, so a wrong choice is stopped before it is written.
+
 ## Export forms
 
 An **export form** lays out one period's records as rows for another system or spreadsheet: one row per record of a given entity type, ordered by date and then by record id. Each column takes its cells from one source:

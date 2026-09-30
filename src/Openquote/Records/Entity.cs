@@ -31,7 +31,7 @@ public sealed class Entity
 
     /// <summary>
     /// The subject whose folder holds this entity: its own id for a subject, the subject it was
-    /// recorded under for a case or a session, and null for a practitioner. Moving a subject's
+    /// recorded under for any record kept in that folder, and null otherwise. Moving a subject's
     /// folder moves everything recorded under it.
     /// </summary>
     public string? Subject
@@ -45,7 +45,7 @@ public sealed class Entity
 
     /// <summary>
     /// The group whose folder holds this entity: its own id for a group, the group it was recorded
-    /// under for a case or a session, and null otherwise. A session held by a group names the
+    /// under for any record kept in that folder, and null otherwise. A session held by a group names the
     /// subjects who took part in its <c>attendees</c> field.
     /// </summary>
     public string? Group
