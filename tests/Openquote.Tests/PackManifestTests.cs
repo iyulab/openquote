@@ -51,4 +51,14 @@ public class PackManifestTests
     [InlineData(".care", false)]
     public void Pack_ids_are_lowercase_dotted_words(string id, bool valid) =>
         Assert.Equal(valid, Openquote.Packs.PackManifest.IsId(id));
+
+    [Theory]
+    [InlineData("packs/Care/v1.json", "Care", UnreadableReason.Invalid)]         // not a pack id: reported, not ignored
+    [InlineData("packs/Care/v1.json", "care", UnreadableReason.NameMismatch)]
+    [InlineData("packs/care_school/v1.json", "care", UnreadableReason.NameMismatch)]
+    public void A_manifest_under_a_folder_that_is_not_a_pack_id_is_reported(string path, string pack, UnreadableReason reason)
+    {
+        var json = $$"""{ "format": "openquote.pack/0", "pack": "{{pack}}", "version": 1, "label": "L", "provides": [] }""";
+        Assert.Equal(reason, Assert.Single(VaultReader.Read([File(path, json)]).Unreadable).Reason);
+    }
 }

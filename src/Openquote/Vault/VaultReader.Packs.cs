@@ -9,10 +9,19 @@ namespace Openquote.Vault;
 
 public static partial class VaultReader
 {
-    private const string PackIdPattern = @"[a-z0-9]+(?:[.-][a-z0-9]+)*";
-
-    [GeneratedRegex(@"^packs/(?<id>" + PackIdPattern + @")/v(?<version>[1-9][0-9]*)\.json$")]
+    // The path patterns take any folder name, like every other definition's: what a name may be is checked by the parsers,
+    // so a file under a name that cannot be valid is reported rather than silently ignored.
+    [GeneratedRegex(@"^packs/(?<id>[^/]+)/v(?<version>[1-9][0-9]*)\.json$")]
     private static partial Regex PackPath();
+
+    [GeneratedRegex(@"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")]
+    private static partial Regex LocaleShape();
+
+    // Why a pack id in a label or field file cannot be used, or null.
+    private static string? PackIdProblem(string id) =>
+        !PackManifest.IsId(id) ? $"{id} is not a pack id"
+        : PackManifest.IsReserved(id) ? $"{id} is kept for the vault itself"
+        : null;
 
     private static Definition<PackManifest> ParsePack(VaultFile file)
     {
@@ -54,7 +63,7 @@ public static partial class VaultReader
         return new(new PackManifest(id, version, label, depends, provides), null);
     }
 
-    [GeneratedRegex(@"^labels/(?<pack>" + PackIdPattern + @")/v(?<version>[1-9][0-9]*)\.(?<locale>[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*)\.json$")]
+    [GeneratedRegex(@"^labels/(?<pack>[^/]+)/v(?<version>[1-9][0-9]*)\.(?<locale>[^/]+)\.json$")]
     private static partial Regex LabelsPath();
 
     private static Definition<LabelSet> ParseLabels(VaultFile file)
@@ -65,6 +74,9 @@ public static partial class VaultReader
         if (!TryString(root, "pack", out var pack) || !TryInt(root, "version", out var version) || version < 1
             || !TryString(root, "locale", out var locale))
             return Bad<LabelSet>(file, UnreadableReason.Invalid, "labels need a pack, a version of 1 or more and a locale");
+        if (PackIdProblem(pack) is { } packProblem) return Bad<LabelSet>(file, UnreadableReason.Invalid, packProblem);
+        if (!LocaleShape().IsMatch(locale))
+            return Bad<LabelSet>(file, UnreadableReason.Invalid, $"{locale} is not a language tag such as fr or en-US");
         if (pack != path.Groups["pack"].Value || version.ToString(CultureInfo.InvariantCulture) != path.Groups["version"].Value
             || locale != path.Groups["locale"].Value)
             return Bad<LabelSet>(file, UnreadableReason.NameMismatch, $"the path should be labels/{pack}/v{version}.{locale}.json");
@@ -114,7 +126,7 @@ public static partial class VaultReader
         return new(new LabelSet(pack, version, locale, schemes, fields), null);
     }
 
-    [GeneratedRegex(@"^fields/(?<pack>" + PackIdPattern + @")/(?<type>[^/]+)/v(?<version>[1-9][0-9]*)\.json$")]
+    [GeneratedRegex(@"^fields/(?<pack>[^/]+)/(?<type>[^/]+)/v(?<version>[1-9][0-9]*)\.json$")]
     private static partial Regex FieldsPath();
 
     private static Definition<FieldSet> ParseFields(VaultFile file)
@@ -125,6 +137,7 @@ public static partial class VaultReader
         if (!TryString(root, "pack", out var pack) || !TryString(root, "type", out var type)
             || !TryInt(root, "version", out var version) || version < 1)
             return Bad<FieldSet>(file, UnreadableReason.Invalid, "field definitions need a pack, an entity type and a version of 1 or more");
+        if (PackIdProblem(pack) is { } packProblem) return Bad<FieldSet>(file, UnreadableReason.Invalid, packProblem);
         if (pack != path.Groups["pack"].Value || type != path.Groups["type"].Value
             || version.ToString(CultureInfo.InvariantCulture) != path.Groups["version"].Value)
             return Bad<FieldSet>(file, UnreadableReason.NameMismatch, $"the path should be fields/{pack}/{type}/v{version}.json");

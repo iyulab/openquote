@@ -151,4 +151,22 @@ public class LabelCatalogTests
 
         Assert.Equal("session.date", Assert.Single(catalog.Conflicts).Target);
     }
+
+    [Theory]
+    [InlineData("labels/region-a/v1.fr_CA.json", "region-a", "fr_CA")]
+    [InlineData("labels/region-a/v1.f.json", "region-a", "f")]
+    [InlineData("labels/Region-A/v1.fr.json", "Region-A", "fr")]
+    [InlineData("labels/local/v1.fr.json", "local", "fr")]   // kept for the vault itself
+    [InlineData("labels/oq/v1.fr.json", "oq", "fr")]
+    public void A_label_file_with_a_pack_or_locale_that_is_not_valid_is_reported(string path, string pack, string locale)
+    {
+        var json = $$"""{ "format": "openquote.labels/0", "pack": "{{pack}}", "version": 1, "locale": "{{locale}}", "schemes": { "care.topic": { "1": { "a": "A" } } } }""";
+        Assert.Equal(UnreadableReason.Invalid, Assert.Single(VaultReader.Read([File(path, json)]).Unreadable).Reason);
+    }
+
+    [Fact]
+    public void A_label_file_with_a_malformed_locale_in_its_path_is_reported_even_when_the_file_says_something_else()
+    {
+        Assert.Equal(UnreadableReason.NameMismatch, Assert.Single(VaultReader.Read([File("labels/region-a/v1.fr_CA.json", RegionLabels)]).Unreadable).Reason);
+    }
 }

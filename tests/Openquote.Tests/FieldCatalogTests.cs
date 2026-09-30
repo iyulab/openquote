@@ -159,4 +159,14 @@ public class FieldCatalogTests
         Assert.Equal([("a", 1)], run(with).Cells.Where(x => x.Records.Count > 0).Select(x => (x.Row, x.Records.Count)));
         Assert.Equal(run(without).Cells.Select(x => (x.Row, x.Records.Count)), run(with).Cells.Select(x => (x.Row, x.Records.Count)));
     }
+
+    [Theory]
+    [InlineData("fields/Care/session/v1.json", "Care")]     // not a pack id: reported, not ignored
+    [InlineData("fields/local/session/v1.json", "local")]   // kept for the vault itself
+    [InlineData("fields/oq/session/v1.json", "oq")]
+    public void A_field_file_of_a_pack_that_cannot_exist_is_reported(string path, string pack)
+    {
+        var json = $$"""{ "format": "openquote.fields/0", "pack": "{{pack}}", "type": "session", "version": 1, "fields": [ { "name": "date", "kind": "date" } ] }""";
+        Assert.Equal(UnreadableReason.Invalid, Assert.Single(VaultReader.Read([File(path, json)]).Unreadable).Reason);
+    }
 }
