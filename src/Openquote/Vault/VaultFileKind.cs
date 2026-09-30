@@ -9,7 +9,7 @@ namespace Openquote.Vault;
 /// </summary>
 /// <param name="Kind">
 /// <c>subject</c>, <c>group</c>, <c>practitioners</c>, <c>devices</c>, <c>scheme</c>, <c>crosswalk</c>,
-/// <c>report</c>, <c>export</c>, <c>pack</c>, <c>run</c> or <c>other</c>.
+/// <c>report</c>, <c>export</c>, <c>pack</c>, <c>labels</c>, <c>run</c> or <c>other</c>.
 /// </param>
 /// <param name="Id">The subject's or group's id.</param>
 /// <param name="Name">The scheme, report form or export form.</param>
@@ -55,6 +55,8 @@ public sealed partial record VaultFileKind(
                 new("export", Name: name, Version: Number("from")),
             ["packs", var name, _] when version.Success && !version.Groups["to"].Success =>
                 new("pack", Name: name, Version: Number("from")),
+            ["labels", var name, _] when version.Success && !version.Groups["to"].Success =>
+                new("labels", Name: name, Version: Number("from")),
             ["runs", var year, _] when year.Length == 4 && year.All(char.IsAsciiDigit) =>
                 new("run", Year: int.Parse(year, CultureInfo.InvariantCulture)),
             _ => new("other"),
