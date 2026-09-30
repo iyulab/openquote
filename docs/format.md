@@ -4,6 +4,8 @@ This document specifies the plaintext layer of an Openquote vault: the folder la
 
 > Status: version 0 is provisional. It may still change before the first release.
 
+Every file kind has a JSON Schema (draft 2020-12) in [schema/](schema/), named after its format (`openquote.<name>/0` is `schema/<name>.schema.json`). A schema checks the shape of one file. Rules that compare a file with its path, with other files, or with other values in it — a name matching its path, codes unique within a version, a run's totals adding up — are checked by the reader only.
+
 ## Plaintext and encryption
 
 The engine is encryption-neutral. It reads and produces plaintext files only; each file is a path relative to the vault root (with `/` separators) and its bytes.

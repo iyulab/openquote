@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/iyulab/openquote/blob/main/docs/schema/fields.schema.json",
+  "title": "Openquote field definitions",
+  "description": "fields/<pack>/<type>/v<version>.json. Field names are unique within the file, and a constraint never names a field the same file declares; a reader checks both.",
+  "type": "object",
+  "required": ["format", "pack", "type", "version"],
+  "properties": {
+    "format": { "const": "openquote.fields/0" },
+    "pack": { "type": "string", "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$", "not": { "enum": ["local", "oq"] } },
+    "type": { "type": "string", "minLength": 1, "pattern": "^[^/]+$" },
+    "version": { "type": "integer", "minimum": 1 },
+    "fields": { "type": "array", "items": { "$ref": "#/$defs/field" } },
+    "constrain": { "type": "array", "items": { "$ref": "#/$defs/constraint" } }
+  },
+  "$defs": {
+    "text": { "type": "string", "minLength": 1 },
+    "field": {
+      "type": "object",
+      "required": ["name", "kind"],
+      "properties": {
+        "name": { "$ref": "#/$defs/text" },
+        "kind": { "enum": ["text", "date", "number", "coded", "reference", "references"] },
+        "scheme": { "$ref": "#/$defs/text" },
+        "type": { "$ref": "#/$defs/text" },
+        "required": { "type": "boolean" },
+        "tier": { "enum": ["structured", "narrative"] },
+        "default": {
+          "type": "object",
+          "required": ["subject"],
+          "properties": { "subject": { "$ref": "#/$defs/text" } }
+        },
+        "label": { "$ref": "#/$defs/text" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "coded" } } },
+          "then": { "required": ["scheme"] },
+          "else": { "not": { "required": ["scheme"] } }
+        },
+        {
+          "if": { "properties": { "kind": { "enum": ["reference", "references"] } } },
+          "then": { "required": ["type"] },
+          "else": { "not": { "required": ["type"] } }
+        }
+      ]
+    },
+    "constraint": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "$ref": "#/$defs/text" },
+        "required": { "const": true },
+        "hidden": { "const": true }
+      },
+      "anyOf": [ { "required": ["required"] }, { "required": ["hidden"] } ]
+    }
+  }
+}

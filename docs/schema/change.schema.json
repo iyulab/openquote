@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/iyulab/openquote/blob/main/docs/schema/change.schema.json",
+  "title": "Openquote change file",
+  "description": "A change to one entity, at practitioners/, devices/, subjects/<subject-id>/ or groups/<group-id>/ as <id>.<device>.json. The id and device must match the file name.",
+  "type": "object",
+  "required": ["format", "id", "device", "at", "entity", "op", "base", "fields"],
+  "properties": {
+    "format": { "const": "openquote.change/0" },
+    "id": { "$ref": "#/$defs/uuid" },
+    "device": { "$ref": "#/$defs/device" },
+    "at": { "$ref": "#/$defs/timestamp" },
+    "entity": {
+      "type": "object",
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "type": "string", "minLength": 1 },
+        "id": { "type": "string", "minLength": 1 }
+      }
+    },
+    "op": { "enum": ["create", "update", "reclassify", "destroy"] },
+    "base": { "type": "array", "items": { "type": "string" } },
+    "fields": { "type": "object" },
+    "source": { "type": "object", "additionalProperties": { "enum": ["manual", "suggestion"] } }
+  },
+  "$defs": {
+    "uuid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" },
+    "device": { "type": "string", "pattern": "^[a-z0-9]{4,16}$" },
+    "timestamp": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}$" }
+  }
+}

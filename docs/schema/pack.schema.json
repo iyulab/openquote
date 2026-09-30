@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/iyulab/openquote/blob/main/docs/schema/pack.schema.json",
+  "title": "Openquote pack manifest",
+  "description": "packs/<pack>/v<version>.json. A pack never depends on itself; a reader checks it.",
+  "type": "object",
+  "required": ["format", "pack", "version", "label", "provides"],
+  "properties": {
+    "format": { "const": "openquote.pack/0" },
+    "pack": { "$ref": "#/$defs/packId", "not": { "enum": ["local", "oq"] } },
+    "version": { "type": "integer", "minimum": 1 },
+    "label": { "type": "string", "minLength": 1 },
+    "depends": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/packId" },
+      "additionalProperties": { "type": "integer", "minimum": 1 }
+    },
+    "provides": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/definitionPath" }
+    }
+  },
+  "$defs": {
+    "packId": { "type": "string", "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$" },
+    "definitionPath": {
+      "type": "string",
+      "pattern": "^(?:schemes/[^/]+/v[1-9][0-9]*(?:-v[1-9][0-9]*)?|reports/[^/]+/v[1-9][0-9]*|exports/[^/]+/v[1-9][0-9]*|labels/[^/]+/v[1-9][0-9]*\\.[^/]+|fields/[^/]+/[^/]+/v[1-9][0-9]*)\\.json$"
+    }
+  }
+}

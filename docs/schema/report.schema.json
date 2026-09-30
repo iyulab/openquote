@@ -1,0 +1,37 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/iyulab/openquote/blob/main/docs/schema/report.schema.json",
+  "title": "Openquote report form",
+  "description": "reports/<report>/v<version>.json.",
+  "type": "object",
+  "required": ["format", "report", "version", "label", "counts", "period", "rows"],
+  "properties": {
+    "format": { "const": "openquote.report/0" },
+    "report": { "type": "string", "minLength": 1, "pattern": "^[^/]+$" },
+    "version": { "type": "integer", "minimum": 1 },
+    "label": { "type": "string", "minLength": 1 },
+    "counts": { "type": "string", "minLength": 1 },
+    "period": {
+      "type": "object",
+      "required": ["unit", "field"],
+      "properties": {
+        "unit": { "const": "month" },
+        "field": { "type": "string", "minLength": 1 }
+      }
+    },
+    "rows": {
+      "type": "object",
+      "required": ["field", "scheme", "version"],
+      "properties": {
+        "field": { "type": "string", "minLength": 1 },
+        "scheme": { "type": "string", "minLength": 1 },
+        "version": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "columns": {
+      "type": "object",
+      "required": ["field"],
+      "properties": { "field": { "type": "string", "minLength": 1 } }
+    }
+  }
+}

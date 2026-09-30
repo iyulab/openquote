@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/iyulab/openquote/blob/main/docs/schema/vault.schema.json",
+  "title": "Openquote vault declaration",
+  "description": "vault.json at the vault root. The engine reads only format; encryption is written and read by the host.",
+  "type": "object",
+  "required": ["format"],
+  "properties": {
+    "format": { "const": "openquote.vault/0" },
+    "encryption": { "enum": ["age", "none"] }
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/iyulab/openquote/blob/main/docs/schema/crosswalk.schema.json",
+  "title": "Openquote crosswalk",
+  "description": "schemes/<scheme>/v<from>-v<to>.json. The target version must be greater than the source version; a reader checks it.",
+  "type": "object",
+  "required": ["format", "scheme", "from", "to", "links"],
+  "properties": {
+    "format": { "const": "openquote.crosswalk/0" },
+    "scheme": { "type": "string", "minLength": 1, "pattern": "^[^/]+$" },
+    "from": { "type": "integer", "minimum": 1 },
+    "to": { "type": "integer", "minimum": 2 },
+    "links": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "prefixItems": [ { "type": "string" }, { "type": "string" } ],
+        "minItems": 2,
+        "maxItems": 2
+      }
+    }
+  }
+}

@@ -10,11 +10,24 @@
   <ItemGroup>
     <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Corvus.Text.Json.Validator" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\docs\schema\*.schema.json" LinkBase="schema" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\docs\format.md" Link="format.md" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>
+
+  <!-- The validator's runtime library ships analyzers for its own JSON API; they do not apply to this project's code. -->
+  <Target Name="RemoveValidatorAnalyzers" AfterTargets="ResolveLockFileAnalyzers">
+    <ItemGroup>
+      <Analyzer Remove="@(Analyzer)" Condition="'%(Analyzer.NuGetPackageId)' == 'Corvus.Text.Json'" />
+    </ItemGroup>
+  </Target>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Openquote\Openquote.csproj" />
