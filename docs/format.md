@@ -298,7 +298,7 @@ Reading never stops on these; a host decides what to do with the list.
 - Path: `labels/<pack>/v<version>.<locale>.json`; `pack`, `version` and `locale` must match it. `locale` is a language tag such as `fr` or `en-US`.
 - `schemes` (optional) maps a scheme name to a scheme version to item codes to labels. `fields` (optional) maps an entity type to field names to labels. Every label is non-empty text.
 - Labels change what people read, never a code or what is counted, so a renamed item needs no new scheme version.
-- When several packs label the same thing in one locale, the pack that builds on all the others wins. Two packs that do not build on each other and give different labels are a conflict (`LabelCatalog.Conflicts`), and neither label is used for that locale. The same text from several packs is not a conflict.
+- When several packs label the same thing in one locale, a pack that another of them builds on is set aside, so the pack that builds on the others wins. If several packs are left, none building on another, they agree when they give the same text (for example two packs that each build on a third and relabel alike); when they give different labels it is a conflict (`LabelCatalog.Conflicts`), and none of their labels is used for that locale.
 - A host asks for labels by a list of locales in order of preference (`LabelCatalog.SchemeLabel`, `FieldLabel`). Each locale falls back to its language alone (`fr-CA`, then `fr`), and tags are compared without regard to case; if no locale gives a label, the answer is `null` and the host shows the scheme item's own `label`. Of several versions of a pack's labels in one locale, the highest counts.
 
 ## Field definitions

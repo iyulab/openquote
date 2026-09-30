@@ -92,4 +92,63 @@ public class LabelCatalogTests
 
         Assert.Equal("sommeil profond", new LabelCatalog([older, newer], [Pack("region-a")]).SchemeLabel("care.topic", 1, "sleep", ["fr"]));
     }
+
+    [Fact]
+    public void Packs_that_build_on_the_same_pack_and_agree_settle_it_even_though_neither_builds_on_the_other()
+    {
+        var catalog = new LabelCatalog(
+            [Set("base", "fr", "sleep", "x"), Set("org.a", "fr", "sleep", "y"), Set("org.b", "fr", "sleep", "y")],
+            [Pack("base"), Pack("org.a", "base"), Pack("org.b", "base")]);
+
+        Assert.Equal("y", catalog.SchemeLabel("care.topic", 1, "sleep", ["fr"]));
+        Assert.Empty(catalog.Conflicts);
+    }
+
+    [Fact]
+    public void Packs_that_build_on_the_same_pack_and_disagree_are_a_conflict_even_though_the_base_differs_from_both()
+    {
+        var catalog = new LabelCatalog(
+            [Set("base", "fr", "sleep", "x"), Set("org.a", "fr", "sleep", "y"), Set("org.b", "fr", "sleep", "z")],
+            [Pack("base"), Pack("org.a", "base"), Pack("org.b", "base")]);
+
+        Assert.Null(catalog.SchemeLabel("care.topic", 1, "sleep", ["fr"]));
+        Assert.Equal("care.topic v1 sleep", Assert.Single(catalog.Conflicts).Target);
+    }
+
+    [Fact]
+    public void Precedence_follows_a_chain_of_packs_that_build_on_each_other()
+    {
+        var catalog = new LabelCatalog(
+            [Set("a", "fr", "sleep", "one"), Set("b", "fr", "sleep", "two"), Set("c", "fr", "sleep", "three")],
+            [Pack("a"), Pack("b", "a"), Pack("c", "b")]);
+
+        Assert.Equal("three", catalog.SchemeLabel("care.topic", 1, "sleep", ["fr"]));
+        Assert.Empty(catalog.Conflicts);
+    }
+
+    [Fact]
+    public void Names_that_render_alike_are_still_different_things()
+    {
+        LabelSet Field(string pack, string type, string field, string text) =>
+            new(pack, 1, "fr", new Dictionary<SchemeLabelKey, string>(), new Dictionary<FieldLabelKey, string> { [new(type, field)] = text });
+
+        var catalog = new LabelCatalog(
+            [Field("org.a", "a.b", "c", "one"), Field("org.b", "a", "b.c", "two")],
+            [Pack("org.a"), Pack("org.b")]);
+
+        Assert.Empty(catalog.Conflicts);
+        Assert.Equal("one", catalog.FieldLabel("a.b", "c", ["fr"]));
+        Assert.Equal("two", catalog.FieldLabel("a", "b.c", ["fr"]));
+    }
+
+    [Fact]
+    public void A_field_label_conflict_names_the_type_and_the_field()
+    {
+        LabelSet Field(string pack, string text) =>
+            new(pack, 1, "fr", new Dictionary<SchemeLabelKey, string>(), new Dictionary<FieldLabelKey, string> { [new("session", "date")] = text });
+
+        var catalog = new LabelCatalog([Field("org.a", "jour"), Field("org.b", "date")], [Pack("org.a"), Pack("org.b")]);
+
+        Assert.Equal("session.date", Assert.Single(catalog.Conflicts).Target);
+    }
 }

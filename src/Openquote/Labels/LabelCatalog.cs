@@ -6,9 +6,9 @@ namespace Openquote.Labels;
 public sealed record LabelConflict(string Locale, string Target, IReadOnlyList<string> Packs);
 
 /// <summary>
-/// The labels a vault's packs give, resolved per locale. Among packs labelling the same thing, the pack
-/// that builds on all the others wins; packs that do not build on each other and disagree are a
-/// <see cref="LabelConflict"/>, and neither label is used for that locale.
+/// The labels a vault's packs give, resolved per locale. Among packs labelling the same thing, a pack that
+/// another of them builds on is set aside; when the packs left give one text it wins, and when they
+/// disagree it is a <see cref="LabelConflict"/> and none of their labels is used for that locale.
 /// </summary>
 public sealed class LabelCatalog
 {
@@ -59,13 +59,14 @@ public sealed class LabelCatalog
         return null;
     }
 
-    // The text of the pack that builds on every other pack offering one; the same text from several packs needs no winner.
+    // Packs that build on an offerer take its place, so only the maximal offerers — those no other offerer builds on —
+    // decide; when they all give the same text, that text wins, otherwise there is no winner.
     private string? Winner(List<(string Pack, string Text)> found)
     {
-        if (found.Select(f => f.Text).Distinct(StringComparer.Ordinal).Count() == 1) return found[0].Text;
-        foreach (var (pack, text) in found)
-            if (found.All(o => o.Pack == pack || _graph.DependsOn(pack, o.Pack))) return text;
-        return null;
+        var maximal = found.Where(f => !found.Any(o => o.Pack != f.Pack && _graph.DependsOn(o.Pack, f.Pack))).ToList();
+        if (maximal.Count == 0) maximal = found; // packs caught in a cycle: PackCheck reports it, nothing builds on nothing
+        var texts = maximal.Select(m => m.Text).Distinct(StringComparer.Ordinal).ToList();
+        return texts.Count == 1 ? texts[0] : null;
     }
 
     // Each locale asked for, then its language alone: ko-KR, ko, en-US, en.
@@ -86,17 +87,23 @@ public sealed class LabelCatalog
         foreach (var group in _sets.GroupBy(s => s.Locale.ToLowerInvariant()).OrderBy(g => g.Key, StringComparer.Ordinal))
         {
             var targets = group
-                .SelectMany(s => s.Schemes.Select(p => ($"{p.Key.Scheme} v{p.Key.Version} {p.Key.Code}", s.Pack, p.Value))
-                    .Concat(s.Fields.Select(p => ($"{p.Key.Type}.{p.Key.Field}", s.Pack, p.Value))))
-                .GroupBy(t => t.Item1, StringComparer.Ordinal)
-                .OrderBy(g => g.Key, StringComparer.Ordinal);
+                .SelectMany(s => s.Schemes.Select(p => (Target: new LabelTarget(p.Key, null), s.Pack, Text: p.Value))
+                    .Concat(s.Fields.Select(p => (Target: new LabelTarget(null, p.Key), s.Pack, Text: p.Value))))
+                .GroupBy(t => t.Target)
+                .OrderBy(g => g.Key.Render(), StringComparer.Ordinal);
             foreach (var target in targets)
             {
-                var found = target.Select(t => (t.Pack, Text: t.Value)).ToList();
+                var found = target.Select(t => (t.Pack, t.Text)).ToList();
                 if (found.Count > 1 && Winner(found) is null)
-                    conflicts.Add(new(group.First().Locale, target.Key, [.. found.Select(f => f.Pack).Order(StringComparer.Ordinal)]));
+                    conflicts.Add(new(group.First().Locale, target.Key.Render(), [.. found.Select(f => f.Pack).Order(StringComparer.Ordinal)]));
             }
         }
         return conflicts;
     }
+}
+
+// What a label names: a scheme item or a field, compared by its parts and written out only for a report.
+internal readonly record struct LabelTarget(SchemeLabelKey? Scheme, FieldLabelKey? Field)
+{
+    public string Render() => Scheme is { } s ? $"{s.Scheme} v{s.Version} {s.Code}" : $"{Field!.Value.Type}.{Field.Value.Field}";
 }
