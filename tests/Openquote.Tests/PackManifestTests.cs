@@ -34,7 +34,7 @@ public class PackManifestTests
     [Theory]
     [InlineData("""{ "format": "openquote.pack/0", "pack": "local", "version": 1, "label": "L", "provides": [] }""", "packs/local/v1.json")]
     [InlineData("""{ "format": "openquote.pack/0", "pack": "care", "version": 1, "label": "C", "depends": { "care": 1 }, "provides": [] }""", "packs/care/v1.json")]
-    [InlineData("""{ "format": "openquote.pack/0", "pack": "care", "version": 1, "label": "C", "depends": { "kr": 0 }, "provides": [] }""", "packs/care/v1.json")]
+    [InlineData("""{ "format": "openquote.pack/0", "pack": "care", "version": 1, "label": "C", "depends": { "region-a": 0 }, "provides": [] }""", "packs/care/v1.json")]
     [InlineData("""{ "format": "openquote.pack/0", "pack": "care", "version": 1, "label": "C", "provides": [ "subjects/s1/x.json" ] }""", "packs/care/v1.json")]
     [InlineData("""{ "format": "openquote.pack/0", "pack": "care", "version": 1, "label": "C" }""", "packs/care/v1.json")]
     public void An_invalid_manifest_is_reported(string json, string path)
@@ -44,7 +44,7 @@ public class PackManifestTests
 
     [Theory]
     [InlineData("care", true)]
-    [InlineData("care.school.kr", true)]
+    [InlineData("care.school.region-a", true)]
     [InlineData("org-x.y2", true)]
     [InlineData("Care", false)]
     [InlineData("care..school", false)]

@@ -19,7 +19,7 @@ public class VaultFileKindTests
         { "exports/session-list/v3.json", new("export", Name: "session-list", Version: 3) },
         { "runs/2026/0190.dev1.json", new("run", Year: 2026) },
         { "packs/care.school/v2.json", new("pack", Name: "care.school", Version: 2) },
-        { "labels/kr/v1.ko.json", new("labels", Name: "kr", Version: 1) },
+        { "labels/region-a/v1.fr.json", new("labels", Name: "region-a", Version: 1) },
         { "fields/care/session/v1.json", new("fields", Name: "care", Version: 1, Type: "session") },
         { "vault.json", new("other") },
         { "packs/care.school/latest.json", new("other") },

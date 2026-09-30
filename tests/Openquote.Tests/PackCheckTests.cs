@@ -11,15 +11,15 @@ public class PackCheckTests
     public void Orders_packs_after_the_packs_they_build_on()
     {
         var graph = new PackGraph([
-            Pack("care.school.kr", 1, new() { ["care.school"] = 1, ["kr"] = 1 }),
-            Pack("kr", 1, new() { ["care"] = 1 }),
+            Pack("care.school.region-a", 1, new() { ["care.school"] = 1, ["region-a"] = 1 }),
+            Pack("region-a", 1, new() { ["care"] = 1 }),
             Pack("care.school", 1, new() { ["care"] = 1 }),
             Pack("care", 1),
         ]);
 
-        Assert.Equal(["care", "care.school", "kr", "care.school.kr"], graph.Order());
-        Assert.True(graph.DependsOn("care.school.kr", "care"));   // through care.school
-        Assert.False(graph.DependsOn("kr", "care.school"));
+        Assert.Equal(["care", "care.school", "region-a", "care.school.region-a"], graph.Order());
+        Assert.True(graph.DependsOn("care.school.region-a", "care"));   // through care.school
+        Assert.False(graph.DependsOn("region-a", "care.school"));
     }
 
     [Fact]
@@ -47,7 +47,7 @@ public class PackCheckTests
         PackManifest[] packs =
         [
             Pack("care", 1, null, "schemes/care.method/v1.json"),
-            Pack("care.school", 1, new() { ["care"] = 2, ["kr"] = 1 }, "schemes/care.method/v1.json", "schemes/school-level/v1.json"),
+            Pack("care.school", 1, new() { ["care"] = 2, ["region-a"] = 1 }, "schemes/care.method/v1.json", "schemes/school-level/v1.json"),
         ];
 
         var issues = PackCheck.Check(packs, ["schemes/care.method/v1.json"]);

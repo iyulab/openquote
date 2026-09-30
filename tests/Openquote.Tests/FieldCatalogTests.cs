@@ -48,7 +48,7 @@ public class FieldCatalogTests
     [Theory]
     [InlineData("fields/care/session/v2.json")]
     [InlineData("fields/care/subject/v1.json")]
-    [InlineData("fields/kr/session/v1.json")]
+    [InlineData("fields/region-a/session/v1.json")]
     [InlineData("fields/care/session/v1.json-LAPTOP")]
     public void A_field_file_in_the_wrong_place_is_reported(string path)
     {
@@ -144,7 +144,7 @@ public class FieldCatalogTests
         VaultFile[] layers =
         [
             File("packs/care/v1.json", """{ "format": "openquote.pack/0", "pack": "care", "version": 1, "label": "Care", "provides": [] }"""),
-            File("labels/care/v1.ko.json", """{ "format": "openquote.labels/0", "pack": "care", "version": 1, "locale": "ko", "schemes": { "kind": { "1": { "a": "가" } } } }"""),
+            File("labels/care/v1.fr.json", """{ "format": "openquote.labels/0", "pack": "care", "version": 1, "locale": "fr", "schemes": { "kind": { "1": { "a": "un" } } } }"""),
             File("fields/care/session/v1.json", CareSession),
         ];
 
