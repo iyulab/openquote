@@ -67,6 +67,11 @@ public static partial class VaultReader
 
         if (!TrySet(root, "pending", out var pending) || !TrySet(root, "unmapped", out var unmapped) || !TrySet(root, "total", out var total))
             return Bad<KeptRun>(file, UnreadableReason.Invalid, "pending, unmapped and total each list their records");
+        IReadOnlyList<string> blank = [];
+        if (root.TryGetProperty("blank", out _) && !TrySet(root, "blank", out blank))
+            return Bad<KeptRun>(file, UnreadableReason.Invalid, "blank lists its records");
+        if (!blank.ToHashSet(StringComparer.Ordinal).IsSubsetOf(unmapped))
+            return Bad<KeptRun>(file, UnreadableReason.Invalid, "every blank record is also unmapped");
 
         Dictionary<string, IReadOnlyList<string>>? people = null;
         if (root.TryGetProperty("people", out var peopleJson))
@@ -82,7 +87,7 @@ public static partial class VaultReader
             }
         }
 
-        var run = new ReportRun(report, from, to, crosswalks, cells, pending, unmapped, people);
+        var run = new ReportRun(report, from, to, crosswalks, cells, pending, unmapped, blank, people);
         if (!run.Total.SequenceEqual(total.Order(StringComparer.Ordinal), StringComparer.Ordinal))
             return Bad<KeptRun>(file, UnreadableReason.Invalid, "the total is not the cells plus pending plus unmapped");
         if (people is not null && !people.Keys.Order(StringComparer.Ordinal).SequenceEqual(run.Total, StringComparer.Ordinal))

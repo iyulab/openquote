@@ -136,6 +136,18 @@ public sealed class Entity
         var setters = Changes.Where(c => c.Fields.TryGetValue(field, out var v) && accept(v)).ToList();
         return setters.Count == 0 ? null : _graph.Heads(setters)[^1].Fields[field];
     }
+
+    /// <summary>
+    /// Whether <paramref name="field"/> holds a value now: it has been set and not cleared. A record
+    /// without one is <em>blank</em> in that field — a report run lists it in
+    /// <see cref="Reports.ReportRun.Blank"/> and an export leaves its cell empty.
+    /// </summary>
+    public bool HasValue(string field)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+        return Fields.TryGetValue(field, out var current) && current.ValueKind != JsonValueKind.Null;
+    }
+
     /// <summary>
     /// Where this entity's <paramref name="field"/> lands in <paramref name="version"/> of
     /// <paramref name="scheme"/>: its most recent value entered in that scheme at that version or

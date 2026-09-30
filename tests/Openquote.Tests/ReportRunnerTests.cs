@@ -111,13 +111,43 @@ public class ReportRunnerTests
     }
 
     [Fact]
-    public void A_record_without_a_value_for_the_row_is_unmapped_not_dropped()
+    public void A_record_without_a_value_for_the_row_is_unmapped_and_listed_as_blank_not_dropped()
     {
-        var blank = Json(904, "i1", "create", entityType: "item", fields: new JsonObject { ["day"] = "2026-03-02", ["kind"] = null });
+        var empty = Json(904, "i1", "create", entityType: "item", fields: new JsonObject { ["day"] = "2026-03-02", ["kind"] = null });
+        var absent = Json(905, "i2", "create", entityType: "item", fields: new JsonObject { ["day"] = "2026-03-03" });
 
-        var run = ReportRunner.RunMonth(Form(1), 2026, 3, Entities([blank]), Catalog);
+        var run = ReportRunner.RunMonth(Form(1), 2026, 3, Entities([empty, absent]), Catalog);
 
-        Assert.Equal(["i1"], run.Unmapped);
+        Assert.Equal(["i1", "i2"], run.Unmapped);
+        Assert.Equal(["i1", "i2"], run.Blank);
+        Assert.Equal(["i1", "i2"], run.Total);
+    }
+
+    [Fact]
+    public void A_value_the_crosswalks_do_not_carry_or_of_another_scheme_is_unmapped_but_not_blank()
+    {
+        var other = Json(906, "i2", "create", entityType: "item",
+            fields: new JsonObject { ["day"] = "2026-03-03", ["kind"] = new JsonObject { ["scheme"] = "other", ["version"] = 1, ["code"] = "a" } });
+        var items = Entities([.. Item("i1", "2026-03-02", "h"), other]);
+
+        var run = ReportRunner.RunMonth(Form(2), 2026, 3, items, Catalog);
+
+        Assert.Equal(["i1", "i2"], run.Unmapped);
+        Assert.Empty(run.Blank);
+    }
+
+    [Fact]
+    public void A_cleared_value_still_counts_where_its_earlier_value_places_it()
+    {
+        var create = Json(907, "i1", "create", entityType: "item",
+            fields: new JsonObject { ["day"] = "2026-03-02", ["kind"] = Coded(1, "a") });
+        var clear = Json(908, "i1", "update", [907], new JsonObject { ["kind"] = null }, entityType: "item");
+
+        var run = ReportRunner.RunMonth(Form(1), 2026, 3, Entities([create, clear]), Catalog);
+
+        Assert.Equal("a", Assert.Single(run.Cells).Row);
+        Assert.Empty(run.Unmapped);
+        Assert.Empty(run.Blank);
     }
 
     [Fact]
@@ -148,7 +178,7 @@ public class ReportRunnerTests
 
     private static ReportRun Run(int version, ReportCell[] cells, string[]? pending = null, string[]? unmapped = null) =>
         new(Form(version), new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), version == 1 ? [] : ["1-2"],
-            cells, pending ?? [], unmapped ?? []);
+            cells, pending ?? [], unmapped ?? [], []);
 
     [Fact]
     public void A_code_with_no_link_is_revised_into_unmapped()

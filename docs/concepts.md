@@ -63,7 +63,7 @@ A **report form** is an immutable, versioned definition: which entity type it co
 
 Running a form (`ReportRunner`) for a period does not guess:
 
-- Each record's value is carried to the form's scheme version. An assigned value lands in a cell; a pending value goes to `pending`; an unmapped or missing value goes to `unmapped`.
+- Each record's value is carried to the form's scheme version. An assigned value lands in a cell; a pending value goes to `pending`; an unmapped or missing value goes to `unmapped`. An unmapped record whose field holds no value at all (never set, or cleared with no earlier value to count) is also listed in `blank`, so an empty field is told apart from a gap in the crosswalks; `blank` is a part of `unmapped`, not a further group.
 - If a record has since been reclassified to a version newer than the form's, the run uses the most recent value that is at or below the form's version. Earlier values are never lost, so an older form can be run again later.
 - The total is always the cells plus pending plus unmapped. Nothing is dropped to make numbers look complete.
 
@@ -71,14 +71,14 @@ Each run can be kept as a **run record**. A run record is never edited; running 
 
 - the form and version, the scheme version counted in, and the crosswalks applied;
 - the period;
-- for every cell, and for pending, unmapped and the total, the ids of the records behind the number;
+- for every cell, and for pending, unmapped, blank and the total, the ids of the records behind the number;
 - for every record, the subjects it concerns, from which a **head count** (distinct people) is computed beside every record count. A group-held record contributes its `attendees`.
 
 Because every number keeps its evidence, two runs of the same form can be compared record by record (`ReportDiff`): records entered late, records removed or destroyed since, records moved by a scheme revision, records moved for another reason, and records unchanged.
 
 ### One pass: run, settle, run again, compare
 
-A run's `Cells` hold the records behind each number, `Pending` and `Unmapped` the records in no cell, and `PeopleOf` the distinct subjects behind any of them. A pending record is settled by a person choosing one of the candidates `Entity.Classify` lists; the next run counts it where it was placed, and comparing with the kept run shows it as moved rather than entered late:
+A run's `Cells` hold the records behind each number, `Pending` and `Unmapped` the records in no cell (`Blank` the unmapped ones whose field is empty), and `PeopleOf` the distinct subjects behind any of them. A pending record is settled by a person choosing one of the candidates `Entity.Classify` lists; the next run counts it where it was placed, and comparing with the kept run shows it as moved rather than entered late:
 
 ```csharp
 using Openquote.Classification;
@@ -137,7 +137,7 @@ An **export form** lays out one period's records as rows for another system or s
 - a field of those subjects: the one subject's value, or every subject's joined;
 - the year a date falls in, for a year that starts in a given month (for example an academic or fiscal year).
 
-An export counts nothing, but it follows the same rule as reports: a classified cell that is pending or unmapped is left empty, and the record is listed apart so the gap is seen before the rows go anywhere.
+An export counts nothing, but it follows the same rule as reports: a classified cell that is pending or unmapped is left empty, and the record is listed apart so the gap is seen before the rows go anywhere. A field that holds no value is simply an empty cell (`Entity.HasValue` decides it for both).
 
 ## Packs and layers
 

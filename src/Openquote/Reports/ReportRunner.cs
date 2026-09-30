@@ -12,7 +12,9 @@ public static class ReportRunner
     /// Runs <paramref name="report"/> over the calendar days <paramref name="from"/> to
     /// <paramref name="to"/> inclusive. An entity is in the period when its period field holds a
     /// date in range. Its row is its classified value carried to the form's scheme version: one
-    /// code places it in a cell, several leave it pending, none leave it unmapped. Destroyed
+    /// code places it in a cell, several leave it pending, none leave it unmapped. An unmapped
+    /// record whose row field holds no value (see <see cref="Entity.HasValue"/>) is also listed as
+    /// blank, so an empty field is told apart from a gap in the crosswalks. Destroyed
     /// entities are not counted. Each counted record also carries the subjects it is about, so the
     /// run gives a head count beside every record count.
     /// </summary>
@@ -27,6 +29,7 @@ public static class ReportRunner
         var cells = new SortedDictionary<(string Row, string Column), List<string>>();
         var pending = new List<string>();
         var unmapped = new List<string>();
+        var blank = new List<string>();
         var crosswalks = new SortedSet<string>(StringComparer.Ordinal);
         var people = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
 
@@ -52,6 +55,7 @@ public static class ReportRunner
                     break;
                 default:
                     unmapped.Add(id);
+                    if (!entity.HasValue(report.RowField)) blank.Add(id);
                     break;
             }
         }
@@ -62,6 +66,7 @@ public static class ReportRunner
             cells.Select(kv => new ReportCell(kv.Key.Row, kv.Key.Column.Length == 0 ? null : kv.Key.Column, Sorted(kv.Value))).ToArray(),
             Sorted(pending),
             Sorted(unmapped),
+            Sorted(blank),
             people);
     }
 

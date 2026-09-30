@@ -99,8 +99,8 @@ public class VaultWriterTests
             """{"format":"openquote.report/0","report":"monthly","version":1,"label":"M","counts":"session","period":{"unit":"month","field":"day"},"rows":{"field":"kind","scheme":"kind","version":1}}"""));
         var people = new Dictionary<string, IReadOnlyList<string>> { ["r1"] = ["s1"], ["r2"] = ["s1", "s2"], ["r3"] = [] };
         var run = new ReportRun(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), [],
-            [new ReportCell("a", null, ["r1", "r2"])], ["r3"], [], people);
-        var without = new ReportRun(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), [], [new ReportCell("a", null, ["r1"])], [], []);
+            [new ReportCell("a", null, ["r1", "r2"])], ["r3"], [], [], people);
+        var without = new ReportRun(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), [], [new ReportCell("a", null, ["r1"])], [], [], []);
         var w = Writer();
 
         var content = Read([w.RunRecord(run), w.RunRecord(without), formFile]).Content;
@@ -254,7 +254,7 @@ public class VaultWriterTests
     public void A_run_record_is_filed_under_its_year()
     {
         var run = new ReportRun(new ReportDefinition("monthly", 1, "M", "session", "day", "kind", "kind", 1, null),
-            new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), [], [], [], []);
+            new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), [], [], [], [], []);
 
         var file = Writer().RunRecord(run);
 
@@ -269,9 +269,9 @@ public class VaultWriterTests
         var formFile = new VaultFile("reports/monthly/v1.json", System.Text.Encoding.UTF8.GetBytes(
             """{"format":"openquote.report/0","report":"monthly","version":1,"label":"M","counts":"session","period":{"unit":"month","field":"day"},"rows":{"field":"kind","scheme":"kind","version":1},"columns":{"field":"who"}}"""));
         var earlier = new ReportRun(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), ["1-2"],
-            [new ReportCell("a", "p1", ["r1", "r2"]), new ReportCell("b", null, ["r3"])], ["r4"], []);
+            [new ReportCell("a", "p1", ["r1", "r2"]), new ReportCell("b", null, ["r3"])], ["r4"], [], []);
         var later = new ReportRun(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), ["1-2"],
-            [new ReportCell("a", "p1", ["r1"]), new ReportCell("b", null, ["r2", "r3"])], [], ["r4", "r5"]);
+            [new ReportCell("a", "p1", ["r1"]), new ReportCell("b", null, ["r2", "r3"])], [], ["r4", "r5"], ["r5"]);
         var w = Writer();
         var files = new[] { w.RunRecord(earlier), w.RunRecord(later), formFile };
 
@@ -293,10 +293,47 @@ public class VaultWriterTests
     }
 
     [Fact]
+    public void A_run_record_lists_blank_records_only_when_it_has_them_and_stays_format_0()
+    {
+        var form = new ReportDefinition("monthly", 1, "M", "session", "day", "kind", "kind", 1, null);
+        var formFile = new VaultFile("reports/monthly/v1.json", System.Text.Encoding.UTF8.GetBytes(
+            """{"format":"openquote.report/0","report":"monthly","version":1,"label":"M","counts":"session","period":{"unit":"month","field":"day"},"rows":{"field":"kind","scheme":"kind","version":1}}"""));
+        var with = new ReportRun(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), [], [], [], ["r1", "r2"], ["r2"]);
+        var without = new ReportRun(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), [], [], [], ["r1"], []);
+        var w = Writer();
+        var files = new[] { w.RunRecord(with), w.RunRecord(without), formFile };
+
+        var content = Read(files).Content;
+
+        var withJson = System.Text.Encoding.UTF8.GetString(files[0].Content.Span);
+        Assert.Contains("\"openquote.run/0\"", withJson, StringComparison.Ordinal);
+        Assert.Contains("\"blank\"", withJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"blank\"", System.Text.Encoding.UTF8.GetString(files[1].Content.Span), StringComparison.Ordinal);
+        Assert.Equal(["r2"], content.Runs[0].Run.Blank);
+        Assert.Equal(["r1", "r2"], content.Runs[0].Run.Total);
+        Assert.Empty(content.Runs[1].Run.Blank);
+    }
+
+    [Fact]
+    public void A_run_record_with_a_blank_record_outside_unmapped_is_unreadable()
+    {
+        var form = new ReportDefinition("monthly", 1, "M", "session", "day", "kind", "kind", 1, null);
+        var formFile = new VaultFile("reports/monthly/v1.json", System.Text.Encoding.UTF8.GetBytes(
+            """{"format":"openquote.report/0","report":"monthly","version":1,"label":"M","counts":"session","period":{"unit":"month","field":"day"},"rows":{"field":"kind","scheme":"kind","version":1}}"""));
+        var file = Writer().RunRecord(new ReportRun(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), [],
+            [new ReportCell("a", null, ["r1"])], [], [], ["r1"]));
+
+        var content = VaultReader.Read([file, formFile]);
+
+        Assert.Empty(content.Runs);
+        Assert.Contains("unmapped", Assert.Single(content.Unreadable).Detail, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void A_run_record_without_its_report_form_is_unreadable()
     {
         var form = new ReportDefinition("monthly", 1, "M", "session", "day", "kind", "kind", 1, null);
-        var file = Writer().RunRecord(new ReportRun(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), [], [], [], []));
+        var file = Writer().RunRecord(new ReportRun(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), [], [], [], [], []));
 
         var content = VaultReader.Read([file]);
 

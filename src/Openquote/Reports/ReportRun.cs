@@ -18,6 +18,11 @@ public sealed record ReportCell(string Row, string? Column, IReadOnlyList<string
 /// <param name="Cells">Non-empty cells, ordered by row then column.</param>
 /// <param name="Pending">Records whose value maps to several codes and waits for a person.</param>
 /// <param name="Unmapped">Records whose value has no code in the form's scheme version.</param>
+/// <param name="Blank">
+/// The unmapped records whose row field holds no value — never set, or cleared with no earlier value
+/// to count — so an empty field is told apart from a gap in the crosswalks. Always a subset of
+/// <paramref name="Unmapped"/>: it adds no records to the total.
+/// </param>
 /// <param name="People">
 /// For every record in the period, the subjects it is about (see <see cref="Records.Entity.People"/>);
 /// null when the run did not record them, as with runs kept before people were counted.
@@ -30,6 +35,7 @@ public sealed record ReportRun(
     IReadOnlyList<ReportCell> Cells,
     IReadOnlyList<string> Pending,
     IReadOnlyList<string> Unmapped,
+    IReadOnlyList<string> Blank,
     IReadOnlyDictionary<string, IReadOnlyList<string>>? People = null)
 {
     /// <summary>Every record in the period: the cells, then pending, then unmapped.</summary>

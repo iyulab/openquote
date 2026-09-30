@@ -68,6 +68,8 @@ public static class ReportRunJson
 
             WriteSet(w, "pending", run.Pending);
             WriteSet(w, "unmapped", run.Unmapped);
+            // Blank records are also in unmapped, so a reader that does not know this set counts the same.
+            if (run.Blank.Count > 0) WriteSet(w, "blank", run.Blank);
             WriteSet(w, "total", run.Total);
 
             if (run.People is { } people)
