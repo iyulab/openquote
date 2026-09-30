@@ -10,7 +10,7 @@ public static partial class VaultReader
     internal const string RunFormat = "openquote.run/0";
 
     // runs/<yyyy>/<change-id>.<device>.json
-    [GeneratedRegex(@"^runs/[0-9]{4}/(?<id>[0-9a-f-]{36})\.(?<device>[a-z0-9]{4,16})\.json$")]
+    [GeneratedRegex(@"^runs/[0-9]{4}/(?<id>[0-9a-f-]{36})\.(?<device>[a-z0-9]{4,16})\.json\z")]
     private static partial Regex RunPath();
 
     private static bool IsRunPath(string path) => RunPath().IsMatch(path);

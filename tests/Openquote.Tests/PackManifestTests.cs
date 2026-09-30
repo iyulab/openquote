@@ -49,6 +49,7 @@ public class PackManifestTests
     [InlineData("Care", false)]
     [InlineData("care..school", false)]
     [InlineData(".care", false)]
+    [InlineData("care\n", false)] // a line end is not part of an id
     public void Pack_ids_are_lowercase_dotted_words(string id, bool valid) =>
         Assert.Equal(valid, Openquote.Packs.PackManifest.IsId(id));
 

@@ -18,7 +18,7 @@ public sealed partial record PackManifest(
     // Ids a vault keeps for itself: "local" for what people add in the app, "oq" for the engine.
     private static readonly string[] Reserved = ["local", "oq"];
 
-    [GeneratedRegex(@"^[a-z0-9]+(?:[.-][a-z0-9]+)*$")]
+    [GeneratedRegex(@"^[a-z0-9]+(?:[.-][a-z0-9]+)*\z")]
     private static partial Regex IdPattern();
 
     /// <summary>True if <paramref name="id"/> is lowercase letters and digits in words joined by <c>.</c> or <c>-</c>.</summary>

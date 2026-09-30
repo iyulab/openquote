@@ -14,13 +14,13 @@ public static partial class VaultReader
     private readonly record struct Definition<T>(T? Value, UnreadableFile? Error) where T : class;
 
     // schemes/<name>/v<N>.json · schemes/<name>/v<N>-v<M>.json · reports/<name>/v<N>.json
-    [GeneratedRegex(@"^schemes/(?<name>[^/]+)/v(?<from>[1-9][0-9]*)(-v(?<to>[1-9][0-9]*))?\.json$")]
+    [GeneratedRegex(@"^schemes/(?<name>[^/]+)/v(?<from>[1-9][0-9]*)(-v(?<to>[1-9][0-9]*))?\.json\z")]
     private static partial Regex SchemePath();
 
-    [GeneratedRegex(@"^reports/(?<name>[^/]+)/v(?<version>[1-9][0-9]*)\.json$")]
+    [GeneratedRegex(@"^reports/(?<name>[^/]+)/v(?<version>[1-9][0-9]*)\.json\z")]
     private static partial Regex ReportPath();
 
-    [GeneratedRegex(@"^exports/(?<name>[^/]+)/v(?<version>[1-9][0-9]*)\.json$")]
+    [GeneratedRegex(@"^exports/(?<name>[^/]+)/v(?<version>[1-9][0-9]*)\.json\z")]
     private static partial Regex ExportPath();
 
     private static DefinitionKind DefinitionKindOf(string path)

@@ -11,10 +11,10 @@ public static partial class VaultReader
 {
     // The path patterns take any folder name, like every other definition's: what a name may be is checked by the parsers,
     // so a file under a name that cannot be valid is reported rather than silently ignored.
-    [GeneratedRegex(@"^packs/(?<id>[^/]+)/v(?<version>[1-9][0-9]*)\.json$")]
+    [GeneratedRegex(@"^packs/(?<id>[^/]+)/v(?<version>[1-9][0-9]*)\.json\z")]
     private static partial Regex PackPath();
 
-    [GeneratedRegex(@"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")]
+    [GeneratedRegex(@"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*\z")]
     private static partial Regex LocaleShape();
 
     // Why a pack id in a label or field file cannot be used, or null.
@@ -63,7 +63,7 @@ public static partial class VaultReader
         return new(new PackManifest(id, version, label, depends, provides), null);
     }
 
-    [GeneratedRegex(@"^labels/(?<pack>[^/]+)/v(?<version>[1-9][0-9]*)\.(?<locale>[^/]+)\.json$")]
+    [GeneratedRegex(@"^labels/(?<pack>[^/]+)/v(?<version>[1-9][0-9]*)\.(?<locale>[^/]+)\.json\z")]
     private static partial Regex LabelsPath();
 
     private static Definition<LabelSet> ParseLabels(VaultFile file)
@@ -126,7 +126,7 @@ public static partial class VaultReader
         return new(new LabelSet(pack, version, locale, schemes, fields), null);
     }
 
-    [GeneratedRegex(@"^fields/(?<pack>[^/]+)/(?<type>[^/]+)/v(?<version>[1-9][0-9]*)\.json$")]
+    [GeneratedRegex(@"^fields/(?<pack>[^/]+)/(?<type>[^/]+)/v(?<version>[1-9][0-9]*)\.json\z")]
     private static partial Regex FieldsPath();
 
     private static Definition<FieldSet> ParseFields(VaultFile file)
