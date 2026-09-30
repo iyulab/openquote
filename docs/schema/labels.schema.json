@@ -21,6 +21,40 @@
     "fields": {
       "type": "object",
       "additionalProperties": { "type": "object", "additionalProperties": { "$ref": "#/$defs/label" } }
+    },
+    "aliases": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/label" } }
+      }
+    },
+    "reports": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "propertyNames": { "pattern": "^[1-9][0-9]*$" },
+        "additionalProperties": { "$ref": "#/$defs/label" }
+      }
+    },
+    "exports": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "propertyNames": { "pattern": "^[1-9][0-9]*$" },
+        "additionalProperties": {
+          "type": "object",
+          "properties": {
+            "label": { "$ref": "#/$defs/label" },
+            "columns": {
+              "type": "object",
+              "propertyNames": { "pattern": "^(?:0|[1-9][0-9]*)$" },
+              "additionalProperties": { "$ref": "#/$defs/label" }
+            }
+          },
+          "anyOf": [ { "required": ["label"] }, { "required": ["columns"], "properties": { "columns": { "minProperties": 1 } } } ]
+        }
+      }
     }
   },
   "$defs": { "label": { "type": "string", "minLength": 1 } }

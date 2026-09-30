@@ -43,6 +43,43 @@ public sealed class LabelCatalog
     public string? FieldLabel(string type, string field, IReadOnlyList<string> locales) =>
         Pick(locales, s => s.Fields.GetValueOrDefault(new FieldLabelKey(type, field)));
 
+    /// <summary>What version <paramref name="version"/> of report form <paramref name="name"/> is called, resolved like <see cref="SchemeLabel"/>; null leaves the form's own label.</summary>
+    public string? ReportLabel(string name, int version, IReadOnlyList<string> locales) =>
+        Pick(locales, s => s.Reports.GetValueOrDefault(new FormLabelKey(name, version)));
+
+    /// <summary>What version <paramref name="version"/> of export form <paramref name="name"/> is called, resolved like <see cref="SchemeLabel"/>; null leaves the form's own label.</summary>
+    public string? ExportLabel(string name, int version, IReadOnlyList<string> locales) =>
+        Pick(locales, s => s.Exports.GetValueOrDefault(new FormLabelKey(name, version))?.Label);
+
+    /// <summary>
+    /// The heading of column <paramref name="index"/> (counted from 0) of version <paramref name="version"/> of
+    /// export form <paramref name="name"/>, resolved like <see cref="SchemeLabel"/>; null leaves the form's own heading.
+    /// </summary>
+    public string? ExportColumnLabel(string name, int version, int index, IReadOnlyList<string> locales) =>
+        Pick(locales, s => s.Exports.GetValueOrDefault(new FormLabelKey(name, version))?.Columns.GetValueOrDefault(index));
+
+    /// <summary>
+    /// The other names <paramref name="field"/> of <paramref name="type"/> goes by, from the first of
+    /// <paramref name="locales"/> (each falling back to its language alone) where any pack gives some. Aliases
+    /// never conflict: every pack's are combined, each once. Empty when none is given.
+    /// </summary>
+    public IReadOnlyList<string> FieldAliases(string type, string field, IReadOnlyList<string> locales)
+    {
+        ArgumentNullException.ThrowIfNull(locales);
+        var key = new FieldLabelKey(type, field);
+        foreach (var locale in Expand(locales))
+        {
+            var found = _sets
+                .Where(s => string.Equals(s.Locale, locale, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(s => s.Pack, StringComparer.Ordinal)
+                .SelectMany(s => s.Aliases.GetValueOrDefault(key) ?? [])
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            if (found.Count > 0) return found;
+        }
+        return [];
+    }
+
     private string? Pick(IReadOnlyList<string> locales, Func<LabelSet, string?> lookup)
     {
         ArgumentNullException.ThrowIfNull(locales);
@@ -81,14 +118,20 @@ public sealed class LabelCatalog
         }
     }
 
+    private static IEnumerable<(LabelTarget Target, string Text)> Targets(LabelSet set) =>
+        set.Schemes.Select(p => (LabelTarget.Of(p.Key), p.Value))
+            .Concat(set.Fields.Select(p => (LabelTarget.Of(p.Key), p.Value)))
+            .Concat(set.Reports.Select(p => (LabelTarget.Of("report", p.Key), p.Value)))
+            .Concat(set.Exports.Where(p => p.Value.Label is not null).Select(p => (LabelTarget.Of("export", p.Key), p.Value.Label!)))
+            .Concat(set.Exports.SelectMany(p => p.Value.Columns.Select(c => (LabelTarget.Of("export", p.Key, c.Key), c.Value))));
+
     private List<LabelConflict> FindConflicts()
     {
         var conflicts = new List<LabelConflict>();
         foreach (var group in _sets.GroupBy(s => s.Locale.ToLowerInvariant()).OrderBy(g => g.Key, StringComparer.Ordinal))
         {
             var targets = group
-                .SelectMany(s => s.Schemes.Select(p => (Target: new LabelTarget(p.Key, null), s.Pack, Text: p.Value))
-                    .Concat(s.Fields.Select(p => (Target: new LabelTarget(null, p.Key), s.Pack, Text: p.Value))))
+                .SelectMany(s => Targets(s).Select(t => (t.Target, s.Pack, t.Text)))
                 .GroupBy(t => t.Target)
                 .OrderBy(g => g.Key.Render(), StringComparer.Ordinal);
             foreach (var target in targets)
@@ -102,8 +145,18 @@ public sealed class LabelCatalog
     }
 }
 
-// What a label names: a scheme item or a field, compared by its parts and written out only for a report.
-internal readonly record struct LabelTarget(SchemeLabelKey? Scheme, FieldLabelKey? Field)
+// What a label names — a scheme item, a field, a form or a column of an export form — compared by its parts and
+// written out only for a report. Aliases are not targets: they add up and never conflict.
+internal readonly record struct LabelTarget(SchemeLabelKey? Scheme, FieldLabelKey? Field, string? FormKind, FormLabelKey Form, int? Column)
 {
-    public string Render() => Scheme is { } s ? $"{s.Scheme} v{s.Version} {s.Code}" : $"{Field!.Value.Type}.{Field.Value.Field}";
+    public static LabelTarget Of(SchemeLabelKey scheme) => new(scheme, null, null, default, null);
+    public static LabelTarget Of(FieldLabelKey field) => new(null, field, null, default, null);
+    public static LabelTarget Of(string formKind, FormLabelKey form, int? column = null) => new(null, null, formKind, form, column);
+
+    public string Render() => (Scheme, Field) switch
+    {
+        ({ } s, _) => $"{s.Scheme} v{s.Version} {s.Code}",
+        (_, { } f) => $"{f.Type}.{f.Field}",
+        _ => $"{FormKind} {Form.Name} v{Form.Version}" + (Column is { } c ? $" column {c}" : ""),
+    };
 }

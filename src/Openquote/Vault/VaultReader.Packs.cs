@@ -123,8 +123,94 @@ public static partial class VaultReader
             }
         }
 
-        return new(new LabelSet(pack, version, locale, schemes, fields), null);
+        var aliases = new Dictionary<FieldLabelKey, IReadOnlyList<string>>();
+        if (root.TryGetProperty("aliases", out var aliasesObject))
+        {
+            if (aliasesObject.ValueKind != JsonValueKind.Object)
+                return Bad<LabelSet>(file, UnreadableReason.Invalid, "aliases maps entity types to fields to lists of names");
+            foreach (var type in aliasesObject.EnumerateObject())
+            {
+                if (type.Value.ValueKind != JsonValueKind.Object)
+                    return Bad<LabelSet>(file, UnreadableReason.Invalid, $"{type.Name}: map fields to lists of names");
+                foreach (var field in type.Value.EnumerateObject())
+                {
+                    if (field.Value.ValueKind != JsonValueKind.Array || field.Value.GetArrayLength() == 0
+                        || field.Value.EnumerateArray().Any(n => n.ValueKind != JsonValueKind.String || n.GetString() is not { Length: > 0 }))
+                        return Bad<LabelSet>(file, UnreadableReason.Invalid, $"{type.Name}.{field.Name}: aliases are a non-empty list of non-empty text");
+                    aliases[new(type.Name, field.Name)] = [.. field.Value.EnumerateArray().Select(n => n.GetString()!)];
+                }
+            }
+        }
+
+        var reports = new Dictionary<FormLabelKey, string>();
+        if (root.TryGetProperty("reports", out var reportsObject))
+        {
+            if (reportsObject.ValueKind != JsonValueKind.Object)
+                return Bad<LabelSet>(file, UnreadableReason.Invalid, "reports maps report forms to versions to labels");
+            foreach (var form in reportsObject.EnumerateObject())
+            {
+                if (form.Value.ValueKind != JsonValueKind.Object)
+                    return Bad<LabelSet>(file, UnreadableReason.Invalid, $"{form.Name}: map versions to labels");
+                foreach (var v in form.Value.EnumerateObject())
+                {
+                    if (Counted(v.Name, 1) is not { } formVersion)
+                        return Bad<LabelSet>(file, UnreadableReason.Invalid, $"{form.Name}: {v.Name} is not a version");
+                    if (v.Value.ValueKind != JsonValueKind.String || v.Value.GetString() is not { Length: > 0 } text)
+                        return Bad<LabelSet>(file, UnreadableReason.Invalid, $"{form.Name} v{formVersion}: a label is non-empty text");
+                    reports[new(form.Name, formVersion)] = text;
+                }
+            }
+        }
+
+        var exports = new Dictionary<FormLabelKey, ExportLabels>();
+        if (root.TryGetProperty("exports", out var exportsObject))
+        {
+            if (exportsObject.ValueKind != JsonValueKind.Object)
+                return Bad<LabelSet>(file, UnreadableReason.Invalid, "exports maps export forms to versions to a label and column headings");
+            foreach (var form in exportsObject.EnumerateObject())
+            {
+                if (form.Value.ValueKind != JsonValueKind.Object)
+                    return Bad<LabelSet>(file, UnreadableReason.Invalid, $"{form.Name}: map versions to a label and column headings");
+                foreach (var v in form.Value.EnumerateObject())
+                {
+                    if (Counted(v.Name, 1) is not { } formVersion || v.Value.ValueKind != JsonValueKind.Object)
+                        return Bad<LabelSet>(file, UnreadableReason.Invalid, $"{form.Name}: {v.Name} is not a version");
+                    var at = $"{form.Name} v{formVersion}";
+                    string? label = null;
+                    if (v.Value.TryGetProperty("label", out var labelValue))
+                    {
+                        if (labelValue.ValueKind != JsonValueKind.String || labelValue.GetString() is not { Length: > 0 } text)
+                            return Bad<LabelSet>(file, UnreadableReason.Invalid, $"{at}: a label is non-empty text");
+                        label = text;
+                    }
+                    var columns = new Dictionary<int, string>();
+                    if (v.Value.TryGetProperty("columns", out var columnsObject))
+                    {
+                        if (columnsObject.ValueKind != JsonValueKind.Object)
+                            return Bad<LabelSet>(file, UnreadableReason.Invalid, $"{at}: columns maps column numbers, counted from 0, to headings");
+                        foreach (var column in columnsObject.EnumerateObject())
+                        {
+                            if (Counted(column.Name, 0) is not { } index)
+                                return Bad<LabelSet>(file, UnreadableReason.Invalid, $"{at}: {column.Name} is not a column number counted from 0");
+                            if (column.Value.ValueKind != JsonValueKind.String || column.Value.GetString() is not { Length: > 0 } text)
+                                return Bad<LabelSet>(file, UnreadableReason.Invalid, $"{at} column {index}: a heading is non-empty text");
+                            columns[index] = text;
+                        }
+                    }
+                    if (label is null && columns.Count == 0)
+                        return Bad<LabelSet>(file, UnreadableReason.Invalid, $"{at}: give a label, column headings or both");
+                    exports[new(form.Name, formVersion)] = new(label, columns);
+                }
+            }
+        }
+
+        return new(new LabelSet(pack, version, locale, schemes, fields) { Aliases = aliases, Reports = reports, Exports = exports }, null);
     }
+
+    // A whole number written plainly (no sign, no leading zero) that is at least min, or null.
+    private static int? Counted(string text, int min) =>
+        int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out var n) && n >= min
+            && text == n.ToString(CultureInfo.InvariantCulture) ? n : null;
 
     [GeneratedRegex(@"^fields/(?<pack>[^/]+)/(?<type>[^/]+)/v(?<version>[1-9][0-9]*)\.json\z")]
     private static partial Regex FieldsPath();

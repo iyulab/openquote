@@ -293,15 +293,20 @@ Reading never stops on these; a host decides what to do with the list.
   "version": 1,
   "locale": "fr",
   "schemes": { "care.topic": { "1": { "sleep": "Sommeil", "school": "École" } } },
-  "fields": { "session": { "date": "Date" } }
+  "fields": { "session": { "date": "Date" }, "subject": { "name": "Nom" } },
+  "aliases": { "subject": { "name": [ "Nom de famille", "Élève" ] } },
+  "reports": { "monthly": { "1": "Séances par thème" } },
+  "exports": { "session-list": { "1": { "label": "Liste des séances", "columns": { "0": "Jour", "2": "Thème" } } } }
 }
 ```
 
 - Path: `labels/<pack>/v<version>.<locale>.json`; `pack`, `version` and `locale` must match it. `pack` is a pack id as for a manifest (and not `local` or `oq`), and `locale` is a language tag such as `fr` or `en-US`; a file whose pack or locale cannot be valid is reported as unreadable.
 - `schemes` (optional) maps a scheme name to a scheme version to item codes to labels. `fields` (optional) maps an entity type to field names to labels. Every label is non-empty text.
+- `reports` (optional) maps a report form's name to a form version to its label. `exports` (optional) maps an export form's name to a form version to an object with a `label`, `columns`, or both; `columns` maps a column's position in the form, counted from 0, to its heading. A form version never changes, so neither do its column positions. Columns not listed keep the form's own heading.
+- `aliases` (optional) maps an entity type to field names to a non-empty list of other names the field goes by — headings a person's own table may use for it. They do not label the field; a host matches them when it takes data in (`LabelCatalog.FieldAliases`). Aliases never conflict: for the first locale asked for where any pack gives some, every pack's aliases are combined.
 - Labels change what people read, never a code or what is counted, so a renamed item needs no new scheme version.
 - When several packs label the same thing in one locale, a pack that another of them builds on is set aside, so the pack that builds on the others wins. If several packs are left, none building on another, they agree when they give the same text (for example two packs that each build on a third and relabel alike); when they give different labels it is a conflict (`LabelCatalog.Conflicts`), and none of their labels is used for that locale.
-- A host asks for labels by a list of locales in order of preference (`LabelCatalog.SchemeLabel`, `FieldLabel`). Each locale falls back to its language alone (`fr-CA`, then `fr`), and tags are compared without regard to case; if no locale gives a label, the answer is `null` and the host shows the scheme item's own `label`. Of several versions of a pack's labels in one locale, the highest counts.
+- A host asks for labels by a list of locales in order of preference (`LabelCatalog.SchemeLabel`, `FieldLabel`, `ReportLabel`, `ExportLabel`, `ExportColumnLabel`). Each locale falls back to its language alone (`fr-CA`, then `fr`), and tags are compared without regard to case; if no locale gives a label, the answer is `null` and the host shows the definition's own `label` (the scheme item's, the field's, the form's or the column's). Of several versions of a pack's labels in one locale, the highest counts.
 
 ## Field definitions
 
