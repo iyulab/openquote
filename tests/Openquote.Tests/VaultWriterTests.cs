@@ -191,29 +191,63 @@ public class VaultWriterTests
         Assert.Single(settled.Heads);
     }
 
-    [Fact]
-    public void A_reclassification_moves_a_pending_record_into_a_cell()
-    {
-        var catalog = new SchemeCatalog(
-            [new Scheme("kind", 1, [new("c", "C", null, false)]), new Scheme("kind", 2, [new("p", "P", null, false), new("q", "Q", null, false)])],
-            [new Crosswalk("kind", 1, 2, [("c", "p"), ("c", "q")])]);
-        var form = new ReportDefinition("monthly", 2, "Monthly", "session", "day", "kind", "kind", 2, null);
-        JsonObject Coded(int v, string code) => new() { ["scheme"] = "kind", ["version"] = v, ["code"] = code };
+    private static readonly SchemeCatalog SplitCatalog = new(
+        [
+            new Scheme("kind", 1, [new("c", "C", null, false), new("a", "A", null, false)]),
+            new Scheme("kind", 2, [new("p", "P", null, false), new("q", "Q", null, false), new("r", "R", null, false), new("x", "X", null, false)]),
+            new Scheme("other", 2, [new("p", "P", null, false)]),
+        ],
+        [new Crosswalk("kind", 1, 2, [("c", "p"), ("c", "q"), ("a", "x")])]);
 
+    private static JsonObject KindValue(int v, string code) => new() { ["scheme"] = "kind", ["version"] = v, ["code"] = code };
+
+    private static (VaultWriter Writer, VaultFile[] Files, Entity Session) OneSession(string code)
+    {
         var w = Writer();
         var subject = w.CreateSubject(Fields(("name", "x")));
         var subjectId = Read([subject]).Content.Changes[0].Entity.Id;
-        var item = w.CreateInSubject(subjectId, "session", Fields(("day", "2026-03-05"), ("kind", Coded(1, "c"))));
-        var before = Read([subject, item]).Entities.Values;
-        Assert.Single(ReportRunner.RunMonth(form, 2026, 3, before, catalog).Pending);
+        var item = w.CreateInSubject(subjectId, "session", Fields(("day", "2026-03-05"), ("kind", KindValue(1, code))));
+        return (w, [subject, item], Read([subject, item]).Entities.Values.Single(e => e.Reference.Type == "session"));
+    }
 
-        var reclassify = w.Reclassify(before.Single(e => e.Reference.Type == "session"), "kind", Coded(2, "q"));
-        var (content, after) = Read([subject, item, reclassify]);
+    [Fact]
+    public void A_reclassification_moves_a_pending_record_into_a_cell()
+    {
+        var form = new ReportDefinition("monthly", 2, "Monthly", "session", "day", "kind", "kind", 2, null);
+        var (w, files, session) = OneSession("c");
+        Assert.Single(ReportRunner.RunMonth(form, 2026, 3, [session], SplitCatalog).Pending);
+
+        var reclassify = w.Reclassify(session, "kind", new CodedValue("kind", 2, "q"), SplitCatalog);
+        var (content, after) = Read([.. files, reclassify]);
 
         Assert.Equal(ChangeOp.Reclassify, content.Changes.Single(c => c.Path == reclassify.Path).Op);
-        var run = ReportRunner.RunMonth(form, 2026, 3, after.Values, catalog);
+        var run = ReportRunner.RunMonth(form, 2026, 3, after.Values, SplitCatalog);
         Assert.Empty(run.Pending);
         Assert.Equal("q", Assert.Single(run.Cells).Row);
+    }
+
+    [Theory]
+    [InlineData("kind", 2, "r")]     // in the newer version, but not one of the record's candidates
+    [InlineData("kind", 2, "zzz")]   // not an item at all
+    [InlineData("kind", 1, "a")]     // the older version, which is not the one the record waits in
+    [InlineData("other", 2, "p")]    // another scheme
+    public void A_reclassification_outside_the_candidates_is_refused(string scheme, int version, string code)
+    {
+        var (w, _, session) = OneSession("c");
+
+        var error = Assert.Throws<ArgumentException>(() => w.Reclassify(session, "kind", new CodedValue(scheme, version, code), SplitCatalog));
+
+        Assert.Equal("choice", error.ParamName);
+    }
+
+    [Fact]
+    public void A_record_that_is_not_waiting_takes_no_reclassification()
+    {
+        var (w, _, session) = OneSession("a"); // a has one link, so the record is already placed in v2
+
+        var error = Assert.Throws<ArgumentException>(() => w.Reclassify(session, "kind", new CodedValue("kind", 2, "x"), SplitCatalog));
+
+        Assert.Contains("not waiting", error.Message, StringComparison.Ordinal);
     }
 
     [Fact]

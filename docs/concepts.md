@@ -25,7 +25,7 @@ Each change lists in `base` the changes to the same entity its writer had alread
 
 A conflict is settled by a person. Their choice is written as a new change whose `base` names all current heads, so it has seen every competing value. Nothing is lost along the way: all earlier values stay in their files.
 
-A change that names a base not yet present (not synced to this device yet) is still read; the missing link is ignored until it arrives.
+A change that names a base not yet present (not synced to this device yet, or unreadable here) is still read; the missing link is ignored until it arrives. Without it the engine cannot tell that the change had seen what came before, so two values can show as a conflict that is only a gap. `Entity.MissingBase` lists those absent changes, so a host can say "waiting for another device" instead of asking a person to choose.
 
 ## Classification schemes are immutable versions
 
@@ -53,7 +53,9 @@ The shape is not stored; it follows from the links. The rule the engine applies 
 
 Several revisions (v1 to v2 to v3) are crossed by chaining crosswalks, taking the shortest chain; after each step only codes that exist in the next version are kept.
 
-A person's choice for a pending record is a `reclassify` change that sets the field to a value in the newer version. The value entered originally stays in its earlier change file.
+`Entity.Classify(field, scheme, version, catalog)` applies this rule to one record: it takes the record's most recent value entered in that scheme at that version or an earlier one and carries it forward. A pending result lists the codes a person chooses from, so a host never re-implements the rule. Report runs place records the same way.
+
+A person's choice for a pending record is a `reclassify` change that sets the field to a value in the newer version (`VaultWriter.Reclassify`). It is accepted only when the record is pending in that version and the code is one of its candidates; any other value is refused, because a change file cannot be taken back. The value entered originally stays in its earlier change file.
 
 ## Report forms and run records
 

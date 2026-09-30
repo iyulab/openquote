@@ -38,15 +38,7 @@ public static class ReportRunner
 
             var id = entity.Reference.Id;
             people[id] = entity.People;
-            var value = entity.LatestValue(report.RowField, v =>
-                CodedValue.From(v) is { } c && c.Scheme == report.RowScheme && c.Version <= report.RowVersion);
-            if (value is null || CodedValue.From(value.Value) is not { } coded)
-            {
-                unmapped.Add(id);
-                continue;
-            }
-
-            var resolution = catalog.Resolve(coded, report.RowVersion);
+            var resolution = entity.Classify(report.RowField, report.RowScheme, report.RowVersion, catalog);
             crosswalks.UnionWith(resolution.Crosswalks);
             switch (resolution.Kind)
             {

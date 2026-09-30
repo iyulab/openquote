@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Openquote.Classification;
 using Openquote.Records;
 using Openquote.Reports;
 
@@ -104,9 +105,25 @@ public sealed class VaultWriter
     public VaultFile Update(Entity entity, IReadOnlyDictionary<string, JsonNode?> fields, IReadOnlyDictionary<string, string>? sources = null) =>
         Follow(entity, "update", fields, sources);
 
-    /// <summary>A person's choice of a newer-version code for a record that was waiting for one.</summary>
-    public VaultFile Reclassify(Entity entity, string field, JsonNode codedValue) =>
-        Follow(entity, "reclassify", new Dictionary<string, JsonNode?> { [field] = codedValue }, null);
+    /// <summary>
+    /// A person's choice for a record waiting in <paramref name="choice"/>'s scheme version: sets
+    /// <paramref name="field"/> to that code. The record must be pending there
+    /// (<see cref="Entity.Classify"/>) and the code one of its candidates; anything else is refused,
+    /// since a change file cannot be taken back.
+    /// </summary>
+    /// <exception cref="ArgumentException">The record is not waiting in that version, or the code is not one of its candidates.</exception>
+    public VaultFile Reclassify(Entity entity, string field, CodedValue choice, SchemeCatalog catalog)
+    {
+        ArgumentNullException.ThrowIfNull(entity);
+        ArgumentNullException.ThrowIfNull(choice);
+        var resolution = entity.Classify(field, choice.Scheme, choice.Version, catalog);
+        if (resolution.Kind != ResolutionKind.Pending)
+            throw new ArgumentException($"the record's {field} is not waiting for a choice in {choice.Scheme} version {choice.Version}", nameof(choice));
+        if (!resolution.Candidates.Contains(choice.Code, StringComparer.Ordinal))
+            throw new ArgumentException($"{choice.Code} is not one of the codes the record's {field} waits for: {string.Join(", ", resolution.Candidates)}", nameof(choice));
+        var value = new JsonObject { ["scheme"] = choice.Scheme, ["version"] = choice.Version, ["code"] = choice.Code };
+        return Follow(entity, "reclassify", new Dictionary<string, JsonNode?> { [field] = value }, null);
+    }
 
     /// <summary>The run record for <paramref name="run"/>, filed under the year it was produced.</summary>
     public VaultFile RunRecord(ReportRun run)

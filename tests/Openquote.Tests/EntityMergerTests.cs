@@ -153,4 +153,25 @@ public class EntityMergerTests
         Assert.Equal("2", merged[new EntityRef("session", "e2")].Fields["a"].GetString());
         Assert.Equal([Id(1), Id(3)], merged[new EntityRef("session", "e1")].Changes.Select(c => c.Id));
     }
+    [Fact]
+    public void An_entity_with_every_change_names_no_missing_base()
+    {
+        var entity = MergeOne(
+            Json(1, "e1", "create", fields: Set("a", "1")),
+            Json(2, "e1", "update", [1], Set("a", "2")));
+
+        Assert.Empty(entity.MissingBase);
+    }
+
+    [Fact]
+    public void A_change_whose_base_has_not_arrived_names_it_so_a_conflict_can_be_told_from_a_gap()
+    {
+        // 1 <- 2 <- 3, and 2 has not reached this device: 3 cannot be seen to have seen 1.
+        var entity = MergeOne(
+            Json(1, "e1", "create", fields: Set("a", "old")),
+            Json(3, "e1", "update", [2], Set("a", "new")));
+
+        Assert.Equal([Id(2)], entity.MissingBase);
+        Assert.Equal(2, entity.Conflicts["a"].Count);
+    }
 }

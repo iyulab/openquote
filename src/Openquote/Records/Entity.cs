@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Openquote.Classification;
 using Openquote.Vault;
 
 namespace Openquote.Records;
@@ -89,6 +90,21 @@ public sealed class Entity
 
     private IReadOnlyList<string>? _heads;
 
+    /// <summary>
+    /// The changes this entity's changes name in their base that this device does not hold —
+    /// written elsewhere and not synced here yet, or unreadable here. Until they arrive, a change
+    /// cannot be seen to have seen what came before them, so a field may show as in
+    /// <see cref="Conflicts"/> that is only waiting for a missing link. Ascending id order; empty
+    /// when every link is present.
+    /// </summary>
+    public IReadOnlyList<string> MissingBase => _missingBase ??= [.. Changes
+        .SelectMany(c => c.Base)
+        .Where(id => !Changes.Any(c => c.Id == id))
+        .Distinct(StringComparer.Ordinal)
+        .Order(StringComparer.Ordinal)];
+
+    private IReadOnlyList<string>? _missingBase;
+
     /// <summary>True once a person has destroyed the entity; it then has no fields.</summary>
     public bool Destroyed { get; }
 
@@ -119,5 +135,23 @@ public sealed class Entity
         if (Destroyed) return null;
         var setters = Changes.Where(c => c.Fields.TryGetValue(field, out var v) && accept(v)).ToList();
         return setters.Count == 0 ? null : _graph.Heads(setters)[^1].Fields[field];
+    }
+    /// <summary>
+    /// Where this entity's <paramref name="field"/> lands in <paramref name="version"/> of
+    /// <paramref name="scheme"/>: its most recent value entered in that scheme at that version or
+    /// an earlier one, carried forward by <paramref name="catalog"/>. A pending result lists the
+    /// codes a person chooses from — the only values <see cref="VaultWriter.Reclassify"/> accepts.
+    /// Unmapped when the field holds no value of that scheme or the entity is destroyed. Report
+    /// runs place records by the same rule.
+    /// </summary>
+    public Resolution Classify(string field, string scheme, int version, SchemeCatalog catalog)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+        ArgumentNullException.ThrowIfNull(scheme);
+        ArgumentNullException.ThrowIfNull(catalog);
+        var value = LatestValue(field, v => CodedValue.From(v) is { } c && c.Scheme == scheme && c.Version <= version);
+        return value is { } v && CodedValue.From(v) is { } coded
+            ? catalog.Resolve(coded, version)
+            : new Resolution(ResolutionKind.Unmapped, null, [], []);
     }
 }
