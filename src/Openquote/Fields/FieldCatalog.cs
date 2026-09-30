@@ -87,7 +87,7 @@ public sealed class FieldCatalog
         Issues = issues;
     }
 
-    /// <summary>Problems found while merging.</summary>
+    /// <summary>The problems in the merged definitions.</summary>
     public IReadOnlyList<FieldIssue> Issues { get; }
 
     /// <summary>The fields of <paramref name="type"/>, in pack order and then declaration order.</summary>

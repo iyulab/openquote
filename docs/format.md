@@ -19,6 +19,9 @@ A host application may store a vault encrypted, for example by wrapping each fil
   schemes/<scheme>/v<N>-v<M>.json            crosswalk from version N to version M
   reports/<report>/v<N>.json                 report form, version N
   exports/<export>/v<N>.json                 export form, version N
+  packs/<pack>/v<N>.json                     pack manifest: a pack applied to this vault, version N
+  labels/<pack>/v<N>.<locale>.json           labels a pack gives in one locale
+  fields/<pack>/<type>/v<N>.json             fields a pack declares for an entity type
   practitioners/<id>.<device>.json           change to a practitioner
   devices/<id>.<device>.json                 change to a device name
   subjects/<subject-id>/<id>.<device>.json   change to a subject or to an entity kept under it
@@ -117,6 +120,7 @@ A `device` entity, kept in `devices/`, carries a human-readable name in its `nam
   "format": "openquote.scheme/0",
   "scheme": "topic",
   "version": 2,
+  "effective": { "from": "2026-03-01" },
   "items": [
     { "code": "emotion", "label": "Emotion", "suggest": true },
     { "code": "school", "label": "School life" },
@@ -129,6 +133,7 @@ A `device` entity, kept in `devices/`, carries a human-readable name in its `nam
 - Every item has a `code` and a `label`. Codes are unique within a version. The code is the item's identity; the label is what people see.
 - `parent`, if present, must be the code of another item in the same version. Writing a child code as `parent/child` is a naming convention; hierarchy comes from `parent`.
 - `suggest` (default `false`) marks items a host may offer as suggestions.
+- `effective` (optional): `from` (required) and `to` (optional, on or after `from`), calendar dates on which the body that issues the scheme puts this version in force. A version without it is in force throughout. It guides which version a host offers for input (`SchemeCatalog.InForce`, the highest version in force on a given date); reports never use it.
 
 ## Crosswalks
 
@@ -150,7 +155,7 @@ A `device` entity, kept in `devices/`, carries a human-readable name in its `nam
 
 - Path: `schemes/<scheme>/v<from>-v<to>.json`; `to` must be greater than `from`.
 - `links` are `[old code, new code]` pairs. Link types (1:1, N:1, 1:N, N:M) are not stored; they follow from the pairs.
-- There is no implicit identity crosswalk. A new version that only relabels items still needs a crosswalk linking each code to itself.
+- There is no implicit identity crosswalk. A new version that only relabels items still needs a crosswalk linking each code to itself. A relabel that keeps every code can instead be given as labels (see [Labels](#labels)), which needs no new version.
 
 How values are carried across versions is described in [Concepts](concepts.md#crosswalks).
 
@@ -243,9 +248,110 @@ How values are carried across versions is described in [Concepts](concepts.md#cr
 | `field` + `scheme` + `version` (+ `part`) | The label of the classified value carried to that version; with `part: "top"` the label of its top-level ancestor (`part` is `top` or `item`, default `item`). |
 | `field` | The field value as written. |
 
+## Packs
+
+A pack is a bundle of definition files (schemes, crosswalks, forms, labels and field definitions) that one party maintains and many vaults apply. Applying a pack copies its files into the vault; from then on the vault holds them like any other definition. See [Concepts](concepts.md#packs-and-layers).
+
+```json
+{
+  "format": "openquote.pack/0",
+  "pack": "care.school",
+  "version": 1,
+  "label": "School counseling",
+  "depends": { "care": 1 },
+  "provides": [ "schemes/school-level/v1.json" ]
+}
+```
+
+- Path: `packs/<pack>/v<version>.json`; `pack` and `version` must match it.
+- `pack` is lowercase ASCII letters and digits in words joined by `.` or `-` (for example `care`, `care.school`, `org-x.y2`). `local` and `oq` are reserved for the vault itself and cannot name a pack. Writing a pack's own names as `<pack>.<name>` is recommended, not required.
+- `version` is an integer of 1 or more, and `label` is text a person reads.
+- `depends` (optional) maps the ids of other packs to a minimum version, an integer of 1 or more. A pack never depends on itself. A pack only adds, so a later version holds everything an earlier one did and a minimum version is all a dependency needs.
+- `provides` lists the definition files this version added, as vault paths: schemes, crosswalks, report and export forms, labels and field definitions. It is required, and may be empty. It is what says which pack owns which definition.
+- A manifest in the vault is the record that the pack was applied; there is no separate record. Of several versions of a pack, the highest one counts.
+
+`VaultContent.CheckPacks` compares the packs with each other and with the definition files the vault could read, and reports each problem with the pack it concerns (`PackIssue`):
+
+| Kind | When |
+|---|---|
+| `MissingDependency` | A pack builds on a pack the vault does not hold. |
+| `OlderDependency` | A pack needs a later version of a pack than the vault holds. |
+| `MissingFile` | A manifest lists a definition file the vault does not hold in a readable form. |
+| `SharedFile` | More than one pack lists the same definition file. |
+| `DependencyCycle` | A pack builds on itself through other packs. |
+
+Reading never stops on these; a host decides what to do with the list.
+
+## Labels
+
+```json
+{
+  "format": "openquote.labels/0",
+  "pack": "kr",
+  "version": 1,
+  "locale": "ko",
+  "schemes": { "care.method": { "1": { "interview": "면담", "phone": "전화" } } },
+  "fields": { "session": { "date": "날짜" } }
+}
+```
+
+- Path: `labels/<pack>/v<version>.<locale>.json`; `pack`, `version` and `locale` must match it. `locale` is a language tag such as `ko` or `en-US`.
+- `schemes` (optional) maps a scheme name to a scheme version to item codes to labels. `fields` (optional) maps an entity type to field names to labels. Every label is non-empty text.
+- Labels change what people read, never a code or what is counted, so a renamed item needs no new scheme version.
+- When several packs label the same thing in one locale, the pack that builds on all the others wins. Two packs that do not build on each other and give different labels are a conflict (`LabelCatalog.Conflicts`), and neither label is used for that locale. The same text from several packs is not a conflict.
+- A host asks for labels by a list of locales in order of preference (`LabelCatalog.SchemeLabel`, `FieldLabel`). Each locale falls back to its language alone (`ko-KR`, then `ko`), and tags are compared without regard to case; if no locale gives a label, the answer is `null` and the host shows the scheme item's own `label`. Of several versions of a pack's labels in one locale, the highest counts.
+
+## Field definitions
+
+```json
+{
+  "format": "openquote.fields/0",
+  "pack": "care",
+  "type": "session",
+  "version": 1,
+  "fields": [
+    { "name": "date", "kind": "date", "required": true, "label": "Date" },
+    { "name": "method", "kind": "coded", "scheme": "care.method" },
+    { "name": "practitioner", "kind": "reference", "type": "practitioner" },
+    { "name": "note", "kind": "text", "tier": "narrative" }
+  ]
+}
+```
+
+A second pack that builds on the first can add fields and narrow the first pack's:
+
+```json
+{
+  "format": "openquote.fields/0",
+  "pack": "care.school",
+  "type": "session",
+  "version": 1,
+  "fields": [ { "name": "grade", "kind": "text", "default": { "subject": "grade" } } ],
+  "constrain": [ { "name": "method", "required": true } ]
+}
+```
+
+- Path: `fields/<pack>/<type>/v<version>.json`; `pack`, `type` and `version` must match it. `type` is the entity type the fields belong to.
+- `fields` (optional) declares fields. A field has a `name`, unique within the file, and a `kind`, one of `text`, `date`, `number`, `coded`, `reference` and `references`.
+- A `coded` field names the `scheme` its values are classified in, and no other kind has one. A `reference` or `references` field names the entity `type` it refers to, and no other kind has one.
+- `tier` is `structured` (the default) or `narrative`. A narrative field is written content: an export leaves a column that would carry it empty and names it in `ExportTable.Withheld` (pass the `FieldCatalog` to `ExportRunner.Run`).
+- `required` (default `false`) says a value must be entered.
+- `default` (optional) is `{ "subject": "<field>" }`: the host offers, when the record is written, the value of that field of the record's subject. The record keeps the value as entered.
+- `label` (optional) is what people read for the field; [Labels](#labels) can give it per locale.
+- `constrain` (optional) narrows fields other packs declared, by `name`: `required` and `hidden` may each be set to `true`, and at least one must be. A key set to `false` is invalid, because a constraint only narrows. A pack does not constrain its own fields; it declares them as they should be.
+
+`VaultContent.FieldCatalog` merges the field files of the vault's packs, each pack at its highest version, packs in the order they build on each other (packs that do not build on each other by id, and packs without a manifest last). A field is kept from the first pack that declares it; then each constraint is applied. `FieldCatalog.Issues` lists what does not fit (`FieldIssue`):
+
+| Kind | When |
+|---|---|
+| `DuplicateField` | Two packs declare a field of the same name for one entity type; the earlier pack's declaration stands. |
+| `ConstraintWithoutField` | A constraint names a field no pack declares. |
+| `ConstraintFromUnrelatedPack` | A constraint narrows a field of a pack it does not build on; it is not applied. |
+| `HiddenRequired` | A field ends up both required and hidden. |
+
 ## Reading rules
 
-The reader never stops on a bad file. A file whose path matches the layout but cannot be used is listed as unreadable with a reason and what it was for — a subject's or group's records, a scheme version, a crosswalk, a form or a run record, read from the path alone (`VaultFileKind.Of`, which also reads a sync client's copy by the start of its name) — and every other file is still read:
+The reader never stops on a bad file. A file whose path matches the layout but cannot be used is listed as unreadable with a reason and what it was for — a subject's or group's records, a scheme version, a crosswalk, a form, a pack, labels, field definitions or a run record, read from the path alone (`VaultFileKind.Of`, which also reads a sync client's copy by the start of its name) — and every other file is still read:
 
 | Reason | When |
 |---|---|
@@ -255,13 +361,13 @@ The reader never stops on a bad file. A file whose path matches the layout but c
 | `NameMismatch` | The file name or path disagrees with the id, device, name or version inside. |
 | `DuplicateId` | Two change files carry the same id with different content. |
 
-A sync client's conflicted copy of a change file is read as a valid input: its name may add, before or after `.json`, anything that begins with a character other than a letter or digit (for example `<id>.<device> (conflicted copy).json` or `<id>.<device>.json-LAPTOP`). Copies with identical content count once. A copy of any other vault file — a scheme, crosswalk, form or run record named with something added after `.json` — is listed as `NameMismatch` rather than ignored, since it may differ from the file it copies and should be looked at by a person.
+A sync client's conflicted copy of a change file is read as a valid input: its name may add, before or after `.json`, anything that begins with a character other than a letter or digit (for example `<id>.<device> (conflicted copy).json` or `<id>.<device>.json-LAPTOP`). Copies with identical content count once. A copy of any other vault file — a scheme, crosswalk, form, pack manifest, label file, field file or run record named with something added after `.json` — is listed as `NameMismatch` rather than ignored, since it may differ from the file it copies and should be looked at by a person.
 
 The only condition that refuses the whole read is the declaration check described under [Declaration](#declaration-vaultjson).
 
 ## Compatibility
 
 - A change a previous engine could ignore without producing a wrong number (a new optional key) is additive and keeps the declared version.
-- A change that would make a previous engine count wrongly without noticing (a new folder, a key that changes what is counted) raises the declared vault format, so that previous engines refuse the vault instead of reading it.
+- A change that would make a previous engine count wrongly without noticing (a new folder of records, a key that changes what is counted) raises the declared vault format, so that previous engines refuse the vault instead of reading it. Folders a previous engine ignores without changing any count — `packs/`, `labels/`, `fields/` — are additive.
 
 `VaultWriter` produces indented UTF-8 JSON with `\n` line endings and a trailing newline, stamps `at` in the device's local time with its offset, and gives every file a fresh id, so its path never names an existing file.

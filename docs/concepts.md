@@ -87,10 +87,23 @@ An **export form** lays out one period's records as rows for another system or s
 
 An export counts nothing, but it follows the same rule as reports: a classified cell that is pending or unmapped is left empty, and the record is listed apart so the gap is seen before the rows go anywhere.
 
+## Packs and layers
+
+Most of what a vault knows about its field of work (which schemes classify a record, which fields an entity has, which forms exist, what things are called in a language) is data. A **pack** is that data ready to share, and a vault stacks several of them. The names below (`care`, `care.school`, `region-a`) are examples only.
+
+- **A pack is a bundle of data in the vault's own format.** It is a set of scheme, crosswalk, form, label and field-definition files with a manifest that lists them. Applying a pack copies those files into the vault, and the manifest is the record that it was applied. The engine reads them like any other definition file.
+- **A pack builds on other packs.** `care.school` can depend on `care` at a minimum version and add to it. A pack only adds, so a later version holds everything an earlier one did, and a minimum version is all a dependency needs to say. A vault whose packs do not fit together (a missing or older dependency, a missing or shared file, a cycle) is reported by `VaultContent.CheckPacks`, not refused.
+- **A pack can add, narrow and label, and nothing else.** It adds schemes, forms and fields. It narrows a field of a pack it builds on, by making it required or hiding it, never the other way round. It gives labels per locale, so `region-a` can call the items of `care`'s schemes by names people there use.
+- **A code and what is counted are never overridden.** No pack replaces a code, moves an item, or changes how a record is placed in a cell. A different classification is a new scheme version with a crosswalk, and a label can only change what people read, so a relabel needs no new version.
+- **Precedence follows what builds on what, not the order packs were installed.** Where two packs give the same thing, the one that builds on the other wins. Two packs that do not build on each other and disagree are reported rather than one being preferred silently: for labels neither is used (`LabelCatalog.Conflicts`), and for fields the earlier pack in id order stands and the clash is listed (`FieldCatalog.Issues`).
+- **`local` is kept for what people make in the app.** What people add to a vault themselves is meant to sit in a layer above every pack, so the id `local` (and `oq`, for the engine) cannot name a pack.
+
+Fields declared as written content (`tier: narrative`) are left out of exports by construction, wherever a column would read them from.
+
 ## Reading rules
 
 Reading a vault (`VaultReader.Read`) is tolerant of individual files and strict about the vault as a whole:
 
-- **An unreadable file is listed, not fatal.** Invalid JSON, an unknown per-file format, a missing key, a name that disagrees with the content, or two different files claiming the same id: each is reported in `VaultContent.Unreadable` with its reason and what the file was for (`Kind`, read from its path — a subject's or group's records, a scheme version, a crosswalk, a report or export form, a run record), and the rest of the vault is read normally.
+- **An unreadable file is listed, not fatal.** Invalid JSON, an unknown per-file format, a missing key, a name that disagrees with the content, or two different files claiming the same id: each is reported in `VaultContent.Unreadable` with its reason and what the file was for (`Kind`, read from its path — a subject's or group's records, a scheme version, a crosswalk, a report or export form, a pack, labels, field definitions, a run record), and the rest of the vault is read normally.
 - **A newer or unknown vault declaration refuses the whole read.** A later format may lay records out in a way this engine would count wrongly without noticing, so `VaultFormatException` is thrown and nothing is returned.
 - Files outside the vault layout are ignored.

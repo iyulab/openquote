@@ -15,6 +15,7 @@ It knows nothing about any particular field. What a record means, which schemes 
 - **Carries classified values across scheme versions** (`SchemeCatalog`) — one-to-one and many-to-one links are followed automatically; a value whose category was split waits for a person instead of being guessed.
 - **Runs reports** (`ReportRunner`) — counts records by a classified field for a period, with the records behind each cell and the number of different people they concern, and compares two runs of the same form (`ReportDiff`).
 - **Lays records out for other systems** (`ExportRunner`) — one row per record in a period, with columns taken from fields, classified values, referenced records and the people involved.
+- **Layers packs** (`VaultContent.CheckPacks`, `LabelCatalog`, `FieldCatalog`) — data packs build on each other: a later pack adds schemes, forms and fields, narrows fields of the packs it builds on, and relabels items per locale, without ever changing a code or what is counted. Fields declared as written content are left out of exports.
 - **Writes changes** (`VaultWriter`) — every write is a new file; nothing existing is modified.
 
 The engine only ever sees plaintext. A host that keeps its vault encrypted decrypts each file before handing it over.
