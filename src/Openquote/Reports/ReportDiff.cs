@@ -38,11 +38,25 @@ public sealed record ReportDiff(
     /// a later version of the same scheme, <paramref name="catalog"/> carries each earlier place to
     /// that version to tell records the revision moved from records moved for another reason.
     /// </summary>
+    /// <remarks>
+    /// Only runs that place records the same way can be compared: the same form name, counting the
+    /// same entity type by the same period field, into rows of the same field and scheme and the same
+    /// columns, over the same period. The form's version, label, and the scheme's version may
+    /// differ. Otherwise every record would read as moved by a person, so such pairs are refused.
+    /// The order is checked only where the runs show it: a later run that counts an earlier version
+    /// of the scheme is refused, while two runs of one version cannot tell which came first.
+    /// </remarks>
+    /// <exception cref="ArgumentException">
+    /// <paramref name="later"/> does not count the same thing over the same period as
+    /// <paramref name="earlier"/>, or counts an earlier version of the scheme.
+    /// </exception>
     public static ReportDiff Compare(ReportRun earlier, ReportRun later, SchemeCatalog catalog)
     {
         ArgumentNullException.ThrowIfNull(earlier);
         ArgumentNullException.ThrowIfNull(later);
         ArgumentNullException.ThrowIfNull(catalog);
+        if (Incomparable(earlier, later) is { } reason)
+            throw new ArgumentException($"The runs cannot be compared: {reason}.", nameof(later));
         var a = Places(earlier);
         var b = Places(later);
         var revisedAcross = earlier.Report.RowScheme == later.Report.RowScheme
@@ -58,6 +72,25 @@ public sealed record ReportDiff(
             Sorted(differ.Except(revised)),
             Sorted(a.Keys.Intersect(b.Keys).Where(k => a[k] == b[k])));
     }
+
+    private static string? Incomparable(ReportRun earlier, ReportRun later)
+    {
+        var (a, b) = (earlier.Report, later.Report);
+        if (a.Name != b.Name) return $"form '{b.Name}' is not '{a.Name}'";
+        if (a.Counts != b.Counts) return $"it counts '{b.Counts}', not '{a.Counts}'";
+        if (a.PeriodField != b.PeriodField) return $"its period field is '{b.PeriodField}', not '{a.PeriodField}'";
+        if (a.RowField != b.RowField) return $"its row field is '{b.RowField}', not '{a.RowField}'";
+        if (a.RowScheme != b.RowScheme) return $"its rows are scheme '{b.RowScheme}', not '{a.RowScheme}'";
+        if (a.ColumnField != b.ColumnField)
+            return $"its column field is {Quoted(b.ColumnField)}, not {Quoted(a.ColumnField)}";
+        if (earlier.From != later.From || earlier.To != later.To)
+            return $"its period is {later.From:yyyy-MM-dd}..{later.To:yyyy-MM-dd}, not {earlier.From:yyyy-MM-dd}..{earlier.To:yyyy-MM-dd}";
+        if (b.RowVersion < a.RowVersion)
+            return $"the later run counts version {b.RowVersion} of '{b.RowScheme}', before the earlier run's {a.RowVersion}";
+        return null;
+    }
+
+    private static string Quoted(string? field) => field is null ? "none" : $"'{field}'";
 
     // Where a revision alone would put a record from `place`. Pending and unmapped places hold no
     // code, so nothing is carried from them.

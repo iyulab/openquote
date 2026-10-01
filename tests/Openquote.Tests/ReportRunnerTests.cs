@@ -220,16 +220,55 @@ public class ReportRunnerTests
     [Fact]
     public void Without_a_later_version_nothing_is_revised()
     {
-        // Same version, and the reverse order: no revision lies between the runs.
-        var v1 = Run(1, [new("a", "o1", ["i1"])]);
-        var v2 = Run(2, [], unmapped: ["i1"]);
+        // Same version: no revision lies between the runs.
         var sameVersion = ReportDiff.Compare(Run(2, [new("x", "o1", ["i1"])]), Run(2, [new("p", "o1", ["i1"])]), Catalog);
-        var reversed = ReportDiff.Compare(v2, v1, Catalog);
 
         Assert.Empty(sameVersion.Revised);
         Assert.Equal(["i1"], sameVersion.Moved);
-        Assert.Empty(reversed.Revised);
-        Assert.Equal(["i1"], reversed.Moved);
+    }
+
+    [Fact]
+    public void Runs_in_the_reverse_order_are_refused()
+    {
+        var v1 = Run(1, [new("a", "o1", ["i1"])]);
+        var v2 = Run(2, [], unmapped: ["i1"]);
+
+        var error = Assert.Throws<ArgumentException>(() => ReportDiff.Compare(v2, v1, Catalog));
+        Assert.Equal("later", error.ParamName);
+    }
+
+    public static TheoryData<string> Incomparable => ["name", "counts", "period field", "row field", "row scheme", "columns", "from", "to"];
+
+    [Theory]
+    [MemberData(nameof(Incomparable))]
+    public void Runs_that_do_not_count_the_same_thing_over_the_same_period_are_refused(string differs)
+    {
+        var earlier = Run(1, [new("a", "o1", ["i1"])]);
+        var form = earlier.Report;
+        var later = differs switch
+        {
+            "name" => earlier with { Report = form with { Name = "other" } },
+            "counts" => earlier with { Report = form with { Counts = "session" } },
+            "period field" => earlier with { Report = form with { PeriodField = "entered" } },
+            "row field" => earlier with { Report = form with { RowField = "topic" } },
+            "row scheme" => earlier with { Report = form with { RowScheme = "topic" } },
+            "columns" => earlier with { Report = form with { ColumnField = null } },
+            "from" => earlier with { From = new DateOnly(2026, 2, 1) },
+            "to" => earlier with { To = new DateOnly(2026, 4, 30) },
+            _ => throw new ArgumentOutOfRangeException(nameof(differs)),
+        };
+
+        var error = Assert.Throws<ArgumentException>(() => ReportDiff.Compare(earlier, later, Catalog));
+        Assert.Equal("later", error.ParamName);
+    }
+
+    [Fact]
+    public void A_new_form_version_and_label_still_compare()
+    {
+        var earlier = Run(1, [new("a", "o1", ["i1"])]);
+        var later = earlier with { Report = earlier.Report with { Version = 2, Label = "Renamed" } };
+
+        Assert.Equal(["i1"], ReportDiff.Compare(earlier, later, Catalog).Unchanged);
     }
 
     [Fact]

@@ -74,7 +74,7 @@ Each run can be kept as a **run record**. A run record is never edited; running 
 - for every cell, and for pending, unmapped, blank and the total, the ids of the records behind the number;
 - for every record, the subjects it concerns, from which a **head count** (distinct people) is computed beside every record count. A group-held record contributes its `attendees`.
 
-Because every number keeps its evidence, two runs of the same form can be compared record by record (`ReportDiff`): records entered late, records removed or destroyed since, records moved by a scheme revision, records moved for another reason, and records unchanged.
+Because every number keeps its evidence, two runs of the same form can be compared record by record (`ReportDiff`): records entered late, records removed or destroyed since, records moved by a scheme revision, records moved for another reason, and records unchanged. Only runs that place records the same way are compared — the same form name, entity type, period field, row field and scheme, columns, and period; the form and scheme versions may differ. Any other pair is refused, since every record would read as moved by a person.
 
 ### One pass: run, settle, run again, compare
 
