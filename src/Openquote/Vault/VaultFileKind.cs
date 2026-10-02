@@ -9,11 +9,11 @@ namespace Openquote.Vault;
 /// </summary>
 /// <param name="Kind">
 /// <c>subject</c>, <c>group</c>, <c>practitioners</c>, <c>devices</c>, <c>scheme</c>, <c>crosswalk</c>,
-/// <c>report</c>, <c>export</c>, <c>pack</c>, <c>labels</c>, <c>fields</c>, <c>run</c> or <c>other</c>.
+/// <c>report</c>, <c>export</c>, <c>pack</c>, <c>labels</c>, <c>fields</c>, <c>suggestions</c>, <c>run</c> or <c>other</c>.
 /// </param>
 /// <param name="Id">The subject's or group's id.</param>
-/// <param name="Name">The scheme, report form or export form.</param>
-/// <param name="Version">The scheme's or form's version.</param>
+/// <param name="Name">The scheme, report form or export form; the pack, for a pack manifest, labels, fields or suggestions.</param>
+/// <param name="Version">The scheme's, form's or pack's version.</param>
 /// <param name="From">The earlier scheme version a crosswalk leads from.</param>
 /// <param name="To">The later scheme version a crosswalk leads to.</param>
 /// <param name="Year">The year of a run record.</param>
@@ -59,6 +59,8 @@ public sealed partial record VaultFileKind(
                 new("pack", Name: name, Version: Number("from")),
             ["labels", var name, _] when version.Success && !version.Groups["to"].Success =>
                 new("labels", Name: name, Version: Number("from")),
+            ["suggestions", var name, _] when version.Success && !version.Groups["to"].Success =>
+                new("suggestions", Name: name, Version: Number("from")),
             ["fields", var name, var type, var file] when VersionName().Match(file) is { Success: true } v && !v.Groups["to"].Success =>
                 new("fields", Name: name, Version: int.Parse(v.Groups["from"].Value, CultureInfo.InvariantCulture), Type: type),
             ["runs", var year, _] when year.Length == 4 && year.All(char.IsAsciiDigit) =>

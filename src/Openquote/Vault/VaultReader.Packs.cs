@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using Openquote.Fields;
 using Openquote.Labels;
 using Openquote.Packs;
+using Openquote.Suggestions;
 
 namespace Openquote.Vault;
 
@@ -55,16 +56,76 @@ public static partial class VaultReader
         var provides = new List<string>();
         foreach (var p in providesArray.EnumerateArray())
         {
-            if (p.ValueKind != JsonValueKind.String || DefinitionKindOf(p.GetString()!) is DefinitionKind.None or DefinitionKind.Pack)
-                return Bad<PackManifest>(file, UnreadableReason.Invalid, "provides lists definition files: schemes, crosswalks, forms, labels or fields");
-            provides.Add(p.GetString()!);
+            if (p.ValueKind != JsonValueKind.String)
+                return Bad<PackManifest>(file, UnreadableReason.Invalid, "provides lists definition files by their vault paths");
+            var provided = p.GetString()!;
+            if (DefinitionKindOf(provided) is not (DefinitionKind.None or DefinitionKind.Pack))
+                provides.Add(provided);
+            else if (!IsLaterDefinition(provided))
+                return Bad<PackManifest>(file, UnreadableReason.Invalid, "provides lists definition files: schemes, crosswalks, forms, labels, fields or suggestions");
         }
 
         return new(new PackManifest(id, version, label, depends, provides), null);
     }
 
+    // A definition file of a kind a later engine reads: a JSON file in a folder outside the layout this engine
+    // knows. A manifest naming one is still read, without it, as a vault file of that kind would be ignored.
+    private static bool IsLaterDefinition(string path)
+    {
+        var slash = path.IndexOf('/', StringComparison.Ordinal);
+        return slash > 0 && !LayoutFolders.Contains(path[..slash]) && path.EndsWith(".json", StringComparison.Ordinal);
+    }
+
     [GeneratedRegex(@"^labels/(?<pack>[^/]+)/v(?<version>[1-9][0-9]*)\.(?<locale>[^/]+)\.json\z")]
     private static partial Regex LabelsPath();
+
+    [GeneratedRegex(@"^suggestions/(?<pack>[^/]+)/v(?<version>[1-9][0-9]*)\.json\z")]
+    private static partial Regex SuggestionsPath();
+
+    private static Definition<SuggestionSet> ParseSuggestions(VaultFile file)
+    {
+        if (!TryRoot(file, "openquote.suggestions/0", out var root, out var error)) return new(null, error);
+        var path = SuggestionsPath().Match(file.Path);
+
+        if (!TryString(root, "pack", out var pack) || !TryInt(root, "version", out var version) || version < 1)
+            return Bad<SuggestionSet>(file, UnreadableReason.Invalid, "suggestions need a pack and a version of 1 or more");
+        if (PackIdProblem(pack) is { } packProblem) return Bad<SuggestionSet>(file, UnreadableReason.Invalid, packProblem);
+        if (pack != path.Groups["pack"].Value || version.ToString(CultureInfo.InvariantCulture) != path.Groups["version"].Value)
+            return Bad<SuggestionSet>(file, UnreadableReason.NameMismatch, $"the path should be suggestions/{pack}/v{version}.json");
+
+        var items = new Dictionary<SchemeItemKey, Suggestion>();
+        if (root.TryGetProperty("schemes", out var schemesObject))
+        {
+            if (schemesObject.ValueKind != JsonValueKind.Object)
+                return Bad<SuggestionSet>(file, UnreadableReason.Invalid, "schemes maps scheme names to versions to codes to off, offer or confirm");
+            foreach (var scheme in schemesObject.EnumerateObject())
+            {
+                if (scheme.Value.ValueKind != JsonValueKind.Object)
+                    return Bad<SuggestionSet>(file, UnreadableReason.Invalid, $"{scheme.Name}: map versions to codes to off, offer or confirm");
+                foreach (var v in scheme.Value.EnumerateObject())
+                {
+                    if (!int.TryParse(v.Name, NumberStyles.None, CultureInfo.InvariantCulture, out var schemeVersion) || schemeVersion < 1
+                        || v.Name != schemeVersion.ToString(CultureInfo.InvariantCulture) || v.Value.ValueKind != JsonValueKind.Object)
+                        return Bad<SuggestionSet>(file, UnreadableReason.Invalid, $"{scheme.Name}: {v.Name} is not a version");
+                    foreach (var code in v.Value.EnumerateObject())
+                    {
+                        Suggestion? suggestion = code.Value.ValueKind != JsonValueKind.String ? null : code.Value.GetString() switch
+                        {
+                            "off" => Suggestion.Off,
+                            "offer" => Suggestion.Offer,
+                            "confirm" => Suggestion.Confirm,
+                            _ => null,
+                        };
+                        if (suggestion is null)
+                            return Bad<SuggestionSet>(file, UnreadableReason.Invalid, $"{scheme.Name} v{schemeVersion} {code.Name}: off, offer or confirm");
+                        items[new(scheme.Name, schemeVersion, code.Name)] = suggestion.Value;
+                    }
+                }
+            }
+        }
+
+        return new(new SuggestionSet(pack, version, items), null);
+    }
 
     private static Definition<LabelSet> ParseLabels(VaultFile file)
     {

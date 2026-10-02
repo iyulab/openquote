@@ -24,6 +24,7 @@ A host application may store a vault encrypted, for example by wrapping each fil
   packs/<pack>/v<N>.json                     pack manifest: a pack applied to this vault, version N
   labels/<pack>/v<N>.<locale>.json           labels a pack gives in one locale
   fields/<pack>/<type>/v<N>.json             fields a pack declares for an entity type
+  suggestions/<pack>/v<N>.json               which scheme items a pack lets hosts suggest
   practitioners/<id>.<device>.json           change to a practitioner
   devices/<id>.<device>.json                 change to a device name
   subjects/<subject-id>/<id>.<device>.json   change to a subject or to an entity kept under it
@@ -134,7 +135,7 @@ A `device` entity, kept in `devices/`, carries a human-readable name in its `nam
 - Path: `schemes/<scheme>/v<version>.json`; `scheme` and `version` must match it.
 - Every item has a `code` and a `label`. Codes are unique within a version. The code is the item's identity; the label is what people see.
 - `parent`, if present, must be the code of another item in the same version. Writing a child code as `parent/child` is a naming convention; hierarchy comes from `parent`.
-- `suggest` (default `false`) marks items a host may offer as suggestions.
+- `suggest` (default `false`) marks items a host may offer as suggestions. A pack can say otherwise without a new scheme version (see [Suggestions](#suggestions)).
 - `effective` (optional): `from` (required) and `to` (optional, on or after `from`), calendar dates on which the body that issues the scheme puts this version in force. Both dates are inclusive: the version is in force on `from` and on `to`. A version without it is in force throughout. It guides which version a host offers for input (`SchemeCatalog.InForce`, the highest version in force on a given date); reports never use it.
 
 ## Crosswalks
@@ -270,7 +271,7 @@ A pack is a bundle of definition files (schemes, crosswalks, forms, labels and f
 - `pack` is lowercase ASCII letters and digits in words joined by `.` or `-` (for example `care`, `care.school`, `org-x.y2`). `local` and `oq` are reserved for the vault itself and cannot name a pack. Writing a pack's own names as `<pack>.<name>` is recommended, not required.
 - `version` is an integer of 1 or more. `label` is required: text a person reads.
 - `depends` (optional) maps the ids of other packs to a minimum version, an integer of 1 or more. A pack never depends on itself. A pack only adds, so a later version holds everything an earlier one did and a minimum version is all a dependency needs.
-- `provides` lists the definition files this version added, as vault paths: schemes, crosswalks, report and export forms, labels and field definitions. It is required, and may be empty. It is what says which pack owns which definition.
+- `provides` lists the definition files this version added, as vault paths: schemes, crosswalks, report and export forms, labels, field definitions and suggestion files. It is required, and may be empty. It is what says which pack owns which definition. A path to a JSON file in a folder outside the layout this engine knows names a kind of definition a later engine reads: the manifest is read without that line, as such a file in the vault is ignored. Any other path that is no definition file makes the manifest unreadable.
 - A manifest in the vault is the record that the pack was applied; there is no separate record. Of several versions of a pack, the highest one counts.
 
 `VaultContent.CheckPacks` compares the packs with each other and with the definition files the vault could read, and reports each problem with the pack it concerns (`PackIssue`):
@@ -308,6 +309,26 @@ Reading never stops on these; a host decides what to do with the list.
 - Labels change what people read, never a code or what is counted, so a renamed item needs no new scheme version.
 - When several packs label the same thing in one locale, a pack that another of them builds on is set aside, so the pack that builds on the others wins. If several packs are left, none building on another, they agree when they give the same text (for example two packs that each build on a third and relabel alike); when they give different labels it is a conflict (`LabelCatalog.Conflicts`), and none of their labels is used for that locale.
 - A host asks for labels by a list of locales in order of preference (`LabelCatalog.SchemeLabel`, `FieldLabel`, `ReportLabel`, `ExportLabel`, `ExportColumnLabel`). Each locale falls back to its language alone (`fr-CA`, then `fr`), and tags are compared without regard to case; if no locale gives a label, the answer is `null` and the host shows the definition's own `label` (the scheme item's, the field's, the form's or the column's). Of several versions of a pack's labels in one locale, the highest counts.
+
+## Suggestions
+
+```json
+{
+  "format": "openquote.suggestions/0",
+  "pack": "care.school",
+  "version": 2,
+  "schemes": { "topic": { "1": { "crisis": "confirm", "self-harm": "confirm", "other": "off" } } }
+}
+```
+
+- Path: `suggestions/<pack>/v<version>.json`; `pack` and `version` must match it. `pack` is a pack id as for a manifest (and not `local` or `oq`).
+- `schemes` (optional) maps a scheme name to a scheme version to item codes to one of:
+  - `off` — a host never offers the item as a suggestion;
+  - `offer` — a host may offer it;
+  - `confirm` — a host may offer it set apart from the other suggestions, and never fills it in until a person confirms it.
+- An item no pack says anything about is offered when its scheme marks it `suggest`, and never otherwise. Whether an item is suggested never changes a code or what is counted, so a pack changes it with a later version of its own, not a new scheme version: of several versions of a pack's suggestion file, the highest counts.
+- When several packs say something about the same item, a pack that another of them builds on is set aside, as for labels. If the packs left say the same, that holds; if they disagree it is a conflict (`SuggestionCatalog.Conflicts`), and the scheme's own `suggest` holds for that item.
+- A host asks per item (`SuggestionCatalog.For`).
 
 ## Field definitions
 
@@ -359,7 +380,7 @@ A second pack that builds on the first can add fields and narrow the first pack'
 
 ## Reading rules
 
-The reader never stops on a bad file. A file whose path matches the layout but cannot be used is listed as unreadable with a reason and what it was for — a subject's or group's records, a scheme version, a crosswalk, a form, a pack, labels, field definitions or a run record, read from the path alone (`VaultFileKind.Of`, which also reads a sync client's copy by the start of its name) — and every other file is still read:
+The reader never stops on a bad file. A file whose path matches the layout but cannot be used is listed as unreadable with a reason and what it was for — a subject's or group's records, a scheme version, a crosswalk, a form, a pack, labels, field definitions, suggestions or a run record, read from the path alone (`VaultFileKind.Of`, which also reads a sync client's copy by the start of its name) — and every other file is still read:
 
 | Reason | When |
 |---|---|
@@ -369,13 +390,14 @@ The reader never stops on a bad file. A file whose path matches the layout but c
 | `NameMismatch` | The file name or path disagrees with the id, device, name or version inside. |
 | `DuplicateId` | Two change files carry the same id with different content. |
 
-A sync client's conflicted copy of a change file is read as a valid input: its name may add, before or after `.json`, anything that begins with a character other than a letter or digit (for example `<id>.<device> (conflicted copy).json` or `<id>.<device>.json-LAPTOP`). Copies with identical content count once. A copy of any other vault file — a scheme, crosswalk, form, pack manifest, label file, field file or run record named with something added after `.json` — is listed as `NameMismatch` rather than ignored, since it may differ from the file it copies and should be looked at by a person.
+A sync client's conflicted copy of a change file is read as a valid input: its name may add, before or after `.json`, anything that begins with a character other than a letter or digit (for example `<id>.<device> (conflicted copy).json` or `<id>.<device>.json-LAPTOP`). Copies with identical content count once. A copy of any other vault file — a scheme, crosswalk, form, pack manifest, label file, field file, suggestion file or run record named with something added after `.json` — is listed as `NameMismatch` rather than ignored, since it may differ from the file it copies and should be looked at by a person.
 
 The only condition that refuses the whole read is the declaration check described under [Declaration](#declaration-vaultjson).
 
 ## Compatibility
 
 - A change a previous engine could ignore without producing a wrong number (a new optional key) is additive and keeps the declared version.
-- A change that would make a previous engine count wrongly without noticing (a new folder of records, a key that changes what is counted) raises the declared vault format, so that previous engines refuse the vault instead of reading it. Folders a previous engine ignores without changing any count — `packs/`, `labels/`, `fields/` — are additive.
+- A change that would make a previous engine count wrongly without noticing (a new folder of records, a key that changes what is counted) raises the declared vault format, so that previous engines refuse the vault instead of reading it. Folders a previous engine ignores without changing any count — `packs/`, `labels/`, `fields/`, `suggestions/` — are additive.
+- A pack manifest may name a definition file in a folder a previous engine does not know; that engine reads the manifest without the line. Engines before `suggestions/` was added (package versions up to 0.6) read a manifest that names a suggestion file as unreadable instead, and keep using the pack's earlier version.
 
 `VaultWriter` produces indented UTF-8 JSON with `\n` line endings and a trailing newline, stamps `at` in the device's local time with its offset, and gives every file a fresh id, so its path never names an existing file.

@@ -6,6 +6,7 @@ using Gil.Memory;
 using Openquote.Classification;
 using Openquote.Fields;
 using Openquote.Records;
+using Openquote.Suggestions;
 using Openquote.Vault;
 using GilField = Gil.FieldDefinition;
 using VaultField = Openquote.Fields.FieldDefinition;
@@ -20,9 +21,10 @@ public sealed record FieldSuggestions(string Field, string Scheme, int Version, 
 
 /// <summary>
 /// One suggested code, with its score and the settled records closest to the one being entered that
-/// hold it (entity ids, nearest first) — the evidence a host shows for the suggestion.
+/// hold it (entity ids, nearest first) — the evidence a host shows for the suggestion. A code to
+/// <paramref name="Confirm"/> is set apart from the others (<see cref="Suggestion.Confirm"/>).
 /// </summary>
-public sealed record SuggestedCode(string Code, double Score, IReadOnlyList<string> Similar);
+public sealed record SuggestedCode(string Code, double Score, IReadOnlyList<string> Similar, bool Confirm);
 
 /// <summary>
 /// Suggests codes for the coded fields of one entity type, learned from the vault's settled records with
@@ -31,8 +33,9 @@ public sealed record SuggestedCode(string Code, double Score, IReadOnlyList<stri
 /// </summary>
 /// <remarks>
 /// <para>
-/// A coded field is suggested for when the scheme version in force on the given date has items marked
-/// <c>suggest</c>, and only those items are ever suggested. The version is the one a host offers for
+/// A coded field is suggested for when the scheme version in force on the given date has items that may be
+/// suggested (<see cref="SuggestionCatalog"/>: as the scheme marks them, or as the vault's packs say over
+/// it), and only those items are ever suggested. The version is the one a host offers for
 /// input on that date (<see cref="SchemeCatalog.InForce"/>); a settled record's value is carried to it
 /// the way reports place records (<see cref="Entity.Classify"/>), and a value that does not land on
 /// exactly one code there is left out.
@@ -85,16 +88,18 @@ public sealed class CodeSuggester
         ArgumentNullException.ThrowIfNull(content);
         ArgumentNullException.ThrowIfNull(type);
         var catalog = content.Catalog();
+        var suggestible = content.SuggestionCatalog();
         var fields = content.FieldCatalog().For(type).Where(f => !f.Hidden).ToList();
         var targets = new Dictionary<string, Target>(StringComparer.Ordinal);
         var formFields = new List<GilField>();
         foreach (var field in fields)
         {
             if (field.Kind == FieldKind.Coded && field.Scheme is { } name && catalog.InForce(name, date) is { } scheme
-                && scheme.Items.Where(i => i.Suggest).Select(i => i.Code).ToList() is { Count: > 0 } codes)
+                && scheme.Items.Select(i => (i.Code, Suggestion: suggestible.For(name, scheme.Version, i))).Where(i => i.Suggestion != Suggestion.Off)
+                    .ToDictionary(i => i.Code, i => i.Suggestion, StringComparer.Ordinal) is { Count: > 0 } codes)
             {
-                targets[field.Name] = new Target(scheme, [.. codes]);
-                formFields.Add(new GilField(field.Name, FieldRole.Judged) { Candidates = codes });
+                targets[field.Name] = new Target(scheme, codes);
+                formFields.Add(new GilField(field.Name, FieldRole.Judged) { Candidates = [.. codes.Keys] });
             }
             else
             {
@@ -137,10 +142,11 @@ public sealed class CodeSuggester
             {
                 continue;
             }
-            // The memory offers any value a settled record holds; only the scheme's suggested items are kept.
+            // The memory offers any value a settled record holds; only the items that may be suggested are kept.
             var codes = suggestion.Candidates
-                .Where(c => target.Codes.Contains(c.Value))
-                .Select(c => new SuggestedCode(c.Value, c.Score, [.. suggestion.SimilarDocuments.Where(m => m.Answer == c.Value).Select(m => m.Source)]))
+                .Where(c => target.Codes.ContainsKey(c.Value))
+                .Select(c => new SuggestedCode(c.Value, c.Score, [.. suggestion.SimilarDocuments.Where(m => m.Answer == c.Value).Select(m => m.Source)],
+                    target.Codes[c.Value] == Suggestion.Confirm))
                 .ToList();
             if (codes.Count > 0)
             {
@@ -197,5 +203,5 @@ public sealed class CodeSuggester
         _ => null,
     };
 
-    private sealed record Target(Scheme Scheme, HashSet<string> Codes);
+    private sealed record Target(Scheme Scheme, Dictionary<string, Suggestion> Codes);
 }

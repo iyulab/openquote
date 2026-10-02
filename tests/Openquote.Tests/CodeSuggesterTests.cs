@@ -92,6 +92,26 @@ public class CodeSuggesterTests
     }
 
     [Fact]
+    public async Task Follows_what_a_pack_says_over_the_scheme_setting_apart_an_item_to_confirm()
+    {
+        const string Says = """
+            { "format": "openquote.suggestions/0", "pack": "care", "version": 1,
+              "schemes": { "topic": { "1": { "crisis": "confirm", "stress": "off" } } } }
+            """;
+        var suggester = await CodeSuggester.BuildAsync(VaultReader.Read([.. Vault(Settled), File("suggestions/care/v1.json", Says)]), "session", March,
+            TestContext.Current.CancellationToken);
+
+        var crisis = await suggester.SuggestAsync(Draft(("note", "said they want to end their life")), TestContext.Current.CancellationToken);
+        var stress = await suggester.SuggestAsync(Draft(("note", "stress at work, cannot sleep well")), TestContext.Current.CancellationToken);
+
+        var confirm = Assert.Single(Assert.Single(crisis).Codes, c => c.Code == "crisis");
+        Assert.True(confirm.Confirm);
+        Assert.Equal("e3", confirm.Similar[0]);
+        Assert.All(stress.SelectMany(s => s.Codes), c => Assert.NotEqual("stress", c.Code));
+        Assert.All(stress.SelectMany(s => s.Codes).Where(c => c.Code != "crisis"), c => Assert.False(c.Confirm));
+    }
+
+    [Fact]
     public async Task Suggests_in_the_version_in_force_on_the_date_carrying_settled_values_to_it()
     {
         var suggester = await Build(May, Settled);

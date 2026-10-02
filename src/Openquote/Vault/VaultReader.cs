@@ -6,6 +6,7 @@ using Openquote.Fields;
 using Openquote.Labels;
 using Openquote.Packs;
 using Openquote.Reports;
+using Openquote.Suggestions;
 
 namespace Openquote.Vault;
 
@@ -22,6 +23,9 @@ public sealed record VaultContent(
     IReadOnlyList<LabelSet> Labels,
     IReadOnlyList<FieldSet> Fields)
 {
+    /// <summary>What the vault's packs say about suggesting scheme items, apart from the schemes.</summary>
+    public IReadOnlyList<SuggestionSet> Suggestions { get; init; } = [];
+
     /// <summary>The schemes and crosswalks, ready to carry values between versions.</summary>
     public SchemeCatalog Catalog() => new(Schemes, Crosswalks);
 
@@ -34,18 +38,22 @@ public sealed record VaultContent(
     /// <summary>The fields of each entity type, merged from the vault's packs.</summary>
     public FieldCatalog FieldCatalog() => new(Fields, Packs);
 
+    /// <summary>Whether each scheme item may be suggested, as the schemes and the vault's packs say.</summary>
+    public SuggestionCatalog SuggestionCatalog() => new(Suggestions, Packs);
+
     private IEnumerable<string> DefinitionPaths() =>
         Schemes.Select(s => $"schemes/{s.Name}/v{s.Version}.json")
             .Concat(Crosswalks.Select(c => $"schemes/{c.Scheme}/v{c.From}-v{c.To}.json"))
             .Concat(Reports.Select(r => $"reports/{r.Name}/v{r.Version}.json"))
             .Concat(Exports.Select(e => $"exports/{e.Name}/v{e.Version}.json"))
             .Concat(Labels.Select(l => $"labels/{l.Pack}/v{l.Version}.{l.Locale}.json"))
-            .Concat(Fields.Select(f => $"fields/{f.Pack}/{f.Type}/v{f.Version}.json"));
+            .Concat(Fields.Select(f => $"fields/{f.Pack}/{f.Type}/v{f.Version}.json"))
+            .Concat(Suggestions.Select(s => $"suggestions/{s.Pack}/v{s.Version}.json"));
 }
 
 /// <summary>
-/// Reads a vault: change files, scheme versions, crosswalks, report forms, run records, export forms, pack manifests, labels
-/// and field definitions. A file that cannot
+/// Reads a vault: change files, scheme versions, crosswalks, report forms, run records, export forms, pack manifests, labels,
+/// field definitions and suggestion files. A file that cannot
 /// be used never stops the read: it is reported in <see cref="VaultContent.Unreadable"/> and
 /// everything else is still returned.
 /// </summary>
@@ -81,6 +89,7 @@ public static partial class VaultReader
         var packs = new List<PackManifest>();
         var labels = new List<LabelSet>();
         var fieldSets = new List<FieldSet>();
+        var suggestions = new List<SuggestionSet>();
         var runFiles = new List<VaultFile>();
 
         foreach (var file in all.OrderBy(f => f.Path, StringComparer.Ordinal))
@@ -107,6 +116,9 @@ public static partial class VaultReader
                     continue;
                 case DefinitionKind.Fields:
                     Collect(ParseFields(file), fieldSets, unreadable);
+                    continue;
+                case DefinitionKind.Suggestions:
+                    Collect(ParseSuggestions(file), suggestions, unreadable);
                     continue;
             }
 
@@ -156,7 +168,7 @@ public static partial class VaultReader
 
         changes.Sort((a, b) => string.CompareOrdinal(a.Id, b.Id));
         unreadable.Sort((a, b) => string.CompareOrdinal(a.Path, b.Path));
-        return new VaultContent(changes, schemes, crosswalks, reports, unreadable, runs, exports, packs, labels, fieldSets);
+        return new VaultContent(changes, schemes, crosswalks, reports, unreadable, runs, exports, packs, labels, fieldSets) { Suggestions = suggestions };
     }
 
     // A per-file format this engine does not know makes that one file unreadable (§7 of the format);
@@ -182,7 +194,7 @@ public static partial class VaultReader
         throw new VaultFormatException(declared, newer);
     }
 
-    private static readonly string[] LayoutFolders = ["schemes", "reports", "exports", "practitioners", "devices", "subjects", "groups", "runs", "packs", "labels", "fields"];
+    private static readonly string[] LayoutFolders = ["schemes", "reports", "exports", "practitioners", "devices", "subjects", "groups", "runs", "packs", "labels", "fields", "suggestions"];
 
     // A sync client keeps the losing side of a conflict under the same name with something added
     // after ".json" (" (conflicted copy …)", ".sync-conflict-…", "-<computer>"). A change file's copy
