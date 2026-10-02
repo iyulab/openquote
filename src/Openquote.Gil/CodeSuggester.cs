@@ -51,14 +51,14 @@ public sealed class CodeSuggester
     private const string Draft = "draft";
     private const int SimilarCount = 5;
 
-    private readonly FormDefinition _form;
-    private readonly FormResolver _resolver;
+    private readonly FormDefinition? _form;
+    private readonly FormResolver? _resolver;
     private readonly IReadOnlyDictionary<string, Target> _targets;
     private readonly IReadOnlyList<VaultField> _fields;
     private readonly SchemeCatalog _catalog;
     private readonly DateOnly _date;
 
-    private CodeSuggester(FormDefinition form, FormResolver resolver, IReadOnlyDictionary<string, Target> targets,
+    private CodeSuggester(FormDefinition? form, FormResolver? resolver, IReadOnlyDictionary<string, Target> targets,
         IReadOnlyList<VaultField> fields, SchemeCatalog catalog, DateOnly date, int remembered)
     {
         _form = form;
@@ -70,7 +70,7 @@ public sealed class CodeSuggester
         Remembered = remembered;
     }
 
-    /// <summary>How many settled records the suggestions are learned from.</summary>
+    /// <summary>How many settled records the suggestions are learned from; none when there is nothing to suggest for.</summary>
     public int Remembered { get; }
 
     /// <summary>The coded fields this suggester suggests codes for.</summary>
@@ -102,6 +102,11 @@ public sealed class CodeSuggester
                 formFields.Add(new GilField(field.Name, FieldRole.Observed) { UseAsEvidence = evidence });
             }
         }
+        if (targets.Count == 0)
+        {
+            // Nothing to suggest for: no settled record is read.
+            return new CodeSuggester(null, null, targets, fields, catalog, date, 0);
+        }
         var form = new FormDefinition(type, formFields, PromptLanguage.English);
         var resolver = new FormResolver(new FieldMemory(), new LexicalMemory(), similarDocumentCount: SimilarCount);
         var settled = EntityMerger.Merge(content.Changes).Values
@@ -119,6 +124,10 @@ public sealed class CodeSuggester
     public async Task<IReadOnlyList<FieldSuggestions>> SuggestAsync(IReadOnlyDictionary<string, JsonElement> draft, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(draft);
+        if (_form is null || _resolver is null)
+        {
+            return [];
+        }
         var values = Values(draft, _fields, _catalog, _date, entity: null);
         var suggestions = await _resolver.SuggestAsync(_form, Draft, values, cancellationToken).ConfigureAwait(false);
         var result = new List<FieldSuggestions>();

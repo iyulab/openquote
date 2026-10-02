@@ -180,6 +180,15 @@ public class CodeSuggesterTests
     }
 
     [Fact]
+    public async Task Suggests_nothing_for_a_type_with_no_coded_field_to_suggest_for()
+    {
+        var suggester = await CodeSuggester.BuildAsync(VaultReader.Read(Vault(Settled)), "subject", March, TestContext.Current.CancellationToken);
+
+        Assert.Empty(suggester.Fields);
+        Assert.Empty(await suggester.SuggestAsync(Draft(("name", "someone")), TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
     public async Task A_field_the_draft_already_holds_is_not_suggested_for()
     {
         var suggester = await Build(March, Settled);
