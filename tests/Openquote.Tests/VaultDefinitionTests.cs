@@ -40,7 +40,7 @@ public class VaultDefinitionTests
         Assert.Equal("a", scheme.Items[1].Parent);
         Assert.Equal([("a", "x"), ("a/b", "x")], Assert.Single(content.Crosswalks).Links);
         var report = Assert.Single(content.Reports);
-        Assert.Equal(("monthly", 1, "item", "day"), (report.Name, report.Version, report.Counts, report.PeriodField));
+        Assert.Equal(("monthly", 1, "item", "day"), (report.Name, report.Version, report.Counts, report.Period.Field));
         Assert.Equal([new ReportDimension("kind", "kind", 1), new ReportDimension("owner")], report.Dimensions);
     }
 

@@ -410,7 +410,7 @@ public class ReportRunnerTests
         {
             "name" => earlier with { Report = form with { Name = "other" } },
             "counts" => earlier with { Report = form with { Counts = "session" } },
-            "period field" => earlier with { Report = form with { PeriodField = "entered" } },
+            "period field" => earlier with { Report = form with { Period = new ReportPeriod("entered") } },
             "row field" => earlier with { Report = form with { Dimensions = [form.Dimensions[0] with { Field = "topic" }, form.Dimensions[1]] } },
             "row scheme" => earlier with { Report = form with { Dimensions = [form.Dimensions[0] with { Scheme = "topic" }, form.Dimensions[1]] } },
             "columns" => earlier with { Report = form with { Dimensions = [form.Dimensions[0]] } },
@@ -461,7 +461,7 @@ public class ReportRunnerTests
         ],
         [new Crosswalk("kind", 1, 2, [("a", "x"), ("b", "x"), ("c", "p"), ("c", "q")])]);
 
-    private static ReportDefinition ByKindLevelOwner(int kindVersion) => new("by-level", 1, "By level", "item", "day",
+    private static ReportDefinition ByKindLevelOwner(int kindVersion) => new("by-level", 1, "By level", "item", new ReportPeriod("day"),
         [new ReportDimension("kind", "kind", kindVersion), new ReportDimension("level", "level", 1), new ReportDimension("owner")]);
 
     private static List<JsonObject> Leveled(string id, string? code, string? level, string? owner = "o1")
@@ -523,7 +523,7 @@ public class ReportRunnerTests
     [Fact]
     public void A_form_counting_one_scheme_in_two_versions_cannot_be_run()
     {
-        var form = new ReportDefinition("twice", 1, "Twice", "item", "day",
+        var form = new ReportDefinition("twice", 1, "Twice", "item", new ReportPeriod("day"),
             [new ReportDimension("kind", "kind", 1), new ReportDimension("kind", "kind", 2)]);
 
         Assert.NotNull(form.Problem());
@@ -599,7 +599,7 @@ public class ReportRunnerTests
     }
 
     private static ReportDefinition Sessions(params ReportDimension[] dimensions) =>
-        new("pupils", 1, "Pupils", "session", "day", [new ReportDimension("kind", "kind", 1), .. dimensions]);
+        new("pupils", 1, "Pupils", "session", new ReportPeriod("day"), [new ReportDimension("kind", "kind", 1), .. dimensions]);
 
     private static string[] Ids(Dictionary<string, string> sessions, params string[] names) =>
         [.. names.Select(n => sessions[n]).Order(StringComparer.Ordinal)];
@@ -669,5 +669,82 @@ public class ReportRunnerTests
 
         Assert.Contains("\"openquote.run/1\"", text, StringComparison.Ordinal);
         Assert.False((Sessions() with { Filters = [new ReportFilter(new ReportDimension("grade"), ["2"])] }).RowsAndColumn);
+    }
+
+    [Theory]
+    [InlineData(PeriodUnit.Day, 1, "2026-02-10", "2026-02-10", "2026-02-10")]
+    [InlineData(PeriodUnit.Month, 1, "2026-02-10", "2026-02-01", "2026-02-28")]
+    [InlineData(PeriodUnit.Year, 1, "2026-02-10", "2026-01-01", "2026-12-31")]
+    [InlineData(PeriodUnit.Year, 3, "2026-02-10", "2025-03-01", "2026-02-28")] // a school year from March
+    [InlineData(PeriodUnit.Year, 3, "2026-03-01", "2026-03-01", "2027-02-28")]
+    public void A_period_of_a_unit_holds_the_day_it_is_asked_for(PeriodUnit unit, int startMonth, string day, string from, string to)
+    {
+        var period = new ReportPeriod("day", unit, startMonth);
+
+        Assert.Equal((DateOnly.Parse(from, System.Globalization.CultureInfo.InvariantCulture), DateOnly.Parse(to, System.Globalization.CultureInfo.InvariantCulture)), period.Containing(DateOnly.Parse(day, System.Globalization.CultureInfo.InvariantCulture)));
+    }
+
+    [Fact]
+    public void A_range_is_picked_by_a_person_and_only_a_year_has_a_start_month()
+    {
+        Assert.Null(new ReportPeriod("day", PeriodUnit.Range).Containing(new DateOnly(2026, 2, 10)));
+        Assert.NotNull(new ReportPeriod("day", PeriodUnit.Month, 3).Problem());
+        Assert.NotNull(new ReportPeriod("day", PeriodUnit.Year, 13).Problem());
+        Assert.Throws<ArgumentException>(() => ReportRunner.RunContaining(
+            Form(1) with { Period = new ReportPeriod("day", PeriodUnit.Range) }, new DateOnly(2026, 3, 1), [], Catalog));
+    }
+
+    [Fact]
+    public void A_yearly_form_runs_over_the_year_from_its_start_month()
+    {
+        var items = Entities([.. Item("i1", "2026-02-27", "a"), .. Item("i2", "2025-03-01", "a"), .. Item("i3", "2026-03-01", "a")]);
+        var schoolYear = Form(1) with { Period = new ReportPeriod("day", PeriodUnit.Year, 3) };
+
+        var run = ReportRunner.RunContaining(schoolYear, new DateOnly(2025, 9, 1), items, Catalog);
+
+        Assert.Equal((new DateOnly(2025, 3, 1), new DateOnly(2026, 2, 28)), (run.From, run.To));
+        Assert.Equal(["i1", "i2"], run.Total);
+    }
+
+    [Fact]
+    public void Visits_add_up_the_people_of_each_record_while_people_count_each_person_once()
+    {
+        var (entities, s) = Pupils();
+
+        var run = ReportRunner.RunMonth(Sessions(), 2026, 3, entities, Levels);
+
+        Assert.Equal(5, run.Total.Count);
+        Assert.Equal(7, run.VisitsOf(run.Total)); // three sessions of one, two of two
+        Assert.Equal(3, run.PeopleOf(run.Total)!.Count);
+        Assert.Equal(2, run.VisitsOf(Ids(s, "one+two")));
+        Assert.Null((run with { People = null }).VisitsOf(run.Total));
+    }
+
+    [Fact]
+    public void A_form_may_count_subjects_by_a_date_of_their_own()
+    {
+        var w = new VaultWriter("dev1", new StepClock());
+        var files = new[]
+        {
+            w.CreateSubject(Fields(("registered", "2026-03-04"), ("grade", "2"))),
+            w.CreateSubject(Fields(("registered", "2026-03-20"), ("grade", "3"))),
+            w.CreateSubject(Fields(("registered", "2026-04-01"), ("grade", "2"))),
+        };
+        var subjects = EntityMerger.Merge(VaultReader.Read(files).Changes).Values;
+        var registrations = new ReportDefinition("new", 1, "New", "subject", new ReportPeriod("registered"), [new ReportDimension("grade")]);
+
+        var run = ReportRunner.RunMonth(registrations, 2026, 3, subjects, Levels);
+
+        Assert.Equal([["2"], ["3"]], run.Cells.Select(c => c.Key));
+        Assert.Equal(2, run.PeopleOf(run.Total)!.Count); // a subject is about itself
+    }
+
+    [Fact]
+    public void A_form_shows_each_measure_once()
+    {
+        Assert.Equal([ReportMeasure.Records, ReportMeasure.People], Form(1).Measures);
+        Assert.NotNull((Form(1) with { Measures = [] }).Problem());
+        Assert.NotNull((Form(1) with { Measures = [ReportMeasure.Visits, ReportMeasure.Visits] }).Problem());
+        Assert.Null((Form(1) with { Measures = [ReportMeasure.Visits] }).Problem());
     }
 }

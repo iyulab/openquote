@@ -59,12 +59,12 @@ public static class ReportRunner
         {
             if (entity.Destroyed || entity.Reference.Type != report.Counts) continue;
             var id = entity.Reference.Id;
-            var disputed = entity.Conflicts.TryGetValue(report.PeriodField, out var dates);
+            var disputed = entity.Conflicts.TryGetValue(report.Period.Field, out var dates);
             if (disputed)
             {
                 if (!dates!.Any(d => ParseDate(d.Value) is { } day && day >= from && day <= to)) continue;
             }
-            else if (!entity.Fields.TryGetValue(report.PeriodField, out var dateValue) || ParseDate(dateValue) is not { } date
+            else if (!entity.Fields.TryGetValue(report.Period.Field, out var dateValue) || ParseDate(dateValue) is not { } date
                 || date < from || date > to) continue;
 
             // A filter that reads a value outside its list leaves the record out of the run; one that
@@ -120,6 +120,19 @@ public static class ReportRunner
     {
         var from = new DateOnly(year, month, 1);
         return Run(report, from, from.AddMonths(1).AddDays(-1), entities, catalog);
+    }
+
+    /// <summary>
+    /// Runs <paramref name="report"/> over the period of its unit that holds <paramref name="day"/> —
+    /// the day, the month, or the year from the form's start month (see <see cref="ReportPeriod.Containing"/>).
+    /// </summary>
+    /// <exception cref="ArgumentException">The form is run over a range a person picks; use <see cref="Run"/>.</exception>
+    public static ReportRun RunContaining(ReportDefinition report, DateOnly day, IEnumerable<Entity> entities, SchemeCatalog catalog)
+    {
+        ArgumentNullException.ThrowIfNull(report);
+        var (from, to) = report.Period.Containing(day)
+            ?? throw new ArgumentException("the form is run over a range a person picks", nameof(report));
+        return Run(report, from, to, entities, catalog);
     }
 
     // Ordered so a record placed several ways lands in the set the later member names.

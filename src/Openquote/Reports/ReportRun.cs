@@ -70,6 +70,17 @@ public sealed record ReportRun(
             .Order(StringComparer.Ordinal).ToArray();
 
     /// <summary>
+    /// The visits behind <paramref name="records"/>: for each record, the number of people it is
+    /// about, added up — a group session of three counts three. Null when the run did not record people.
+    /// </summary>
+    public int? VisitsOf(IEnumerable<string> records)
+    {
+        ArgumentNullException.ThrowIfNull(records);
+        if (People is null) return null;
+        return records.Sum(r => People.TryGetValue(r, out var subjects) ? subjects.Count : 0);
+    }
+
+    /// <summary>
     /// The distinct subjects behind <paramref name="records"/> — a cell's, a set's or the total's
     /// records — ordered; their number is the head count beside the record count. Null when the
     /// run did not record people.

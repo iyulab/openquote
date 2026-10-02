@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/iyulab/openquote/blob/main/docs/schema/report.schema.json",
   "title": "Openquote report form",
-  "description": "reports/<report>/v<version>.json. Format 0 splits by rows (a classified field) and an optional string column; format 1 by one to three dimensions, each a classified field in a scheme version (or \"in-force\": the version in force on the last day of the period run) or a field split by its string value — of the record, or with of \"subject\" of the subjects it is about — and filters that let through only the records whose value is listed in \"in\". A form counts each scheme in one version; a reader checks that.",
+  "description": "reports/<report>/v<version>.json. Format 0 splits by rows (a classified field) and an optional string column; format 1 by one to three dimensions, each a classified field in a scheme version (or \"in-force\": the version in force on the last day of the period run) or a field split by its string value — of the record, or with of \"subject\" of the subjects it is about — and filters that let through only the records whose value is listed in \"in\". Format 1 also runs over days, years from a start month, or ranges a person picks, and names the measures it shows. A form counts each scheme in one version; a reader checks that.",
   "type": "object",
   "required": ["format", "report", "version", "label", "counts", "period"],
   "properties": {
@@ -15,9 +15,18 @@
       "type": "object",
       "required": ["unit", "field"],
       "properties": {
-        "unit": { "const": "month" },
-        "field": { "type": "string", "minLength": 1 }
-      }
+        "unit": { "enum": ["day", "month", "year", "range"] },
+        "field": { "type": "string", "minLength": 1 },
+        "startMonth": { "type": "integer", "minimum": 1, "maximum": 12 }
+      },
+      "if": { "required": ["startMonth"] },
+      "then": { "properties": { "unit": { "const": "year" } } }
+    },
+    "measures": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "enum": ["records", "people", "visits"] }
     },
     "rows": {
       "type": "object",
@@ -57,7 +66,11 @@
     }
   },
   "if": { "properties": { "format": { "const": "openquote.report/0" } } },
-  "then": { "required": ["rows"], "not": { "anyOf": [{ "required": ["dimensions"] }, { "required": ["filters"] }] } },
+  "then": {
+    "required": ["rows"],
+    "properties": { "period": { "properties": { "unit": { "const": "month" } } } },
+    "not": { "anyOf": [{ "required": ["dimensions"] }, { "required": ["filters"] }, { "required": ["measures"] }] }
+  },
   "else": {
     "required": ["dimensions"],
     "not": { "anyOf": [{ "required": ["rows"] }, { "required": ["columns"] }] }

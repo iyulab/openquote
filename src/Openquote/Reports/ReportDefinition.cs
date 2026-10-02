@@ -39,16 +39,29 @@ public sealed record ReportFilter(ReportDimension On, IReadOnlyList<string> In)
     public override int GetHashCode() => HashCode.Combine(On, In.Count);
 }
 
+/// <summary>A number a report form shows for each cell, set and total.</summary>
+public enum ReportMeasure
+{
+    /// <summary>How many records: each record once.</summary>
+    Records,
+
+    /// <summary>How many distinct people the records are about — a head count (see <see cref="ReportRun.PeopleOf"/>).</summary>
+    People,
+
+    /// <summary>How many visits: for each record, the number of people it is about, added up (see <see cref="ReportRun.VisitsOf"/>).</summary>
+    Visits,
+}
+
 /// <summary>
-/// One immutable version of a report form: which entities it counts, which calendar-date field
-/// places them in a period, which of them it counts, and the dimensions — one to three — whose
-/// values make each cell's key.
+/// One immutable version of a report form: which entities it counts, how it places them in a
+/// period, which of them it counts, the dimensions — one to three — whose values make each cell's
+/// key, and the numbers it shows.
 /// </summary>
 /// <param name="Name">The form's name, as its path names it.</param>
 /// <param name="Version">The form's version, as its path names it.</param>
 /// <param name="Label">What people see the form called.</param>
 /// <param name="Counts">The entity type counted.</param>
-/// <param name="PeriodField">The calendar-date field that places a record in a period.</param>
+/// <param name="Period">The calendar-date field that places a record in a period, and the unit the form is run over.</param>
 /// <param name="Dimensions">
 /// The dimensions a cell's key is made of, in key order. A form counts each scheme in one version, so
 /// two classified dimensions or filters of the same scheme name the same version.
@@ -58,7 +71,7 @@ public sealed record ReportDefinition(
     int Version,
     string Label,
     string Counts,
-    string PeriodField,
+    ReportPeriod Period,
     IReadOnlyList<ReportDimension> Dimensions)
 {
     /// <summary>The most dimensions a form may have.</summary>
@@ -67,11 +80,14 @@ public sealed record ReportDefinition(
     /// <summary>The conditions every counted record meets; none by default.</summary>
     public IReadOnlyList<ReportFilter> Filters { get; init; } = [];
 
+    /// <summary>The numbers the form shows, in order; records and people by default.</summary>
+    public IReadOnlyList<ReportMeasure> Measures { get; init; } = [ReportMeasure.Records, ReportMeasure.People];
+
     /// <summary>Two forms are equal when every part is, dimensions and filters compared in order.</summary>
     public bool Equals(ReportDefinition? other) =>
         other is not null && Name == other.Name && Version == other.Version && Label == other.Label
-        && Counts == other.Counts && PeriodField == other.PeriodField && Dimensions.SequenceEqual(other.Dimensions)
-        && Filters.SequenceEqual(other.Filters);
+        && Counts == other.Counts && Period == other.Period && Dimensions.SequenceEqual(other.Dimensions)
+        && Filters.SequenceEqual(other.Filters) && Measures.SequenceEqual(other.Measures);
 
     /// <inheritdoc/>
     public override int GetHashCode()
@@ -98,12 +114,14 @@ public sealed record ReportDefinition(
     public int? VersionOf(string scheme) => Placers.First(d => d.Scheme == scheme).Version;
 
     /// <summary>
-    /// Why the form cannot be run as it stands — no dimension or too many, a string dimension naming a
-    /// version, a filter that lets nothing through, or one scheme counted in two versions — or null when
-    /// it can.
+    /// Why the form cannot be run as it stands — a period it cannot use, no dimension or too many, a
+    /// string dimension naming a version, a filter that lets nothing through, one scheme counted in two
+    /// versions, or no measure or one twice — or null when it can.
     /// </summary>
     public string? Problem()
     {
+        if (Period.Problem() is { } period) return period;
+        if (Measures.Count == 0 || Measures.Distinct().Count() != Measures.Count) return "a report shows each of its measures once, and at least one";
         if (Dimensions.Count is 0 or > MaxDimensions) return $"a report has one to {MaxDimensions} dimensions";
         if (Placers.Any(d => !d.Classified && d.Version is not null)) return "only a classified dimension or filter names a scheme version";
         if (Filters.Any(f => f.In.Count == 0)) return "a filter names the values it lets through";
@@ -149,11 +167,11 @@ public sealed record ReportDefinition(
     public bool Resolved => Placers.All(d => !d.Classified || d.Version is not null);
 
     /// <summary>
-    /// True when a run of the form can be written in run record format 0: a classified first dimension
-    /// and at most a string second one, both of the record, and no filter — the rows and the column a
-    /// format 0 record places each cell by.
+    /// True when a run of the form can be written in run record format 0: a monthly form with a
+    /// classified first dimension and at most a string second one, both of the record, and no filter —
+    /// the form a format 0 record was made for.
     /// </summary>
     public bool RowsAndColumn =>
-        Filters.Count == 0 && Dimensions.Count is 1 or 2 && Dimensions.All(d => !d.OfSubject)
+        Filters.Count == 0 && Period.Unit == PeriodUnit.Month && Dimensions.Count is 1 or 2 && Dimensions.All(d => !d.OfSubject)
         && Dimensions[0].Classified && (Dimensions.Count == 1 || !Dimensions[1].Classified);
 }

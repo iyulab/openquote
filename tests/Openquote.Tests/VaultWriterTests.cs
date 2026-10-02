@@ -471,6 +471,42 @@ public class VaultWriterTests
         Assert.Equal(run.Cells.Select(c => c.Key), kept.Cells.Select(c => c.Key));
     }
 
+    [Fact]
+    public void A_format_1_form_reads_its_period_unit_and_measures()
+    {
+        var file = new VaultFile("reports/monthly/v1.json", System.Text.Encoding.UTF8.GetBytes(
+            """{"format":"openquote.report/1","report":"monthly","version":1,"label":"M","counts":"session","period":{"unit":"year","field":"day","startMonth":3},"dimensions":[{"field":"who"}],"measures":["visits","records"]}"""));
+
+        var form = Assert.Single(VaultReader.Read([file]).Reports);
+
+        Assert.Equal(new ReportPeriod("day", PeriodUnit.Year, 3), form.Period);
+        Assert.Equal([ReportMeasure.Visits, ReportMeasure.Records], form.Measures);
+        Assert.False(form.RowsAndColumn);
+    }
+
+    [Theory]
+    [InlineData("openquote.report/0", """{"unit":"year","field":"day"}""", null)] // format 0 knows months only
+    [InlineData("openquote.report/1", """{"unit":"week","field":"day"}""", null)]
+    [InlineData("openquote.report/1", """{"unit":"month","field":"day","startMonth":3}""", null)] // only a year starts in a month
+    [InlineData("openquote.report/1", """{"unit":"year","field":"day","startMonth":0}""", null)]
+    [InlineData("openquote.report/1", """{"unit":"month","field":"day"}""", """["records","hours"]""")]
+    [InlineData("openquote.report/1", """{"unit":"month","field":"day"}""", """["people","people"]""")]
+    [InlineData("openquote.report/1", """{"unit":"month","field":"day"}""", "[]")]
+    public void A_period_or_measures_the_engine_cannot_use_are_unreadable(string format, string period, string? measures)
+    {
+        var shape = format.EndsWith("/0", StringComparison.Ordinal)
+            ? "\"rows\":{\"field\":\"kind\",\"scheme\":\"kind\",\"version\":1}"
+            : "\"dimensions\":[{\"field\":\"who\"}]";
+        var file = new VaultFile("reports/monthly/v1.json", System.Text.Encoding.UTF8.GetBytes(
+            "{\"format\":\"" + format + "\",\"report\":\"monthly\",\"version\":1,\"label\":\"M\",\"counts\":\"session\",\"period\":" + period + "," + shape
+            + (measures is null ? "" : ",\"measures\":" + measures) + "}"));
+
+        var content = VaultReader.Read([file]);
+
+        Assert.Empty(content.Reports);
+        Assert.Equal(UnreadableReason.Invalid, Assert.Single(content.Unreadable).Reason);
+    }
+
     [Theory]
     [InlineData("""[null, "mid", "p1"]""")] // a classified place holds a code
     [InlineData("""["a", "mid"]""")] // one place per dimension

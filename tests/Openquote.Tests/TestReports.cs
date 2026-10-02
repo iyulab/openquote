@@ -11,7 +11,7 @@ internal static class TestReports
 {
     public static ReportDefinition Form(string name, int version, string label, string counts, string periodField,
         string rowField, string rowScheme, int? rowVersion, string? columnField) =>
-        new(name, version, label, counts, periodField,
+        new(name, version, label, counts, new ReportPeriod(periodField),
             columnField is null
                 ? [new ReportDimension(rowField, rowScheme, rowVersion)]
                 : [new ReportDimension(rowField, rowScheme, rowVersion), new ReportDimension(columnField)]);

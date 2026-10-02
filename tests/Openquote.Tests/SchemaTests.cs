@@ -80,6 +80,9 @@ public class SchemaTests
     [InlineData("report", """{ "format": "openquote.report/1", "report": "monthly", "version": 1, "label": "Monthly", "counts": "session", "period": { "unit": "month", "field": "date" }, "dimensions": [ { "field": "kind" } ], "filters": [ { "field": "grade", "in": [] } ] }""")]
     [InlineData("report", """{ "format": "openquote.report/1", "report": "monthly", "version": 1, "label": "Monthly", "counts": "session", "period": { "unit": "month", "field": "date" }, "dimensions": [ { "field": "kind" } ], "filters": [ { "field": "grade" } ] }""")]
     [InlineData("report", """{ "format": "openquote.report/0", "report": "monthly", "version": 1, "label": "Monthly", "counts": "session", "period": { "unit": "month", "field": "date" }, "rows": { "field": "kind", "scheme": "kind", "version": 1 }, "filters": [ { "field": "grade", "in": [ "2" ] } ] }""")]
+    [InlineData("report", """{ "format": "openquote.report/1", "report": "monthly", "version": 1, "label": "Monthly", "counts": "session", "period": { "unit": "month", "field": "date", "startMonth": 3 }, "dimensions": [ { "field": "who" } ] }""")]
+    [InlineData("report", """{ "format": "openquote.report/1", "report": "monthly", "version": 1, "label": "Monthly", "counts": "session", "period": { "unit": "year", "field": "date" }, "dimensions": [ { "field": "who" } ], "measures": [ "people", "people" ] }""")]
+    [InlineData("report", """{ "format": "openquote.report/0", "report": "monthly", "version": 1, "label": "Monthly", "counts": "session", "period": { "unit": "year", "field": "date" }, "rows": { "field": "kind", "scheme": "kind", "version": 1 } }""")]
     public void A_shape_the_reader_refuses_is_refused(string schema, string json) => Assert.False(Valid(schema, json));
 
     // Every ```json block in the format document, with the schema its "format" names (openquote.<name>/0).

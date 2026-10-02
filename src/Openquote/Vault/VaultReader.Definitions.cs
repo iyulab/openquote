@@ -238,12 +238,14 @@ public static partial class VaultReader
             return Bad<ReportDefinition>(file, UnreadableReason.Invalid, "a report needs a name, a version, a label and what it counts");
         if (name != path.Groups["name"].Value || version.ToString(CultureInfo.InvariantCulture) != path.Groups["version"].Value)
             return Bad<ReportDefinition>(file, UnreadableReason.NameMismatch, $"the path should be reports/{name}/v{version}.json");
-        if (!root.TryGetProperty("period", out var period) || period.ValueKind != JsonValueKind.Object
-            || !TryString(period, "unit", out var unit) || unit != "month" || !TryString(period, "field", out var periodField))
-            return Bad<ReportDefinition>(file, UnreadableReason.Invalid, "period must be {\"unit\": \"month\", \"field\": ...}");
+        if (ParsePeriod(root, v1) is not { } reportPeriod)
+            return Bad<ReportDefinition>(file, UnreadableReason.Invalid, v1
+                ? "period must be {\"unit\": \"day\" | \"month\" | \"year\" | \"range\", \"field\": ...}, with \"startMonth\" (1-12) only for a year"
+                : "period must be {\"unit\": \"month\", \"field\": ...}");
 
         var dimensions = new List<ReportDimension>();
         var filters = new List<ReportFilter>();
+        IReadOnlyList<ReportMeasure>? measures = null;
         if (v1)
         {
             if (root.TryGetProperty("rows", out _) || root.TryGetProperty("columns", out _))
@@ -255,6 +257,12 @@ public static partial class VaultReader
                 if (ParseDimension(d) is not { } dimension)
                     return Bad<ReportDefinition>(file, UnreadableReason.Invalid, DimensionShape);
                 dimensions.Add(dimension);
+            }
+            if (root.TryGetProperty("measures", out var measuresJson))
+            {
+                if (!TryIds(measuresJson, out var named) || named.Count == 0 || named.Any(m => Measure(m) is null))
+                    return Bad<ReportDefinition>(file, UnreadableReason.Invalid, "measures lists records, people or visits");
+                measures = [.. named.Select(m => Measure(m)!.Value)];
             }
             if (root.TryGetProperty("filters", out var filtersJson))
             {
@@ -283,9 +291,39 @@ public static partial class VaultReader
             }
         }
 
-        var report = new ReportDefinition(name, version, label, counts, periodField, dimensions) { Filters = filters };
+        var report = new ReportDefinition(name, version, label, counts, reportPeriod, dimensions) { Filters = filters };
+        if (measures is not null) report = report with { Measures = measures };
         return report.Problem() is { } problem ? Bad<ReportDefinition>(file, UnreadableReason.Invalid, problem) : new(report, null);
     }
+
+    // Format 0 knows months only; format 1 also days, years from a start month, and ranges a person picks.
+    private static ReportPeriod? ParsePeriod(JsonElement root, bool v1)
+    {
+        if (!root.TryGetProperty("period", out var period) || period.ValueKind != JsonValueKind.Object
+            || !TryString(period, "unit", out var unitText) || !TryString(period, "field", out var field)) return null;
+        PeriodUnit? unit = unitText switch
+        {
+            "month" => PeriodUnit.Month,
+            "day" when v1 => PeriodUnit.Day,
+            "year" when v1 => PeriodUnit.Year,
+            "range" when v1 => PeriodUnit.Range,
+            _ => null,
+        };
+        if (unit is null) return null;
+        var startMonth = 1;
+        if (period.TryGetProperty("startMonth", out _) && (unit != PeriodUnit.Year || !TryInt(period, "startMonth", out startMonth)))
+            return null;
+        var parsed = new ReportPeriod(field, unit.Value, startMonth);
+        return parsed.Problem() is null ? parsed : null;
+    }
+
+    private static ReportMeasure? Measure(string name) => name switch
+    {
+        "records" => ReportMeasure.Records,
+        "people" => ReportMeasure.People,
+        "visits" => ReportMeasure.Visits,
+        _ => null,
+    };
 
     private const string DimensionShape =
         "a dimension names a field, with a scheme and a scheme version or \"in-force\" when it is classified, and \"of\": \"subject\" to read the subjects' field";

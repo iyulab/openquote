@@ -180,7 +180,7 @@ How values are carried across versions is described in [Concepts](concepts.md#cr
 ```
 
 - Path: `reports/<report>/v<version>.json`; `report` and `version` must match it.
-- `counts`: the entity type counted. `period.unit` is `month`; `period.field` is the calendar-date field that places a record in the period.
+- `counts`: the entity type counted. `period.unit` is `month` (format 1 adds others, below); `period.field` is the calendar-date field that places a record in the period.
 - `rows`: the classified field and the scheme version the report counts in.
 - `columns` (optional): a field whose string value splits the columns. Without it, or when a record has no string value there, the column is `null`.
 
@@ -201,7 +201,8 @@ In `openquote.report/1`, a form splits what it counts by one to three `dimension
   ],
   "filters": [
     { "field": "gender", "of": "subject", "in": ["f"] }
-  ]
+  ],
+  "measures": ["records", "people", "visits"]
 }
 ```
 
@@ -210,6 +211,9 @@ In `openquote.report/1`, a form splits what it counts by one to three `dimension
 - With `"of": "subject"`, a dimension reads the field of the subjects a record is about rather than of the record. A record about one subject takes that subject's value — pending, unmapped, blank or conflicted as the record's own field would be. A record about several subjects takes their value when they all have the same one; otherwise, and when it is about none, its place is `null`: no single value.
 - `filters` (optional): each is read as a dimension is, with `in` listing the codes or string values it lets through. A record whose value there is not listed — or is `null` — is not in the run at all. A record a filter cannot place yet (pending, unmapped, blank or conflicted there) is kept and listed with those records, so a filter never drops a record silently.
 - A form counts each scheme in one version: two dimensions or filters of the same scheme name the same version.
+- `period.unit` may also be `day`, `year` or `range`. A `year` starts on the first day of `startMonth` (1–12, default 1) — 3 for a school year from March; only a year has a `startMonth`. A `range` is any stretch of days a person picks. The unit is how people ask for the form (`ReportPeriod.Containing`, `ReportRunner.RunContaining`); a run still records its first and last day, and any form may be run over any days.
+- `measures` (optional, default `["records", "people"]`): the numbers the form shows, each once — `records` (each record once), `people` (distinct subjects, a head count) and `visits` (for each record, the number of subjects it is about, added up). All three come from a run's records and `people`; a run record is the same whichever the form shows.
+- `counts` may name any entity type, `subject` included: a form counting subjects by a date of their own (such as when they registered) counts each subject once, about itself.
 - A format 1 form never has `rows` or `columns`; a form that rows and a column describe is the same form either way, and its runs are the same.
 
 ## Run records
