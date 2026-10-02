@@ -8,7 +8,7 @@
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
 
-    <Version>0.9.0-format1.1</Version>
+    <Version>0.9.0-format1.2</Version>
 
     <Authors>iyulab</Authors>
     <Company>iyulab</Company>
