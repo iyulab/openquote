@@ -278,7 +278,9 @@ public static partial class VaultReader
 
     private static Definition<FieldSet> ParseFields(VaultFile file)
     {
-        if (!TryRoot(file, "openquote.fields/0", out var root, out var error)) return new(null, error);
+        // Format 1 lets a coded field take several values.
+        if (!TryRoot(file, FieldsFormats, out var root, out var error)) return new(null, error);
+        var v1 = TryString(root, "format", out var format) && format == "openquote.fields/1";
         var path = FieldsPath().Match(file.Path);
 
         if (!TryString(root, "pack", out var pack) || !TryString(root, "type", out var type)
@@ -296,9 +298,9 @@ public static partial class VaultReader
                 return Bad<FieldSet>(file, UnreadableReason.Invalid, "fields must be an array");
             foreach (var f in fieldsArray.EnumerateArray())
             {
-                if (ParseField(f, pack) is not { } field)
+                if (ParseField(f, pack, v1) is not { } field)
                     return Bad<FieldSet>(file, UnreadableReason.Invalid,
-                        "every field needs a name and a kind; coded fields name a scheme, references name a type, and nothing else does");
+                        "every field needs a name and a kind; coded fields name a scheme, references name a type, and nothing else does; only a coded field in format 1 may take many values");
                 if (fields.Any(x => x.Name == field.Name))
                     return Bad<FieldSet>(file, UnreadableReason.Invalid, $"field {field.Name} appears twice");
                 fields.Add(field);
@@ -325,7 +327,9 @@ public static partial class VaultReader
         return new(new FieldSet(pack, type, version, fields, constraints), null);
     }
 
-    private static FieldDefinition? ParseField(JsonElement f, string pack)
+    private static readonly string[] FieldsFormats = ["openquote.fields/0", "openquote.fields/1"];
+
+    private static FieldDefinition? ParseField(JsonElement f, string pack, bool v1)
     {
         if (f.ValueKind != JsonValueKind.Object || !TryString(f, "name", out var name) || !TryString(f, "kind", out var kindText))
             return null;
@@ -354,6 +358,7 @@ public static partial class VaultReader
         }
 
         if (!TryFlag(f, "required", out var required)) return null;
+        if (!TryFlag(f, "many", out var many) || (many && (!v1 || k != FieldKind.Coded))) return null;
 
         string? fromSubject = null;
         if (f.TryGetProperty("default", out var d))
@@ -369,7 +374,7 @@ public static partial class VaultReader
             label = l;
         }
 
-        return new FieldDefinition(name, k, scheme, refType, required, Hidden: false, tier, fromSubject, label, pack);
+        return new FieldDefinition(name, k, scheme, refType, required, Hidden: false, tier, fromSubject, label, pack) { Many = many };
     }
 
     // An optional true/false key; absent means false.

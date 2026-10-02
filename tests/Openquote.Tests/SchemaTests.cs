@@ -35,6 +35,7 @@ public class SchemaTests
     [InlineData("labels", """{ "format": "openquote.labels/0", "pack": "region-a", "version": 1, "locale": "fr", "aliases": { "subject": { "name": [ "nom" ] } }, "reports": { "monthly": { "1": "Mensuel" } }, "exports": { "list": { "1": { "label": "Liste", "columns": { "0": "Jour" } }, "2": { "columns": { "3": "Sujet" } } } } }""")]
     [InlineData("suggestions", """{ "format": "openquote.suggestions/0", "pack": "care.school", "version": 2, "schemes": { "topic": { "1": { "crisis": "confirm", "other": "off", "stress": "offer" } } } }""")]
     [InlineData("pack", """{ "format": "openquote.pack/0", "pack": "care", "version": 2, "label": "Care", "provides": [ "suggestions/care/v2.json", "guidance/care/v2.json" ] }""")]
+    [InlineData("fields", """{ "format": "openquote.fields/1", "pack": "care", "type": "session", "version": 1, "fields": [ { "name": "topic", "kind": "coded", "scheme": "topic", "many": true } ] }""")]
     public void The_documented_shape_is_accepted(string schema, string json) => Assert.True(Valid(schema, json));
 
     [Theory]
@@ -83,6 +84,8 @@ public class SchemaTests
     [InlineData("report", """{ "format": "openquote.report/1", "report": "monthly", "version": 1, "label": "Monthly", "counts": "session", "period": { "unit": "month", "field": "date", "startMonth": 3 }, "dimensions": [ { "field": "who" } ] }""")]
     [InlineData("report", """{ "format": "openquote.report/1", "report": "monthly", "version": 1, "label": "Monthly", "counts": "session", "period": { "unit": "year", "field": "date" }, "dimensions": [ { "field": "who" } ], "measures": [ "people", "people" ] }""")]
     [InlineData("report", """{ "format": "openquote.report/0", "report": "monthly", "version": 1, "label": "Monthly", "counts": "session", "period": { "unit": "year", "field": "date" }, "rows": { "field": "kind", "scheme": "kind", "version": 1 } }""")]
+    [InlineData("fields", """{ "format": "openquote.fields/0", "pack": "care", "type": "session", "version": 1, "fields": [ { "name": "m", "kind": "coded", "scheme": "k", "many": true } ] }""")]
+    [InlineData("fields", """{ "format": "openquote.fields/1", "pack": "care", "type": "session", "version": 1, "fields": [ { "name": "m", "kind": "text", "many": true } ] }""")]
     public void A_shape_the_reader_refuses_is_refused(string schema, string json) => Assert.False(Valid(schema, json));
 
     // Every ```json block in the format document, with the schema its "format" names (openquote.<name>/0).

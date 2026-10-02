@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace Openquote.Classification;
 
@@ -117,4 +118,60 @@ public sealed record CodedValue(string Scheme, int Version, string Code)
         && value.TryGetProperty("code", out var c) && c.ValueKind == JsonValueKind.String
             ? new CodedValue(s.GetString()!, version, c.GetString()!)
             : null;
+}
+
+/// <summary>
+/// What a classified field holds: one coded value, or — in a field that takes several — a list of
+/// them with at most one marked primary. A single value is its own primary.
+/// </summary>
+/// <param name="Values">The values, in the order they were entered; never empty.</param>
+/// <param name="Marked">The position of the value marked primary, or null when none is.</param>
+public sealed record CodedValues(IReadOnlyList<CodedValue> Values, int? Marked)
+{
+    /// <summary>
+    /// The value a count places the record by: the one marked primary, or the only one. Null when
+    /// there are several and none is marked — a person has to say which comes first.
+    /// </summary>
+    public CodedValue? Primary => Marked is { } i ? Values[i] : Values.Count == 1 ? Values[0] : null;
+
+    /// <summary>True when the field holds several values.</summary>
+    public bool Many => Values.Count > 1;
+
+    /// <summary>
+    /// Reads <c>{"scheme", "version", "code"}</c>, or a non-empty array of them where at most one has
+    /// <c>"primary": true</c>; null for anything else, including JSON null and an empty array.
+    /// </summary>
+    public static CodedValues? From(JsonElement value)
+    {
+        if (CodedValue.From(value) is { } one) return new([one], null);
+        if (value.ValueKind != JsonValueKind.Array || value.GetArrayLength() == 0) return null;
+        var values = new List<CodedValue>();
+        int? marked = null;
+        foreach (var item in value.EnumerateArray())
+        {
+            if (CodedValue.From(item) is not { } coded) return null;
+            if (item.TryGetProperty("primary", out var primary))
+            {
+                if (primary.ValueKind != JsonValueKind.True || marked is not null) return null;
+                marked = values.Count;
+            }
+            values.Add(coded);
+        }
+        return new(values, marked);
+    }
+
+    /// <summary>The JSON a record stores for these values: an object for a single unmarked value, an array otherwise.</summary>
+    public JsonNode ToJson()
+    {
+        static JsonObject Object(CodedValue v) => new() { ["scheme"] = v.Scheme, ["version"] = v.Version, ["code"] = v.Code };
+        if (Values.Count == 1 && Marked is null) return Object(Values[0]);
+        var array = new JsonArray();
+        for (var i = 0; i < Values.Count; i++)
+        {
+            var o = Object(Values[i]);
+            if (i == Marked) o["primary"] = true;
+            array.Add(o);
+        }
+        return array;
+    }
 }

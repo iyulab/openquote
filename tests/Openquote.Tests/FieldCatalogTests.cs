@@ -69,6 +69,30 @@ public class FieldCatalogTests
     }
 
     [Theory]
+    [InlineData("openquote.fields/0", """{ "name": "m", "kind": "coded", "scheme": "k", "many": true }""")] // several values need format 1
+    [InlineData("openquote.fields/1", """{ "name": "n", "kind": "text", "many": true }""")]                // only a coded field takes several
+    [InlineData("openquote.fields/1", """{ "name": "m", "kind": "coded", "scheme": "k", "many": "yes" }""")]
+    public void A_field_that_cannot_take_several_values_is_reported(string format, string field)
+    {
+        var json = $$"""{ "format": "{{format}}", "pack": "care", "type": "session", "version": 1, "fields": [ {{field}} ] }""";
+        Assert.Equal(UnreadableReason.Invalid, Assert.Single(VaultReader.Read([File("fields/care/session/v1.json", json)]).Unreadable).Reason);
+    }
+
+    [Fact]
+    public void A_coded_field_that_takes_several_values_needs_vault_format_1()
+    {
+        var many = """{ "format": "openquote.fields/1", "pack": "care", "type": "session", "version": 1, "fields": [ { "name": "topic", "kind": "coded", "scheme": "topic", "many": true }, { "name": "date", "kind": "date" } ] }""";
+
+        var content = VaultReader.Read([File("fields/care/session/v1.json", many)]);
+        var set = Assert.Single(content.Fields);
+
+        Assert.True(set.Fields[0].Many);
+        Assert.False(set.Fields[1].Many);
+        Assert.Equal(1, content.RequiredVersion);
+        Assert.Equal(0, VaultReader.Read([File("fields/care/session/v1.json", CareSession)]).RequiredVersion);
+    }
+
+    [Theory]
     [InlineData("""{ "name": "m", "required": false }""")]   // constraints only narrow
     [InlineData("""{ "name": "m" }""")]                       // a constraint narrows something
     [InlineData("""{ "name": "date", "required": true }""")]  // a pack does not constrain its own fields

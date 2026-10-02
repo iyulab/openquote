@@ -145,26 +145,52 @@ public sealed class Entity
     public bool HasValue(string field)
     {
         ArgumentNullException.ThrowIfNull(field);
-        return Fields.TryGetValue(field, out var current) && current.ValueKind != JsonValueKind.Null;
+        return Fields.TryGetValue(field, out var current) && current.ValueKind != JsonValueKind.Null
+            && !(current.ValueKind == JsonValueKind.Array && current.GetArrayLength() == 0);
     }
 
     /// <summary>
     /// Where this entity's <paramref name="field"/> lands in <paramref name="version"/> of
     /// <paramref name="scheme"/>: its most recent value entered in that scheme at that version or
     /// an earlier one — or in a scheme that extends it, counted as the item it is anchored to —
-    /// carried forward by <paramref name="catalog"/>. A pending result lists the
-    /// codes a person chooses from — the only values <see cref="VaultWriter.Reclassify"/> accepts.
-    /// Unmapped when the field holds no value of that scheme or the entity is destroyed. Report
-    /// runs place records by the same rule.
+    /// carried forward by <paramref name="catalog"/>. In a field holding several values, the value
+    /// marked primary (or the only one) is the one carried; with several and none marked, the result
+    /// is pending among the codes they carry to, until a person says which comes first. A pending
+    /// result lists the codes a person chooses from — the only values
+    /// <see cref="VaultWriter.Reclassify"/> accepts. Unmapped when the field holds no value of that
+    /// scheme or the entity is destroyed. Report runs place records by the same rule.
     /// </summary>
     public Resolution Classify(string field, string scheme, int version, SchemeCatalog catalog)
+    {
+        if (ClassifiedValues(field, scheme, version, catalog) is not { } values)
+            return new Resolution(ResolutionKind.Unmapped, null, [], []);
+        if (values.Primary is { } primary)
+            return catalog.Reaches(primary, scheme, version)
+                ? catalog.Resolve(primary, scheme, version)
+                : new Resolution(ResolutionKind.Unmapped, null, [], []);
+        // Several values and none marked: a person picks among the codes they carry to — unless they
+        // all carry to one code, which then needs no choice, or to none.
+        var each = values.Values.Where(v => catalog.Reaches(v, scheme, version)).Select(v => catalog.Resolve(v, scheme, version)).ToList();
+        string[] candidates = [.. each.SelectMany(r => r.Kind == ResolutionKind.Assigned ? [r.Code!] : r.Candidates)
+            .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)];
+        string[] crosswalks = [.. each.SelectMany(r => r.Crosswalks).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)];
+        if (candidates.Length == 0) return new Resolution(ResolutionKind.Unmapped, null, [], crosswalks);
+        if (candidates.Length == 1 && each.All(r => r.Kind == ResolutionKind.Assigned))
+            return new Resolution(ResolutionKind.Assigned, candidates[0], [], crosswalks);
+        return new Resolution(ResolutionKind.Pending, null, candidates, crosswalks);
+    }
+
+    /// <summary>
+    /// The values <see cref="Classify"/> reads: the most recent value of <paramref name="field"/> that
+    /// holds a value reaching <paramref name="version"/> of <paramref name="scheme"/>. Null when there
+    /// is none or the entity is destroyed.
+    /// </summary>
+    public CodedValues? ClassifiedValues(string field, string scheme, int version, SchemeCatalog catalog)
     {
         ArgumentNullException.ThrowIfNull(field);
         ArgumentNullException.ThrowIfNull(scheme);
         ArgumentNullException.ThrowIfNull(catalog);
-        var value = LatestValue(field, v => CodedValue.From(v) is { } c && catalog.Reaches(c, scheme, version));
-        return value is { } v && CodedValue.From(v) is { } coded
-            ? catalog.Resolve(coded, scheme, version)
-            : new Resolution(ResolutionKind.Unmapped, null, [], []);
+        var value = LatestValue(field, v => CodedValues.From(v) is { } c && c.Values.Any(x => catalog.Reaches(x, scheme, version)));
+        return value is { } v ? CodedValues.From(v) : null;
     }
 }

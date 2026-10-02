@@ -48,7 +48,14 @@ public sealed record FieldDefinition(
     FieldTier Tier,
     string? DefaultFromSubject,
     string? Label,
-    string Pack);
+    string Pack)
+{
+    /// <summary>
+    /// For a coded field, true when it takes several values, one of them marked primary (see
+    /// <see cref="Classification.CodedValues"/>). A count places a record by the primary value.
+    /// </summary>
+    public bool Many { get; init; }
+}
 
 /// <summary>A narrowing of a field another pack declared: it may make the field required or hide it, nothing else.</summary>
 public sealed record FieldConstraint(string Name, bool Required, bool Hidden);

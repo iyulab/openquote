@@ -2,17 +2,19 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/iyulab/openquote/blob/main/docs/schema/fields.schema.json",
   "title": "Openquote field definitions",
-  "description": "fields/<pack>/<type>/v<version>.json. Field names are unique within the file, and a constraint never names a field the same file declares; a reader checks both.",
+  "description": "fields/<pack>/<type>/v<version>.json. Format 1 lets a coded field take many values. Field names are unique within the file, and a constraint never names a field the same file declares; a reader checks both.",
   "type": "object",
   "required": ["format", "pack", "type", "version"],
   "properties": {
-    "format": { "const": "openquote.fields/0" },
+    "format": { "enum": ["openquote.fields/0", "openquote.fields/1"] },
     "pack": { "type": "string", "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$", "not": { "enum": ["local", "oq"] } },
     "type": { "type": "string", "minLength": 1, "pattern": "^[^/]+$" },
     "version": { "type": "integer", "minimum": 1 },
     "fields": { "type": "array", "items": { "$ref": "#/$defs/field" } },
     "constrain": { "type": "array", "items": { "$ref": "#/$defs/constraint" } }
   },
+  "if": { "properties": { "format": { "const": "openquote.fields/0" } } },
+  "then": { "properties": { "fields": { "items": { "not": { "required": ["many"] } } } } },
   "$defs": {
     "text": { "type": "string", "minLength": 1 },
     "field": {
@@ -24,6 +26,7 @@
         "scheme": { "$ref": "#/$defs/text" },
         "type": { "$ref": "#/$defs/text" },
         "required": { "type": "boolean" },
+        "many": { "type": "boolean" },
         "tier": { "enum": ["structured", "narrative"] },
         "default": {
           "type": "object",
@@ -42,6 +45,10 @@
           "if": { "properties": { "kind": { "enum": ["reference", "references"] } } },
           "then": { "required": ["type"] },
           "else": { "not": { "required": ["type"] } }
+        },
+        {
+          "if": { "required": ["many"], "properties": { "many": { "const": true } } },
+          "then": { "properties": { "kind": { "const": "coded" } } }
         }
       ]
     },

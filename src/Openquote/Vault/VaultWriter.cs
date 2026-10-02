@@ -109,7 +109,8 @@ public sealed class VaultWriter
     /// A person's choice for a record waiting in <paramref name="choice"/>'s scheme version: sets
     /// <paramref name="field"/> to that code. The record must be pending there
     /// (<see cref="Entity.Classify"/>) and the code one of its candidates; anything else is refused,
-    /// since a change file cannot be taken back.
+    /// since a change file cannot be taken back. In a field holding several values, the choice says
+    /// which value comes first: it is marked primary, and no other value is lost.
     /// </summary>
     /// <exception cref="ArgumentException">The record is not waiting in that version, or the code is not one of its candidates.</exception>
     public VaultFile Reclassify(Entity entity, string field, CodedValue choice, SchemeCatalog catalog)
@@ -121,8 +122,19 @@ public sealed class VaultWriter
             throw new ArgumentException($"the record's {field} is not waiting for a choice in {choice.Scheme} version {choice.Version}", nameof(choice));
         if (!resolution.Candidates.Contains(choice.Code, StringComparer.Ordinal))
             throw new ArgumentException($"{choice.Code} is not one of the codes the record's {field} waits for: {string.Join(", ", resolution.Candidates)}", nameof(choice));
-        var value = new JsonObject { ["scheme"] = choice.Scheme, ["version"] = choice.Version, ["code"] = choice.Code };
-        return Follow(entity, "reclassify", new Dictionary<string, JsonNode?> { [field] = value }, null);
+        var current = entity.ClassifiedValues(field, choice.Scheme, choice.Version, catalog)!;
+        if (!current.Many)
+            return Follow(entity, "reclassify", new Dictionary<string, JsonNode?> { [field] = new CodedValues([choice], null).ToJson() }, null);
+
+        // Several values: the primary one waits among codes and the choice replaces it, or none is
+        // marked and the one the choice comes from becomes primary — kept as entered when it already
+        // carries to the choice, replaced by it when it waited among codes. The others stay as they are.
+        var values = current.Values.ToArray();
+        var from = current.Marked ?? Array.FindIndex(values, v => catalog.Reaches(v, choice.Scheme, choice.Version)
+            && catalog.Resolve(v, choice.Scheme, choice.Version) is var r
+            && (r.Kind == ResolutionKind.Assigned ? r.Code == choice.Code : r.Candidates.Contains(choice.Code, StringComparer.Ordinal)));
+        if (catalog.Resolve(values[from], choice.Scheme, choice.Version).Kind != ResolutionKind.Assigned) values[from] = choice;
+        return Follow(entity, "reclassify", new Dictionary<string, JsonNode?> { [field] = new CodedValues(values, from).ToJson() }, null);
     }
 
     /// <summary>The run record for <paramref name="run"/>, filed under the year it was produced.</summary>

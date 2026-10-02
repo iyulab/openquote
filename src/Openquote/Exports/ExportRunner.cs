@@ -113,8 +113,8 @@ public static class ExportRunner
     {
         if (!record.HasValue(column.Field)) return "";
         var value = record.LatestValue(column.Field, v =>
-            CodedValue.From(v) is { } c && c.Scheme == column.Scheme && c.Version <= column.Version);
-        if (value is null || CodedValue.From(value.Value) is not { } coded)
+            CodedValues.From(v)?.Primary is { } c && c.Scheme == column.Scheme && c.Version <= column.Version);
+        if (value is null || CodedValues.From(value.Value)?.Primary is not { } coded)
         {
             unmapped.Add(record.Reference.Id);
             return "";

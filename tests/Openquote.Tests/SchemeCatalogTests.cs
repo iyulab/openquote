@@ -211,4 +211,38 @@ public class SchemeCatalogTests
         Assert.Equal(ResolutionKind.Unmapped, catalog.Resolve(new CodedValue("neis", 1, "n1"), "kind", 2).Kind);
         Assert.Equal(["1-2", "kind/2-neis/1"], catalog.Resolve(new CodedValue("kind", 1, "a"), "neis", 1).Crosswalks);
     }
+
+    [Theory]
+    [InlineData("""{"scheme":"k","version":1,"code":"a"}""", 1, null)]
+    [InlineData("""[{"scheme":"k","version":1,"code":"a"}]""", 1, null)]
+    [InlineData("""[{"scheme":"k","version":1,"code":"a"},{"scheme":"k","version":1,"code":"b","primary":true}]""", 2, 1)]
+    public void Coded_values_are_one_value_or_a_list_with_at_most_one_primary(string json, int count, int? marked)
+    {
+        var values = CodedValues.From(System.Text.Json.JsonDocument.Parse(json).RootElement)!;
+
+        Assert.Equal((count, marked), (values.Values.Count, values.Marked));
+        Assert.Equal(count == 1 && marked is null ? "{" : "[", values.ToJson().ToJsonString()[..1]); // one unmarked value is written as one object
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("null")]
+    [InlineData("\"a\"")]
+    [InlineData("""[{"scheme":"k","version":1,"code":"a","primary":true},{"scheme":"k","version":1,"code":"b","primary":true}]""")]
+    [InlineData("""[{"scheme":"k","version":1,"code":"a","primary":false}]""")]
+    [InlineData("""[{"scheme":"k","version":1,"code":"a"},"b"]""")]
+    public void Anything_else_is_not_a_classified_value(string json) =>
+        Assert.Null(CodedValues.From(System.Text.Json.JsonDocument.Parse(json).RootElement));
+
+    [Fact]
+    public void One_value_with_no_mark_is_its_own_primary_and_round_trips_as_an_object()
+    {
+        var one = new CodedValues([new CodedValue("k", 1, "a")], null);
+        var marked = new CodedValues([new CodedValue("k", 1, "a"), new CodedValue("k", 1, "b")], 1);
+
+        Assert.Equal("a", one.Primary!.Code);
+        Assert.Null((marked with { Marked = null }).Primary);
+        Assert.Equal("""{"scheme":"k","version":1,"code":"a"}""", one.ToJson().ToJsonString());
+        Assert.Equal(marked.Values, CodedValues.From(System.Text.Json.JsonDocument.Parse(marked.ToJson().ToJsonString()).RootElement)!.Values);
+    }
 }

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Openquote.Classification;
 using Openquote.Records;
@@ -238,6 +239,112 @@ public class VaultWriterTests
         var error = Assert.Throws<ArgumentException>(() => w.Reclassify(session, "kind", new CodedValue(scheme, version, code), SplitCatalog));
 
         Assert.Equal("choice", error.ParamName);
+    }
+
+    private static JsonArray KindValues(int primary, params (int Version, string Code)[] values)
+    {
+        var array = new JsonArray();
+        for (var i = 0; i < values.Length; i++)
+        {
+            var o = KindValue(values[i].Version, values[i].Code);
+            if (i == primary) o["primary"] = true;
+            array.Add(o);
+        }
+        return array;
+    }
+
+    private static (VaultWriter Writer, VaultFile[] Files, Entity Session) OneSessionOf(JsonNode kind)
+    {
+        var w = Writer();
+        var subject = w.CreateSubject(Fields(("name", "x")));
+        var subjectId = Read([subject]).Content.Changes[0].Entity.Id;
+        var item = w.CreateInSubject(subjectId, "session", Fields(("day", "2026-03-05"), ("kind", kind)));
+        return (w, [subject, item], Read([subject, item]).Entities.Values.Single(e => e.Reference.Type == "session"));
+    }
+
+    [Fact]
+    public void Several_values_are_counted_by_the_primary_one()
+    {
+        var (_, _, session) = OneSessionOf(KindValues(0, (1, "a"), (1, "c")));
+
+        var v2 = session.Classify("kind", "kind", 2, SplitCatalog);
+        Assert.Equal((ResolutionKind.Assigned, "x"), (v2.Kind, v2.Code));
+        Assert.Equal(["1-2"], v2.Crosswalks);
+        Assert.Equal("a", session.Classify("kind", "kind", 1, SplitCatalog).Code);
+    }
+
+    [Fact]
+    public void Several_values_none_primary_wait_for_a_person_among_the_codes_they_carry_to()
+    {
+        var (_, _, session) = OneSessionOf(KindValues(-1, (1, "a"), (1, "c")));
+
+        var v2 = session.Classify("kind", "kind", 2, SplitCatalog);
+        var v1 = session.Classify("kind", "kind", 1, SplitCatalog);
+
+        Assert.Equal(ResolutionKind.Pending, v2.Kind);
+        Assert.Equal(["p", "q", "x"], v2.Candidates);
+        Assert.Equal(ResolutionKind.Pending, v1.Kind);
+        Assert.Equal(["a", "c"], v1.Candidates);
+    }
+
+    [Fact]
+    public void Several_values_that_all_carry_to_one_code_need_no_choice()
+    {
+        var (_, _, session) = OneSessionOf(KindValues(-1, (1, "a"), (2, "x")));
+
+        Assert.Equal((ResolutionKind.Assigned, "x"), (session.Classify("kind", "kind", 2, SplitCatalog).Kind, session.Classify("kind", "kind", 2, SplitCatalog).Code));
+    }
+
+    [Theory]
+    [InlineData("x", 1, "a")] // a carries to x: a is marked primary, kept as entered
+    [InlineData("q", 0, "q")] // c waits between p and q: the choice replaces it, marked primary
+    public void Choosing_among_several_values_marks_one_primary_and_keeps_the_others(string choice, int primary, string primaryCode)
+    {
+        var (w, files, session) = OneSessionOf(KindValues(-1, (1, "c"), (1, "a")));
+
+        var reclassify = w.Reclassify(session, "kind", new CodedValue("kind", 2, choice), SplitCatalog);
+        var (content, after) = Read([.. files, reclassify]);
+
+        var values = CodedValues.From(content.Changes.Single(c => c.Path == reclassify.Path).Fields["kind"])!;
+        Assert.Equal(2, values.Values.Count);
+        Assert.Equal(primary, values.Marked);
+        Assert.Equal(primaryCode, values.Primary!.Code);
+        Assert.Contains(values.Values, v => v.Code == (primary == 0 ? "a" : "c")); // the other value, as entered
+        var placed = after.Values.Single(e => e.Reference.Type == "session").Classify("kind", "kind", 2, SplitCatalog);
+        Assert.Equal((ResolutionKind.Assigned, choice), (placed.Kind, placed.Code));
+    }
+
+    [Fact]
+    public void A_primary_value_that_waits_among_codes_is_the_one_a_choice_replaces()
+    {
+        var (w, files, session) = OneSessionOf(KindValues(0, (1, "c"), (1, "a")));
+        Assert.Equal(["p", "q"], session.Classify("kind", "kind", 2, SplitCatalog).Candidates);
+
+        var reclassify = w.Reclassify(session, "kind", new CodedValue("kind", 2, "p"), SplitCatalog);
+        var values = CodedValues.From(Read([.. files, reclassify]).Content.Changes.Single(c => c.Path == reclassify.Path).Fields["kind"])!;
+
+        Assert.Equal([new CodedValue("kind", 2, "p"), new CodedValue("kind", 1, "a")], values.Values);
+        Assert.Equal(0, values.Marked);
+    }
+
+    [Fact]
+    public void A_single_value_is_still_written_as_one_object()
+    {
+        var (w, files, session) = OneSession("c");
+
+        var reclassify = w.Reclassify(session, "kind", new CodedValue("kind", 2, "q"), SplitCatalog);
+
+        Assert.Equal(JsonValueKind.Object, Read([.. files, reclassify]).Content.Changes.Single(c => c.Path == reclassify.Path).Fields["kind"].ValueKind);
+    }
+
+    [Fact]
+    public void An_empty_list_of_values_is_no_value()
+    {
+        var (_, _, session) = OneSessionOf(new JsonArray());
+        var form = TestReports.Form("monthly", 2, "Monthly", "session", "day", "kind", "kind", 2, null);
+
+        Assert.False(session.HasValue("kind"));
+        Assert.Equal([session.Reference.Id], ReportRunner.RunMonth(form, 2026, 3, [session], SplitCatalog).Blank);
     }
 
     [Fact]
