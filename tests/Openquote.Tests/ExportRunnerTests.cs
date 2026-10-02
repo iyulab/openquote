@@ -92,6 +92,38 @@ public class ExportRunnerTests
     }
 
     [Fact]
+    public void A_coded_column_carries_values_as_a_report_does()
+    {
+        // A value of a scheme extending `kind` v1 is counted as its anchor; several values by the primary one.
+        var catalog = new SchemeCatalog(
+            [
+                .. new[] { Catalog.Find("kind", 1)!, Catalog.Find("kind", 2)! },
+                new Scheme("kind.local", 1, [new("a-call", "A by phone", null, false) { Anchor = "a" }]) { Extends = new SchemeVersion("kind", 1) },
+            ],
+            [new Crosswalk("kind", 1, 2, [("a", "a"), ("b", "p"), ("b", "q")])]);
+        var w = new VaultWriter("dev1", new StepClock());
+        var subject = w.CreateSubject(Fields(("name", "one")));
+        var one = VaultReader.Read([subject]).Changes[0].Entity.Id;
+        JsonObject Local(string code) => new() { ["scheme"] = "kind.local", ["version"] = 1, ["code"] = code };
+        JsonObject Primary(JsonObject o) { o["primary"] = true; return o; }
+        var files = new[]
+        {
+            subject,
+            w.CreateInSubject(one, "session", Fields(("date", "2026-03-02"), ("kind", Local("a-call")))),
+            w.CreateInSubject(one, "session", Fields(("date", "2026-03-03"), ("kind", new JsonArray(Coded(1, "b"), Primary(Coded(1, "a")))))),
+            w.CreateInSubject(one, "session", Fields(("date", "2026-03-04"), ("kind", new JsonArray(Coded(1, "b"), Coded(1, "a"))))),
+        };
+        var entities = EntityMerger.Merge(VaultReader.Read(files).Changes).Values.ToList();
+        var form = Form(new FieldColumn("date", "date"), new CodedColumn("kind", "kind", "kind", 2, Top: false));
+
+        var table = ExportRunner.Run(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), entities, catalog, FieldCatalog.Empty);
+
+        Assert.Equal(["A2", "A2", ""], table.Rows.Select(r => r.Cells[1]));
+        Assert.Equal([table.Rows[2].Record], table.Pending); // two values, none primary: a person says which comes first
+        Assert.Empty(table.Unmapped);
+    }
+
+    [Fact]
     public void Only_the_period_is_listed()
     {
         var v = Build();

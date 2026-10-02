@@ -112,14 +112,7 @@ public static class ExportRunner
     private static string Coded(CodedColumn column, Entity record, SchemeCatalog catalog, SortedSet<string> pending, SortedSet<string> unmapped)
     {
         if (!record.HasValue(column.Field)) return "";
-        var value = record.LatestValue(column.Field, v =>
-            CodedValues.From(v)?.Primary is { } c && c.Scheme == column.Scheme && c.Version <= column.Version);
-        if (value is null || CodedValues.From(value.Value)?.Primary is not { } coded)
-        {
-            unmapped.Add(record.Reference.Id);
-            return "";
-        }
-        var resolution = catalog.Resolve(coded, column.Version);
+        var resolution = record.Classify(column.Field, column.Scheme, column.Version, catalog);
         switch (resolution.Kind)
         {
             case ResolutionKind.Pending:

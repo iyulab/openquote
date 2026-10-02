@@ -285,7 +285,7 @@ In `openquote.report/1`, a form splits what it counts by one to three `dimension
 | `person` (+ `all`) | That field of the subject the record concerns; empty when it concerns several. With `all: true`, every subject's value, joined by `", "`. |
 | `year` + `startMonth` | The year the date field falls in, for a year starting in month `startMonth` (1–12). |
 | `field` + `ref` | Field `ref` of the entity that `field` refers to. |
-| `field` + `scheme` + `version` (+ `part`) | The label of the classified value carried to that version; with `part: "top"` the label of its top-level ancestor (`part` is `top` or `item`, default `item`). |
+| `field` + `scheme` + `version` (+ `part`) | The label of the classified value carried to that version, as a report carries it (a value of an extending scheme by its anchor, of another scheme along its crosswalks, several values by the primary one); with `part: "top"` the label of its top-level ancestor (`part` is `top` or `item`, default `item`). |
 | `field` | The field value as written. |
 
 ## Packs
