@@ -1,6 +1,6 @@
 name: Publish
 
-# Packs the engine from the tag this runs on and pushes it to nuget.org.
+# Packs the engine packages (Openquote, Openquote.Gil) from the tag this runs on and pushes them to nuget.org.
 # Run by hand on a version tag: gh workflow run publish.yml --ref v<version>
 on:
   workflow_dispatch:
@@ -42,7 +42,7 @@ jobs:
         run: dotnet test --solution Openquote.slnx -c Release
 
       - name: Pack
-        run: dotnet pack src/Openquote/Openquote.csproj -c Release -o nupkg
+        run: dotnet pack Openquote.slnx -c Release -o nupkg
 
       - name: Push
         env:

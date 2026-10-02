@@ -138,6 +138,47 @@ public class CodeSuggesterTests
         Assert.Equal(3, suggester.Remembered);
     }
 
+    /// <summary>
+    /// Not a check but a measurement: builds a suggester from <c>OPENQUOTE_MEASURE_RECORDS</c> settled
+    /// sessions (default 2000, about a year of one counselor's work) with a few hundred characters of
+    /// written content each, and times the build and two suggestions. Run the built test executable with
+    /// <c>-method Openquote.Tests.CodeSuggesterTests.Measure_building_from_a_years_records -explicit only -showliveoutput</c>.
+    /// </summary>
+    [Fact(Explicit = true)]
+    public async Task Measure_building_from_a_years_records()
+    {
+        var count = int.TryParse(Environment.GetEnvironmentVariable("OPENQUOTE_MEASURE_RECORDS"), out var n) ? n : 2000;
+        string[] words =
+        [
+            "school", "friend", "teacher", "class", "exam", "sleep", "family", "home", "mother", "father",
+            "anger", "worry", "grades", "phone", "game", "lunch", "club", "late", "absent", "argument",
+            "tired", "lonely", "moving", "money", "rent", "landlord", "office", "support", "plan", "talked",
+        ];
+        string[] codes = ["stress", "housing"];
+        var random = new Random(1);
+        var records = new VaultFile[count];
+        for (var i = 0; i < count; i++)
+        {
+            var note = string.Join(' ', Enumerable.Range(0, 50).Select(_ => words[random.Next(words.Length)]));
+            records[i] = File(Json(i + 10, $"m{i}", "create", fields: Session($"p{i % 40}", note, codes[random.Next(codes.Length)])));
+        }
+        var content = VaultReader.Read(Vault(records));
+        var cancel = TestContext.Current.CancellationToken;
+
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        var suggester = await CodeSuggester.BuildAsync(content, "session", March, cancel);
+        var building = started.Elapsed;
+        started.Restart();
+        await suggester.SuggestAsync(Draft(("note", "worry about rent, the landlord and moving home")), cancel);
+        var first = started.Elapsed;
+        started.Restart();
+        await suggester.SuggestAsync(Draft(("note", "tired in class after a late game on the phone")), cancel);
+        var second = started.Elapsed;
+
+        TestContext.Current.TestOutputHelper!.WriteLine(
+            $"measure: {suggester.Remembered} settled sessions · build {building.TotalMilliseconds:F0} ms · first suggestion {first.TotalMilliseconds:F0} ms · next {second.TotalMilliseconds:F0} ms");
+    }
+
     [Fact]
     public async Task A_field_the_draft_already_holds_is_not_suggested_for()
     {
