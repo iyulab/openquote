@@ -170,7 +170,7 @@ public sealed record CodedValues(IReadOnlyList<CodedValue> Values, int? Marked)
         {
             var o = Object(Values[i]);
             if (i == Marked) o["primary"] = true;
-            array.Add(o);
+            array.Add((JsonNode)o); // the JsonNode overload: the generic one needs code generated at run time
         }
         return array;
     }
