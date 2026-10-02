@@ -278,7 +278,8 @@ In `openquote.report/1`, a form splits what it counts by one to three `dimension
 ```
 
 - Path: `exports/<export>/v<version>.json`; `export` and `version` must match it.
-- `rows`: the entity type listed, one row per entity. `period.field`: the calendar-date field that places it in the period.
+- `rows`: the entity type listed, one row per entity. `period.field`: the calendar-date field that places it in the period; a record whose dates were set without seeing each other is listed in each period one of them falls in.
+- A cell over a field holding values set without seeing each other — of the record, of an entity it refers to, or of its subjects — is left empty, and the record is listed apart (`ExportTable.Conflicted`) beside those whose classified cell waits for a person or has no code.
 - `columns`: a non-empty array. Each column has a `label` and exactly one source, recognised in this order:
 
 | Keys | Cell |

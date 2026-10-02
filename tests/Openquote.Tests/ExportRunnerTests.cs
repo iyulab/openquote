@@ -124,6 +124,35 @@ public class ExportRunnerTests
     }
 
     [Fact]
+    public void A_cell_over_concurrent_values_stays_empty_and_its_record_is_listed()
+    {
+        var w = new VaultWriter("dev1", new StepClock());
+        var subject = w.CreateSubject(Fields(("name", "one")));
+        var one = VaultReader.Read([subject]).Changes[0].Entity.Id;
+        var titled = w.CreateInSubject(one, "session", Fields(("date", "2026-03-02"), ("title", "first")));
+        var dated = w.CreateInSubject(one, "session", Fields(("date", "2026-03-20"), ("title", "second")));
+        Entity Session(VaultFile f) => EntityMerger.Merge(VaultReader.Read([subject, titled, dated]).Changes).Values.Single(e => e.Changes[0].Path == f.Path);
+        var files = new[]
+        {
+            subject, titled, dated,
+            w.Update(Session(titled), Fields(("title", "one way"))),
+            w.Update(Session(titled), Fields(("title", "another"))),     // the same base: concurrent
+            w.Update(Session(dated), Fields(("date", "2026-03-05"))),
+            w.Update(Session(dated), Fields(("date", "2026-04-02"))),     // a disputed date, one of them in March
+        };
+        var entities = EntityMerger.Merge(VaultReader.Read(files).Changes).Values.ToList();
+        var form = Form(new FieldColumn("date", "date"), new FieldColumn("title", "title"));
+
+        var table = ExportRunner.Run(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), entities, Catalog, FieldCatalog.Empty);
+
+        Assert.Collection(table.Rows,
+            r => Assert.Equal(["2026-03-02", ""], r.Cells),
+            r => Assert.Equal(["", "second"], r.Cells)); // listed at the March date of the two
+        Assert.Equal(table.Rows.Select(r => r.Record).Order(StringComparer.Ordinal), table.Conflicted);
+        Assert.Empty(ExportRunner.Run(form, new DateOnly(2026, 5, 1), new DateOnly(2026, 5, 31), entities, Catalog, FieldCatalog.Empty).Rows);
+    }
+
+    [Fact]
     public void Only_the_period_is_listed()
     {
         var v = Build();

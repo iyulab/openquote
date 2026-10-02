@@ -11,8 +11,9 @@ public sealed record ExportRow(string Record, IReadOnlyList<string> Cells);
 
 /// <summary>
 /// An export form run over a period. Rows are ordered by date, then by record id. Records with a
-/// classified cell left empty — waiting for a person, or with no code in the form's version — are
-/// listed, so the gap is seen before the rows go anywhere.
+/// cell left empty because it cannot be filled without a person — a classified value waiting for a
+/// choice or with no code in the form's version, or a field holding values set without seeing each
+/// other — are listed, so the gap is seen before the rows go anywhere.
 /// </summary>
 /// <param name="Export">The form that was run.</param>
 /// <param name="From">The first day of the period.</param>
@@ -20,6 +21,11 @@ public sealed record ExportRow(string Record, IReadOnlyList<string> Cells);
 /// <param name="Rows">The listed records, by date then id.</param>
 /// <param name="Pending">Records with a classified cell waiting for a person.</param>
 /// <param name="Unmapped">Records with a classified cell that has no code in the form's version.</param>
+/// <param name="Conflicted">
+/// Records with a cell over a field — of the record, of an entity it refers to, or of its subjects —
+/// that holds two or more values set without seeing each other. The cell is empty until a person
+/// picks one: writing any of them would decide for them.
+/// </param>
 /// <param name="Withheld">The columns whose cells were left empty in the rows produced because they would carry written content, by label, in column order; a period with no rows names none.</param>
 public sealed record ExportTable(
     ExportDefinition Export,
@@ -28,6 +34,7 @@ public sealed record ExportTable(
     IReadOnlyList<ExportRow> Rows,
     IReadOnlyList<string> Pending,
     IReadOnlyList<string> Unmapped,
+    IReadOnlyList<string> Conflicted,
     IReadOnlyList<string> Withheld);
 
 /// <summary>Lays records out as an export form's rows, without guessing.</summary>
@@ -59,54 +66,69 @@ public static class ExportRunner
         foreach (var e in all)
         {
             if (e.Reference.Type != export.Rows) continue;
-            if (e.Fields.TryGetValue(export.PeriodField, out var v) && ParseDate(v) is { } date && date >= from && date <= to)
+            // A disputed date lists the record in every period one of its dates falls in, at the earliest.
+            IEnumerable<JsonElement> dates = e.Conflicts.TryGetValue(export.PeriodField, out var heads)
+                ? heads.Select(h => h.Value)
+                : e.Fields.TryGetValue(export.PeriodField, out var v) ? [v] : [];
+            if (dates.Select(ParseDate).Where(d => d is { } day && day >= from && day <= to).Min() is { } date)
                 listed.Add((date, e));
         }
 
         var pending = new SortedSet<string>(StringComparer.Ordinal);
         var unmapped = new SortedSet<string>(StringComparer.Ordinal);
+        var conflicted = new SortedSet<string>(StringComparer.Ordinal);
         var withheld = new HashSet<ExportColumn>();
-        var context = new CellContext(byId, catalog, fields, pending, unmapped, withheld);
+        var context = new CellContext(byId, catalog, fields, pending, unmapped, conflicted, withheld);
         var rows = listed
             .OrderBy(x => x.Date)
             .ThenBy(x => x.Entity.Reference.Id, StringComparer.Ordinal)
             .Select(x => new ExportRow(x.Entity.Reference.Id, [.. export.Columns.Select(c => Cell(c, x.Entity, context))]))
             .ToArray();
-        return new ExportTable(export, from, to, rows, [.. pending], [.. unmapped],
+        return new ExportTable(export, from, to, rows, [.. pending], [.. unmapped], [.. conflicted],
             [.. export.Columns.Where(withheld.Contains).Select(c => c.Label)]);
     }
 
     private sealed record CellContext(
         Dictionary<string, Entity> ById, SchemeCatalog Catalog, FieldCatalog Fields,
-        SortedSet<string> Pending, SortedSet<string> Unmapped, HashSet<ExportColumn> Withheld);
+        SortedSet<string> Pending, SortedSet<string> Unmapped, SortedSet<string> Conflicted, HashSet<ExportColumn> Withheld);
 
     private static string Cell(ExportColumn column, Entity record, CellContext x) => column switch
     {
-        FieldColumn f => Guarded(x, column, record, f.Field, () => Text(record, f.Field)),
-        ReferenceColumn r => record.Fields.TryGetValue(r.Field, out var id) && id.ValueKind == JsonValueKind.String
+        FieldColumn f => Guarded(x, column, record, record, f.Field, () => Text(record, f.Field)),
+        ReferenceColumn r => Guarded(x, column, record, record, r.Field, () =>
+            record.Fields.TryGetValue(r.Field, out var id) && id.ValueKind == JsonValueKind.String
             && x.ById.TryGetValue(id.GetString()!, out var referred)
-                ? Guarded(x, column, referred, r.ReferencedField, () => Text(referred, r.ReferencedField))
-                : "",
+                ? Guarded(x, column, record, referred, r.ReferencedField, () => Text(referred, r.ReferencedField))
+                : ""),
         PeopleCountColumn => record.People.Count.ToString(CultureInfo.InvariantCulture),
         PersonColumn p => p.All || record.People.Count == 1
             ? string.Join(", ", record.People
-                .Select(s => x.ById.TryGetValue(s, out var subject) ? Guarded(x, column, subject, p.Field, () => Text(subject, p.Field)) : "")
+                .Select(s => x.ById.TryGetValue(s, out var subject) ? Guarded(x, column, record, subject, p.Field, () => Text(subject, p.Field)) : "")
                 .Where(t => t.Length > 0))
             : "",
-        YearColumn y => Guarded(x, column, record, y.Field, () =>
+        YearColumn y => Guarded(x, column, record, record, y.Field, () =>
             record.Fields.TryGetValue(y.Field, out var v) && ParseDate(v) is { } date
                 ? (date.Month >= y.StartMonth ? date.Year : date.Year - 1).ToString(CultureInfo.InvariantCulture)
                 : ""),
-        CodedColumn c => Guarded(x, column, record, c.Field, () => Coded(c, record, x.Catalog, x.Pending, x.Unmapped)),
+        CodedColumn c => Guarded(x, column, record, record, c.Field, () => Coded(c, record, x.Catalog, x.Pending, x.Unmapped)),
         _ => throw new NotSupportedException(column.GetType().Name),
     };
 
-    // A field declared as written content never reaches a cell: the cell stays empty and the column is named.
-    private static string Guarded(CellContext x, ExportColumn column, Entity entity, string field, Func<string> value)
+    // A field declared as written content never reaches a cell: the cell stays empty and the column is
+    // named. A field holding concurrent values does not either, until a person picks one: the record is listed.
+    private static string Guarded(CellContext x, ExportColumn column, Entity record, Entity entity, string field, Func<string> value)
     {
-        if (!x.Fields.IsNarrative(entity.Reference.Type, field)) return value();
-        x.Withheld.Add(column);
-        return "";
+        if (x.Fields.IsNarrative(entity.Reference.Type, field))
+        {
+            x.Withheld.Add(column);
+            return "";
+        }
+        if (entity.Conflicts.ContainsKey(field))
+        {
+            x.Conflicted.Add(record.Reference.Id);
+            return "";
+        }
+        return value();
     }
 
     private static string Coded(CodedColumn column, Entity record, SchemeCatalog catalog, SortedSet<string> pending, SortedSet<string> unmapped)
