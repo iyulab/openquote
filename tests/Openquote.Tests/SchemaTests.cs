@@ -36,6 +36,7 @@ public class SchemaTests
     [InlineData("suggestions", """{ "format": "openquote.suggestions/0", "pack": "care.school", "version": 2, "schemes": { "topic": { "1": { "crisis": "confirm", "other": "off", "stress": "offer" } } } }""")]
     [InlineData("pack", """{ "format": "openquote.pack/0", "pack": "care", "version": 2, "label": "Care", "provides": [ "suggestions/care/v2.json", "guidance/care/v2.json" ] }""")]
     [InlineData("fields", """{ "format": "openquote.fields/1", "pack": "care", "type": "session", "version": 1, "fields": [ { "name": "topic", "kind": "coded", "scheme": "topic", "many": true } ] }""")]
+    [InlineData("fields", """{ "format": "openquote.fields/1", "pack": "care", "type": "session", "version": 1, "fields": [ { "name": "with", "kind": "coded", "scheme": "with", "default": { "value": "client" } }, { "name": "minutes", "kind": "number", "default": { "value": 50 } }, { "name": "grade", "kind": "text", "default": { "subject": "grade" } } ] }""")]
     public void The_documented_shape_is_accepted(string schema, string json) => Assert.True(Valid(schema, json));
 
     [Theory]
@@ -43,6 +44,11 @@ public class SchemaTests
     [InlineData("pack", """{ "format": "openquote.pack/0", "pack": "Care", "version": 1, "label": "C", "provides": [] }""")]
     [InlineData("labels", """{ "format": "openquote.labels/0", "pack": "kr", "version": 1, "locale": "ko", "schemes": { "k": { "1": { "a": "" } } } }""")]
     [InlineData("fields", """{ "format": "openquote.fields/0", "pack": "care", "type": "session", "version": 1, "fields": [ { "name": "m", "kind": "coded" } ] }""")]
+    [InlineData("fields", """{ "format": "openquote.fields/0", "pack": "care", "type": "session", "version": 1, "fields": [ { "name": "n", "kind": "text", "default": { "value": "A" } } ] }""")]
+    [InlineData("fields", """{ "format": "openquote.fields/1", "pack": "care", "type": "session", "version": 1, "fields": [ { "name": "n", "kind": "text", "default": { "value": "A", "subject": "n" } } ] }""")]
+    [InlineData("fields", """{ "format": "openquote.fields/1", "pack": "care", "type": "session", "version": 1, "fields": [ { "name": "n", "kind": "number", "default": { "value": "50" } } ] }""")]
+    [InlineData("fields", """{ "format": "openquote.fields/1", "pack": "care", "type": "session", "version": 1, "fields": [ { "name": "d", "kind": "date", "default": { "value": "2026-03-02" } } ] }""")]
+    [InlineData("fields", """{ "format": "openquote.fields/1", "pack": "care", "type": "session", "version": 1, "fields": [ { "name": "n", "kind": "text", "default": { "value": 5 } } ] }""")]
     [InlineData("fields", """{ "format": "openquote.fields/0", "pack": "care", "type": "session", "version": 1, "constrain": [ { "name": "m", "required": false } ] }""")]
     [InlineData("pack", """{ "format": "openquote.pack/0", "pack": "local", "version": 1, "label": "L", "provides": [] }""")]
     [InlineData("pack", """{ "format": "openquote.pack/0", "pack": "care", "version": 1, "label": "C", "provides": [ "schemes/topic" ] }""")]

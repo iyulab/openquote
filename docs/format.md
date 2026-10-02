@@ -2,7 +2,7 @@
 
 This document specifies the plaintext layer of an Openquote vault: the folder layout, the JSON of each file kind, and the rules a reader applies. It describes what the engine in this repository reads and writes.
 
-> Status: version 0 is frozen; version 1 is in progress. Version 0 changes only by additions: a reader that predates an addition may pass over what it adds, and counts the same numbers. Version 1 makes the changes to the structure together — what a file means or what it counts: blank and conflicted records apart (run records, format 1), report forms split by up to three dimensions and counting in the version in force (format 1), coded fields that take several values (field definitions format 1), schemes that extend others (format 1), and crosswalks that state relations or lead into another scheme (format 1). A vault holding an extending scheme, such a crosswalk or a field that takes several values is declared `openquote.vault/1` (`VaultContent.RequiredVersion`); the others an earlier engine skips file by file without counting differently.
+> Status: version 0 is frozen; version 1 is in progress. Version 0 changes only by additions: a reader that predates an addition may pass over what it adds, and counts the same numbers. Version 1 makes the changes to the structure together — what a file means or what it counts: blank and conflicted records apart (run records, format 1), report forms split by up to three dimensions and counting in the version in force (format 1), coded fields that take several values and fields that start from a fixed value (field definitions format 1), schemes that extend others (format 1), and crosswalks that state relations or lead into another scheme (format 1). A vault holding an extending scheme, such a crosswalk or a field that takes several values is declared `openquote.vault/1` (`VaultContent.RequiredVersion`); the others an earlier engine skips file by file without counting differently.
 
 Every file kind has a JSON Schema (draft 2020-12) in [schema/](schema/), named after its format (`openquote.<name>/0` and `/1` are both `schema/<name>.schema.json`). A schema checks the shape of one file. Rules that compare a file with its path, with other files, or with other values in it — a name matching its path, codes unique within a version, a run's totals adding up — are checked by the reader only.
 
@@ -399,13 +399,28 @@ A second pack that builds on the first can add fields and narrow the first pack'
 }
 ```
 
+Format 1 (`openquote.fields/1`) also lets a field start from a fixed value — most sessions are with the client, and last fifty minutes:
+
+```json
+{
+  "format": "openquote.fields/1",
+  "pack": "care.school",
+  "type": "session",
+  "version": 2,
+  "fields": [
+    { "name": "with", "kind": "coded", "scheme": "with", "default": { "value": "client" } },
+    { "name": "minutes", "kind": "number", "default": { "value": 50 } }
+  ]
+}
+```
+
 - Path: `fields/<pack>/<type>/v<version>.json`; `pack`, `type` and `version` must match it. `pack` is a pack id as for a manifest (and not `local` or `oq`), and `type` is the entity type the fields belong to.
 - `fields` (optional) declares fields. A field has a `name`, unique within the file, and a `kind`, one of `text`, `date`, `number`, `coded`, `reference` and `references`.
 - A `coded` field names the `scheme` its values are classified in, and no other kind has one. A `reference` or `references` field names the entity `type` it refers to, and no other kind has one.
 - `tier` is `structured` (the default) or `narrative`. A narrative field is written content: `ExportRunner.Run` leaves every column that would carry it empty — its text, a year taken from it, the label of its code — and names the column in `ExportTable.Withheld`, which lists the columns whose cells were withheld in the rows produced (a period with no rows names none). Callers pass `content.FieldCatalog()` (required; `FieldCatalog.Empty` for a vault without field definitions).
 - `required` (default `false`) says a value must be entered.
 - `many` (format 1, `openquote.fields/1`, coded fields only; default `false`) says the field takes several values, one of them primary (see [Change files](#change-files)). A host asks for the primary value whenever more than one is entered.
-- `default` (optional) is `{ "subject": "<field>" }`: the host offers, when the record is written, the value of that field of the record's subject. The record keeps the value as entered.
+- `default` (optional) is the value a host offers when the record is written, from one source: `{ "subject": "<field>" }`, the value of that field of the record's subject; or, in format 1, `{ "value": … }`, a fixed value — a non-empty string for a `text` field, a number for a `number` field, a code for a `coded` field (offered only when the version of its scheme in force that day holds the code). A `date` or reference field has no fixed value. Either way the record keeps the value as entered, and a host offers nothing for a hidden field.
 - `label` (optional) is what people read for the field; [Labels](#labels) can give it per locale.
 - `constrain` (optional) narrows fields other packs declared, by `name`: `required` and `hidden` may each be set to `true`, and at least one must be. A key set to `false` is invalid, because a constraint only narrows. A pack does not constrain its own fields; it declares them as they should be.
 

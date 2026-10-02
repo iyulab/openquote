@@ -300,7 +300,7 @@ public static partial class VaultReader
             {
                 if (ParseField(f, pack, v1) is not { } field)
                     return Bad<FieldSet>(file, UnreadableReason.Invalid,
-                        "every field needs a name and a kind; coded fields name a scheme, references name a type, and nothing else does; only a coded field in format 1 may take many values");
+                        "every field needs a name and a kind; coded fields name a scheme, references name a type, and nothing else does; only a coded field in format 1 may take many values; a default is a field of the subject or, in format 1, a fixed text, number or code");
                 if (fields.Any(x => x.Name == field.Name))
                     return Bad<FieldSet>(file, UnreadableReason.Invalid, $"field {field.Name} appears twice");
                 fields.Add(field);
@@ -361,10 +361,18 @@ public static partial class VaultReader
         if (!TryFlag(f, "many", out var many) || (many && (!v1 || k != FieldKind.Coded))) return null;
 
         string? fromSubject = null;
+        string? fixedValue = null;
         if (f.TryGetProperty("default", out var d))
         {
-            if (d.ValueKind != JsonValueKind.Object || !TryString(d, "subject", out var subjectField)) return null;
-            fromSubject = subjectField;
+            // One source: a field of the record's subject, or (format 1) a fixed value of the field's kind.
+            if (d.ValueKind != JsonValueKind.Object) return null;
+            if (d.TryGetProperty("value", out var value))
+            {
+                if (!v1 || d.TryGetProperty("subject", out _) || FixedValue(value, k) is not { } text) return null;
+                fixedValue = text;
+            }
+            else if (TryString(d, "subject", out var subjectField)) fromSubject = subjectField;
+            else return null;
         }
 
         string? label = null;
@@ -374,8 +382,21 @@ public static partial class VaultReader
             label = l;
         }
 
-        return new FieldDefinition(name, k, scheme, refType, required, Hidden: false, tier, fromSubject, label, pack) { Many = many };
+        return new FieldDefinition(name, k, scheme, refType, required, Hidden: false, tier, fromSubject, label, pack)
+        {
+            Many = many,
+            DefaultValue = fixedValue,
+        };
     }
+
+    // A fixed first value as text: a non-empty string for a text field or a code for a coded one, a number
+    // as the file writes it for a number field. A date or a reference has none: no fixed one fits every record.
+    private static string? FixedValue(JsonElement value, FieldKind kind) => kind switch
+    {
+        FieldKind.Text or FieldKind.Coded when value.ValueKind == JsonValueKind.String && value.GetString() is { Length: > 0 } s => s,
+        FieldKind.Number when value.ValueKind == JsonValueKind.Number => value.GetRawText(),
+        _ => null,
+    };
 
     // An optional true/false key; absent means false.
     private static bool TryFlag(JsonElement obj, string name, out bool value)

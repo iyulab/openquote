@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/iyulab/openquote/blob/main/docs/schema/fields.schema.json",
   "title": "Openquote field definitions",
-  "description": "fields/<pack>/<type>/v<version>.json. Format 1 lets a coded field take many values. Field names are unique within the file, and a constraint never names a field the same file declares; a reader checks both.",
+  "description": "fields/<pack>/<type>/v<version>.json. Format 1 lets a coded field take many values and a field give a fixed first value. Field names are unique within the file, and a constraint never names a field the same file declares; a reader checks both.",
   "type": "object",
   "required": ["format", "pack", "type", "version"],
   "properties": {
@@ -14,7 +14,15 @@
     "constrain": { "type": "array", "items": { "$ref": "#/$defs/constraint" } }
   },
   "if": { "properties": { "format": { "const": "openquote.fields/0" } } },
-  "then": { "properties": { "fields": { "items": { "not": { "required": ["many"] } } } } },
+  "then": {
+    "properties": {
+      "fields": {
+        "items": {
+          "not": { "anyOf": [ { "required": ["many"] }, { "required": ["default"], "properties": { "default": { "required": ["value"] } } } ] }
+        }
+      }
+    }
+  },
   "$defs": {
     "text": { "type": "string", "minLength": 1 },
     "field": {
@@ -30,8 +38,14 @@
         "tier": { "enum": ["structured", "narrative"] },
         "default": {
           "type": "object",
-          "required": ["subject"],
-          "properties": { "subject": { "$ref": "#/$defs/text" } }
+          "oneOf": [
+            { "required": ["subject"], "not": { "required": ["value"] } },
+            { "required": ["value"], "not": { "required": ["subject"] } }
+          ],
+          "properties": {
+            "subject": { "$ref": "#/$defs/text" },
+            "value": { "anyOf": [ { "$ref": "#/$defs/text" }, { "type": "number" } ] }
+          }
         },
         "label": { "$ref": "#/$defs/text" }
       },
@@ -49,6 +63,15 @@
         {
           "if": { "required": ["many"], "properties": { "many": { "const": true } } },
           "then": { "properties": { "kind": { "const": "coded" } } }
+        },
+        {
+          "if": { "required": ["default"], "properties": { "default": { "required": ["value"] } } },
+          "then": {
+            "properties": { "kind": { "enum": ["text", "number", "coded"] } },
+            "if": { "properties": { "kind": { "const": "number" } } },
+            "then": { "properties": { "default": { "properties": { "value": { "type": "number" } } } } },
+            "else": { "properties": { "default": { "properties": { "value": { "$ref": "#/$defs/text" } } } } }
+          }
         }
       ]
     },

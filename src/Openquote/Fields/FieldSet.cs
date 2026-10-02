@@ -35,8 +35,9 @@ public enum FieldTier
 /// <summary>
 /// One field of an entity type as a pack declares it. <see cref="Scheme"/> is set for coded fields and
 /// binds the field to a scheme by name; the version is the one in force when a value is entered.
-/// <see cref="DefaultFromSubject"/> names a field of the record's subject whose value a host offers when
-/// the record is written — kept as entered, so the record shows it as it was then.
+/// A host offers a first value when the record is written from one of two sources: <see cref="DefaultFromSubject"/>
+/// names a field of the record's subject, and <see cref="DefaultValue"/> is a fixed value. Either is kept as entered,
+/// so the record shows it as it was then.
 /// </summary>
 public sealed record FieldDefinition(
     string Name,
@@ -55,6 +56,13 @@ public sealed record FieldDefinition(
     /// <see cref="Classification.CodedValues"/>). A count places a record by the primary value.
     /// </summary>
     public bool Many { get; init; }
+
+    /// <summary>
+    /// The fixed value a host offers for the field when a record is written (field definitions format 1): the
+    /// text of a text field, the number of a number field as the file writes it, or a code of a coded field's
+    /// scheme — offered only when the version in force that day holds it. Null when the field gives none.
+    /// </summary>
+    public string? DefaultValue { get; init; }
 }
 
 /// <summary>A narrowing of a field another pack declared: it may make the field required or hide it, nothing else.</summary>

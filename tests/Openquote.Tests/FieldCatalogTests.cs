@@ -92,6 +92,40 @@ public class FieldCatalogTests
         Assert.Equal(0, VaultReader.Read([File("fields/care/session/v1.json", CareSession)]).RequiredVersion);
     }
 
+    [Fact]
+    public void A_field_in_format_1_may_give_a_fixed_first_value()
+    {
+        var json = """
+            { "format": "openquote.fields/1", "pack": "care", "type": "session", "version": 1, "fields": [
+              { "name": "with", "kind": "coded", "scheme": "with", "default": { "value": "client" } },
+              { "name": "minutes", "kind": "number", "default": { "value": 50 } },
+              { "name": "room", "kind": "text", "default": { "value": "A" } },
+              { "name": "grade", "kind": "text", "default": { "subject": "grade" } },
+              { "name": "date", "kind": "date" } ] }
+            """;
+
+        var fields = Assert.Single(VaultReader.Read([File("fields/care/session/v1.json", json)]).Fields).Fields;
+
+        Assert.Equal(["client", "50", "A", null, null], fields.Select(f => f.DefaultValue));
+        Assert.Equal([null, null, null, "grade", null], fields.Select(f => f.DefaultFromSubject));
+    }
+
+    [Theory]
+    [InlineData("openquote.fields/0", """{ "name": "n", "kind": "text", "default": { "value": "A" } }""")]                    // a fixed value needs format 1
+    [InlineData("openquote.fields/1", """{ "name": "n", "kind": "text", "default": { "value": "A", "subject": "n" } }""")]     // one source
+    [InlineData("openquote.fields/1", """{ "name": "n", "kind": "text", "default": { "value": "" } }""")]
+    [InlineData("openquote.fields/1", """{ "name": "n", "kind": "text", "default": { "value": 5 } }""")]
+    [InlineData("openquote.fields/1", """{ "name": "n", "kind": "number", "default": { "value": "50" } }""")]
+    [InlineData("openquote.fields/1", """{ "name": "m", "kind": "coded", "scheme": "k", "default": { "value": { "code": "a" } } }""")]
+    [InlineData("openquote.fields/1", """{ "name": "d", "kind": "date", "default": { "value": "2026-03-02" } }""")]             // no fixed date
+    [InlineData("openquote.fields/1", """{ "name": "p", "kind": "reference", "type": "practitioner", "default": { "value": "x" } }""")]
+    [InlineData("openquote.fields/1", """{ "name": "n", "kind": "text", "default": {} }""")]
+    public void A_default_without_one_usable_source_is_reported(string format, string field)
+    {
+        var json = $$"""{ "format": "{{format}}", "pack": "care", "type": "session", "version": 1, "fields": [ {{field}} ] }""";
+        Assert.Equal(UnreadableReason.Invalid, Assert.Single(VaultReader.Read([File("fields/care/session/v1.json", json)]).Unreadable).Reason);
+    }
+
     [Theory]
     [InlineData("""{ "name": "m", "required": false }""")]   // constraints only narrow
     [InlineData("""{ "name": "m" }""")]                       // a constraint narrows something
