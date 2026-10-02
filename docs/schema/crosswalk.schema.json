@@ -2,14 +2,15 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/iyulab/openquote/blob/main/docs/schema/crosswalk.schema.json",
   "title": "Openquote crosswalk",
-  "description": "schemes/<scheme>/v<from>-v<to>.json. The target version must be greater than the source version; a reader checks it. Format 1 lets a link state how the old item relates to the new one as a third element.",
+  "description": "schemes/<scheme>/v<from>-v<to>.json, or schemes/<scheme>/v<from>-<into>.v<to>.json for a crosswalk into another scheme (format 1). Within one scheme the target version must be greater than the source version; a reader checks it. Format 1 lets a link state how the old item relates to the new one as a third element.",
   "type": "object",
   "required": ["format", "scheme", "from", "to", "links"],
   "properties": {
     "format": { "enum": ["openquote.crosswalk/0", "openquote.crosswalk/1"] },
     "scheme": { "type": "string", "minLength": 1, "pattern": "^[^/]+$" },
     "from": { "type": "integer", "minimum": 1 },
-    "to": { "type": "integer", "minimum": 2 },
+    "into": { "type": "string", "minLength": 1, "pattern": "^[^/]+$" },
+    "to": { "type": "integer", "minimum": 1 },
     "links": {
       "type": "array",
       "items": {
@@ -21,5 +22,5 @@
     }
   },
   "if": { "properties": { "format": { "const": "openquote.crosswalk/0" } } },
-  "then": { "properties": { "links": { "items": { "maxItems": 2 } } } }
+  "then": { "properties": { "links": { "items": { "maxItems": 2 } } }, "not": { "required": ["into"] } }
 }

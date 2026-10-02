@@ -14,7 +14,8 @@ public static partial class VaultReader
     private readonly record struct Definition<T>(T? Value, UnreadableFile? Error) where T : class;
 
     // schemes/<name>/v<N>.json · schemes/<name>/v<N>-v<M>.json · reports/<name>/v<N>.json
-    [GeneratedRegex(@"^schemes/(?<name>[^/]+)/v(?<from>[1-9][0-9]*)(-v(?<to>[1-9][0-9]*))?\.json\z")]
+    // schemes/<scheme>/v<N>.json, v<N>-v<M>.json, or v<N>-<other scheme>.v<M>.json (a crosswalk across schemes)
+    [GeneratedRegex(@"^schemes/(?<name>[^/]+)/v(?<from>[1-9][0-9]*)(-((?<into>[^/]+)\.)?v(?<to>[1-9][0-9]*))?\.json\z")]
     private static partial Regex SchemePath();
 
     [GeneratedRegex(@"^reports/(?<name>[^/]+)/v(?<version>[1-9][0-9]*)\.json\z")]
@@ -162,19 +163,28 @@ public static partial class VaultReader
 
     private static Definition<Crosswalk> ParseCrosswalk(VaultFile file)
     {
-        // Format 1 lets a link state its relation as a third element.
+        // Format 1 lets a link state its relation as a third element, and a crosswalk lead into another scheme.
         if (!TryRoot(file, CrosswalkFormats, out var root, out var error)) return new(null, error);
         var related = TryString(root, "format", out var format) && format == "openquote.crosswalk/1";
         var path = SchemePath().Match(file.Path);
 
-        if (!TryString(root, "scheme", out var name) || !TryInt(root, "from", out var from) || !TryInt(root, "to", out var to))
+        if (!TryString(root, "scheme", out var name) || !TryInt(root, "from", out var from) || !TryInt(root, "to", out var to)
+            || from < 1 || to < 1)
             return Bad<Crosswalk>(file, UnreadableReason.Invalid, "a crosswalk needs a scheme and from/to versions");
-        if (to <= from)
+        string? into = null;
+        if (root.TryGetProperty("into", out _))
+        {
+            if (!related || !TryString(root, "into", out var other) || other == name)
+                return Bad<Crosswalk>(file, UnreadableReason.Invalid, "into names another scheme (format 1)");
+            into = other;
+        }
+        if (into is null && to <= from)
             return Bad<Crosswalk>(file, UnreadableReason.Invalid, "a crosswalk must go from an older version to a newer one");
-        if (name != path.Groups["name"].Value
+        var expected = into is null ? $"v{from}-v{to}" : $"v{from}-{into}.v{to}";
+        if (name != path.Groups["name"].Value || (path.Groups["into"].Success ? path.Groups["into"].Value : null) != into
             || from.ToString(CultureInfo.InvariantCulture) != path.Groups["from"].Value
             || to.ToString(CultureInfo.InvariantCulture) != path.Groups["to"].Value)
-            return Bad<Crosswalk>(file, UnreadableReason.NameMismatch, $"the path should be schemes/{name}/v{from}-v{to}.json");
+            return Bad<Crosswalk>(file, UnreadableReason.NameMismatch, $"the path should be schemes/{name}/{expected}.json");
         if (!root.TryGetProperty("links", out var linksArray) || linksArray.ValueKind != JsonValueKind.Array)
             return Bad<Crosswalk>(file, UnreadableReason.Invalid, "links must be an array");
 
@@ -199,7 +209,7 @@ public static partial class VaultReader
             }
         }
 
-        return new(new Crosswalk(name, from, to, links) { Relations = relations }, null);
+        return new(new Crosswalk(name, from, to, links) { Relations = relations, Into = into }, null);
     }
 
     private static readonly string[] CrosswalkFormats = ["openquote.crosswalk/0", "openquote.crosswalk/1"];

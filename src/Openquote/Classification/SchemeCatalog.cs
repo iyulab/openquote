@@ -2,7 +2,8 @@ namespace Openquote.Classification;
 
 /// <summary>
 /// Every version of every scheme in a vault, with the crosswalks between them. Carries a value
-/// from the version it was entered in to any later version.
+/// from the version it was entered in to any later version, and across to another scheme where
+/// crosswalks lead there.
 /// </summary>
 public sealed class SchemeCatalog
 {
@@ -17,7 +18,8 @@ public sealed class SchemeCatalog
         _schemes = schemes.ToDictionary(s => (s.Name, s.Version));
         _crosswalks = crosswalks
             .GroupBy(c => (c.Scheme, c.From))
-            .ToDictionary(g => g.Key, g => g.OrderBy(c => c.To).ToList());
+            .ToDictionary(g => g.Key, g => g.OrderBy(c => c.TargetScheme == c.Scheme ? 0 : 1)
+                .ThenBy(c => c.TargetScheme, StringComparer.Ordinal).ThenBy(c => c.To).ToList());
     }
 
     /// <summary>The scheme version, or null if the vault does not hold it.</summary>
@@ -62,42 +64,28 @@ public sealed class SchemeCatalog
     /// <summary>
     /// Whether a value of <paramref name="value"/>'s scheme and version can be counted in
     /// <paramref name="targetVersion"/> of <paramref name="targetScheme"/>: the same scheme at that
-    /// version or an earlier one, or a scheme that extends it — directly or through others — at such
-    /// a version.
+    /// version or an earlier one; a scheme that extends it — directly or through others — at such a
+    /// version; or a scheme from which crosswalks lead to it.
     /// </summary>
     public bool Reaches(CodedValue value, string targetScheme, int targetVersion)
     {
         ArgumentNullException.ThrowIfNull(value);
-        return Fold(value, targetScheme) is { } folded && folded.Version <= targetVersion;
+        ArgumentNullException.ThrowIfNull(targetScheme);
+        return Route(value, targetScheme, targetVersion) is not null;
     }
 
     /// <summary>
     /// Carries <paramref name="value"/> to <paramref name="targetVersion"/> of
-    /// <paramref name="targetScheme"/>: a value of a scheme that extends it first becomes the item its
-    /// own item is anchored to, then is carried as a value of that scheme (see the other overload).
+    /// <paramref name="targetScheme"/>. A value of a scheme that extends it first becomes the item its
+    /// own item is anchored to; a value of another scheme follows the crosswalks that lead from its
+    /// scheme to the target — from the value's own scheme when they do, otherwise from the nearest
+    /// scheme it extends. Every step is carried as in the other overload.
     /// </summary>
     public Resolution Resolve(CodedValue value, string targetScheme, int targetVersion)
     {
         ArgumentNullException.ThrowIfNull(value);
         ArgumentNullException.ThrowIfNull(targetScheme);
-        return Fold(value, targetScheme) is { } folded ? Resolve(folded, targetVersion) : Unmapped([]);
-    }
-
-    // A value of a scheme that extends `target`, through as many extensions as it takes, as the
-    // value of `target` its item is anchored to. Null when the value's scheme does not reach `target`
-    // or an item on the way has no anchor that its extended version holds.
-    private CodedValue? Fold(CodedValue value, string target)
-    {
-        var current = value;
-        for (var steps = 0; current.Scheme != target; steps++)
-        {
-            if (steps > _schemes.Count || Find(current.Scheme, current.Version) is not { Extends: { } extended } scheme
-                || scheme.Items.FirstOrDefault(i => i.Code == current.Code)?.Anchor is not { } anchor
-                || Find(extended.Scheme, extended.Version) is not { } next || !next.Contains(anchor))
-                return null;
-            current = new CodedValue(extended.Scheme, extended.Version, anchor);
-        }
-        return current;
+        return Route(value, targetScheme, targetVersion) is { } route ? Carry(route.Start, route.Path) : Unmapped([]);
     }
 
     /// <summary>
@@ -111,11 +99,42 @@ public sealed class SchemeCatalog
     public Resolution Resolve(CodedValue value, int targetVersion)
     {
         ArgumentNullException.ThrowIfNull(value);
+        return value.Version <= targetVersion && Find(value.Scheme, targetVersion) is not null
+            ? Carry(value, Path((value.Scheme, value.Version), (value.Scheme, targetVersion), sameScheme: true))
+            : Unmapped([]);
+    }
 
-        if (Find(value.Scheme, value.Version) is not { } own || !own.Contains(value.Code)
-            || Find(value.Scheme, targetVersion) is null
-            || value.Version > targetVersion
-            || Path(value.Scheme, value.Version, targetVersion) is not { } path)
+    private sealed record Routed(CodedValue Start, List<Crosswalk>? Path);
+
+    // Where a value starts and the crosswalks it follows to the target. The value itself, then each
+    // item it is anchored to through the schemes it extends, is tried in turn: in the target scheme at
+    // the target version or an earlier one, it follows that scheme's crosswalks (a path may be missing:
+    // the value is then counted as unmapped, as it always was); in another scheme, it needs crosswalks
+    // that lead from it to the target. Null when no step reaches the target.
+    private Routed? Route(CodedValue value, string targetScheme, int targetVersion)
+    {
+        var current = value;
+        for (var steps = 0; steps <= _schemes.Count; steps++)
+        {
+            if (current.Scheme == targetScheme)
+                return current.Version <= targetVersion
+                    ? new Routed(current, Find(targetScheme, targetVersion) is null ? null
+                        : Path((current.Scheme, current.Version), (targetScheme, targetVersion), sameScheme: true))
+                    : null;
+            if (Path((current.Scheme, current.Version), (targetScheme, targetVersion), sameScheme: false) is { } across)
+                return new Routed(current, across);
+            if (Find(current.Scheme, current.Version) is not { Extends: { } extended } scheme
+                || scheme.Items.FirstOrDefault(i => i.Code == current.Code)?.Anchor is not { } anchor
+                || Find(extended.Scheme, extended.Version) is not { } next || !next.Contains(anchor))
+                return null;
+            current = new CodedValue(extended.Scheme, extended.Version, anchor);
+        }
+        return null;
+    }
+
+    private Resolution Carry(CodedValue value, List<Crosswalk>? path)
+    {
+        if (path is null || Find(value.Scheme, value.Version) is not { } own || !own.Contains(value.Code))
             return Unmapped([]);
 
         string[] codes = [value.Code];
@@ -128,8 +147,8 @@ public sealed class SchemeCatalog
             codes = carried.SelectMany(c => c.Codes).Distinct(StringComparer.Ordinal).ToArray();
             // A link to a code the next version does not have is a defect in the crosswalk, not a
             // place to put a record.
-            if (Find(value.Scheme, crosswalk.To) is { } next) codes = codes.Where(next.Contains).ToArray();
-            applied.Add($"{crosswalk.From}-{crosswalk.To}");
+            if (Find(crosswalk.TargetScheme, crosswalk.To) is { } next) codes = codes.Where(next.Contains).ToArray();
+            applied.Add(crosswalk.Name);
             if (codes.Length == 0) return Unmapped(applied);
         }
 
@@ -140,28 +159,30 @@ public sealed class SchemeCatalog
 
     private static Resolution Unmapped(List<string> applied) => new(ResolutionKind.Unmapped, null, [], applied);
 
-    // The shortest chain of crosswalks from one version to another (breadth-first, ties to the
-    // lower intermediate version so the chain is deterministic).
-    private List<Crosswalk>? Path(string scheme, int from, int to)
+    // The shortest chain of crosswalks from one scheme version to another (breadth-first; ties go to
+    // the crosswalk listed first — within a scheme, the lower version — so the chain is deterministic).
+    // Within one scheme only that scheme's crosswalks are followed.
+    private List<Crosswalk>? Path((string Scheme, int Version) from, (string Scheme, int Version) to, bool sameScheme)
     {
         if (from == to) return [];
-        var previous = new Dictionary<int, Crosswalk>();
-        var queue = new Queue<int>([from]);
+        var previous = new Dictionary<(string, int), Crosswalk>();
+        var queue = new Queue<(string Scheme, int Version)>([from]);
         while (queue.Count > 0)
         {
-            var version = queue.Dequeue();
-            foreach (var crosswalk in _crosswalks.GetValueOrDefault((scheme, version)) ?? [])
+            var node = queue.Dequeue();
+            foreach (var crosswalk in _crosswalks.GetValueOrDefault(node) ?? [])
             {
-                if (crosswalk.To == from || previous.ContainsKey(crosswalk.To)) continue;
-                previous[crosswalk.To] = crosswalk;
-                if (crosswalk.To == to)
+                var reached = (crosswalk.TargetScheme, crosswalk.To);
+                if ((sameScheme && crosswalk.TargetScheme != from.Scheme) || reached == from || previous.ContainsKey(reached)) continue;
+                previous[reached] = crosswalk;
+                if (reached == to)
                 {
                     var path = new List<Crosswalk>();
-                    for (var v = to; v != from; v = previous[v].From) path.Add(previous[v]);
+                    for (var at = to; at != from; at = (previous[at].Scheme, previous[at].From)) path.Add(previous[at]);
                     path.Reverse();
                     return path;
                 }
-                queue.Enqueue(crosswalk.To);
+                queue.Enqueue(reached);
             }
         }
         return null;

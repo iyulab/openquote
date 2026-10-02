@@ -167,4 +167,48 @@ public class SchemeCatalogTests
         Assert.Equal(ResolutionKind.Unmapped, r.Kind);
         Assert.Equal(["1-2"], r.Crosswalks);
     }
+
+    // kind v1 → kind v2 as above; kind v2 → "neis" v1 across schemes: a and x are one neis item,
+    // y is broader than n2. A local list extends kind v1.
+    private static SchemeCatalog Across() => new(
+        [
+            Scheme(1, "a", "b", "c", "d", "e", "f", "g", "h"), Scheme(2, "a", "x", "y", "p", "q", "m", "n"),
+            new Scheme("neis", 1, [new("n1", "N1", null, false), new("n2", "N2", null, false)]),
+            new Scheme("kind.local", 1, [new("b-call", "B by phone", null, false) { Anchor = "b" }]) { Extends = new SchemeVersion("kind", 1) },
+        ],
+        [
+            Links(1, 2, ("a", "a"), ("b", "x"), ("c", "x"), ("d", "y")),
+            new Crosswalk("kind", 2, 1, [("a", "n1"), ("x", "n1"), ("y", "n2")])
+            {
+                Into = "neis",
+                Relations = new Dictionary<(string From, string To), LinkRelation> { [("y", "n2")] = LinkRelation.Broader },
+            },
+        ]);
+
+    [Theory]
+    [InlineData("kind", 1, "b", "n1")]
+    [InlineData("kind", 2, "x", "n1")]
+    [InlineData("kind.local", 1, "b-call", "n1")]
+    public void A_value_is_carried_into_another_scheme_through_its_own_crosswalks_first(string scheme, int version, string code, string to)
+    {
+        var catalog = Across();
+        var value = new CodedValue(scheme, version, code);
+
+        var r = catalog.Resolve(value, "neis", 1);
+
+        Assert.True(catalog.Reaches(value, "neis", 1));
+        Assert.Equal((ResolutionKind.Assigned, to), (r.Kind, r.Code));
+        Assert.Contains("kind/2-neis/1", r.Crosswalks);
+    }
+
+    [Fact]
+    public void Across_schemes_a_broader_item_waits_and_a_scheme_with_no_crosswalks_there_does_not_reach()
+    {
+        var catalog = Across();
+
+        Assert.Equal(ResolutionKind.Pending, catalog.Resolve(new CodedValue("kind", 1, "d"), "neis", 1).Kind);
+        Assert.False(catalog.Reaches(new CodedValue("neis", 1, "n1"), "kind", 2));
+        Assert.Equal(ResolutionKind.Unmapped, catalog.Resolve(new CodedValue("neis", 1, "n1"), "kind", 2).Kind);
+        Assert.Equal(["1-2", "kind/2-neis/1"], catalog.Resolve(new CodedValue("kind", 1, "a"), "neis", 1).Crosswalks);
+    }
 }

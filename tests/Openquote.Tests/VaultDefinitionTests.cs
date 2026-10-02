@@ -164,4 +164,27 @@ public class VaultDefinitionTests
 
         Assert.Equal(UnreadableReason.Invalid, Assert.Single(VaultReader.Read([File("schemes/kind/v1-v2.json", json)]).Unreadable).Reason);
     }
+
+    [Fact]
+    public void Reads_a_crosswalk_into_another_scheme_named_after_both()
+    {
+        var json = """{ "format": "openquote.crosswalk/1", "scheme": "kind", "from": 2, "into": "neis.school", "to": 1, "links": [ ["a", "n1"] ] }""";
+
+        var content = VaultReader.Read([File("schemes/kind/v2-neis.school.v1.json", json)]);
+
+        var crosswalk = Assert.Single(content.Crosswalks);
+        Assert.Equal(("neis.school", "kind/2-neis.school/1"), (crosswalk.TargetScheme, crosswalk.Name));
+        Assert.Equal(1, content.RequiredVersion);
+        Assert.Equal(new VaultFileKind("crosswalk", Name: "kind", From: 2, To: 1, Into: "neis.school"), VaultFileKind.Of("schemes/kind/v2-neis.school.v1.json"));
+    }
+
+    [Theory]
+    [InlineData("schemes/kind/v2-neis.v1.json", """{ "format": "openquote.crosswalk/0", "scheme": "kind", "from": 2, "into": "neis", "to": 1, "links": [] }""", UnreadableReason.Invalid)]
+    [InlineData("schemes/kind/v2-kind.v3.json", """{ "format": "openquote.crosswalk/1", "scheme": "kind", "from": 2, "into": "kind", "to": 3, "links": [] }""", UnreadableReason.Invalid)]
+    [InlineData("schemes/kind/v2-v1.json", """{ "format": "openquote.crosswalk/1", "scheme": "kind", "from": 2, "into": "neis", "to": 1, "links": [] }""", UnreadableReason.NameMismatch)]
+    [InlineData("schemes/kind/v2-neis.v1.json", """{ "format": "openquote.crosswalk/1", "scheme": "kind", "from": 2, "to": 1, "links": [] }""", UnreadableReason.Invalid)]
+    public void A_crosswalk_across_schemes_needs_format_1_another_scheme_and_a_name_that_says_so(string path, string json, UnreadableReason reason)
+    {
+        Assert.Equal(reason, Assert.Single(VaultReader.Read([File(path, json)]).Unreadable).Reason);
+    }
 }

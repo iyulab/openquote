@@ -52,11 +52,28 @@ public enum LinkRelation
 }
 
 /// <summary>
-/// The links between two versions of a scheme, as (old code, new code) pairs. Whether a link is
-/// 1:1, N:1, 1:N or N:M is not stored: it follows from the pairs.
+/// The links between two versions of a scheme — or from a version of one scheme to a version of
+/// another (<see cref="Into"/>) — as (old code, new code) pairs. Whether a link is 1:1, N:1, 1:N or
+/// N:M is not stored: it follows from the pairs.
 /// </summary>
 public sealed record Crosswalk(string Scheme, int From, int To, IReadOnlyList<(string From, string To)> Links)
 {
+    /// <summary>
+    /// The scheme the links lead into: another scheme for a crosswalk across schemes (format 1), which
+    /// then leads from version <see cref="From"/> of <see cref="Scheme"/> to version <see cref="To"/> of
+    /// this one; null for a crosswalk between two versions of one scheme.
+    /// </summary>
+    public string? Into { get; init; }
+
+    /// <summary>The scheme the links lead into: <see cref="Into"/>, or <see cref="Scheme"/> itself.</summary>
+    public string TargetScheme => Into ?? Scheme;
+
+    /// <summary>
+    /// How a run names this crosswalk among those applied: <c>from-to</c> within a scheme,
+    /// <c>scheme/from-scheme/to</c> across schemes.
+    /// </summary>
+    public string Name => Into is null ? $"{From}-{To}" : $"{Scheme}/{From}-{Into}/{To}";
+
     /// <summary>
     /// The relation each link states, when the crosswalk states any (format 1). A link with no stated
     /// relation is carried as every link was before relations: one link assigns, several wait for a person.

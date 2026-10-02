@@ -157,7 +157,7 @@ A `device` entity, kept in `devices/`, carries a human-readable name in its `nam
 }
 ```
 
-- Path: `schemes/<scheme>/v<from>-v<to>.json`; `to` must be greater than `from`.
+- Path: `schemes/<scheme>/v<from>-v<to>.json`; `to` must be greater than `from`. A crosswalk into another scheme (format 1) names it in `into` and lives at `schemes/<scheme>/v<from>-<into>.v<to>.json`; its versions are those of the two schemes. A value of a scheme that crosswalks lead from to the rows of a report is carried along them — first from its own scheme, otherwise from the nearest scheme it extends — and the run names such a crosswalk as `<scheme>/<from>-<into>/<to>` among those applied.
 - `links` are `[old code, new code]` pairs. Link types (1:1, N:1, 1:N, N:M) are not stored; they follow from the pairs.
 - In `openquote.crosswalk/1`, a link may state how the old item relates to the new one as a third element: `equivalent` (the same meaning) and `narrower` (the new item holds all of the old one) carry a value without asking; `broader` (the new item holds only part of the old one) leaves it for a person to decide, even as the only link; `retired` records where a retired item went nearest and carries nothing. A link without a relation is carried as in format 0. A vault holding such a crosswalk needs format 1 (`VaultContent.RequiredVersion`): an earlier engine skips the file and leaves its values unmapped.
 - There is no implicit identity crosswalk. A new version that only relabels items still needs a crosswalk linking each code to itself. A relabel that keeps every code can instead be given as labels (see [Labels](#labels)), which needs no new version.
@@ -211,7 +211,7 @@ How values are carried across versions is described in [Concepts](concepts.md#cr
 
 - Path: `runs/<yyyy>/<id>.<device>.json`, where `yyyy` is the year of `at`. `id` and `device` must match the name.
 - `report` names the form and version run; that form must be in the vault.
-- `schemes` records, for the row scheme, the version counted in and the crosswalks applied (as `from-to`; omitted when none were). For a form that counts in the version in force, `boundaries` (omitted when empty) lists each day within the period on which the version in force changes, with the version before and from that day (`null` when none was in force): counts on either side were entered under different versions.
+- `schemes` records, for the row scheme, the version counted in and the crosswalks applied (as `from-to`, or `<scheme>/<from>-<into>/<to>` across schemes; omitted when none were). For a form that counts in the version in force, `boundaries` (omitted when empty) lists each day within the period on which the version in force changes, with the version before and from that day (`null` when none was in force): counts on either side were entered under different versions.
 - `period` gives the first and last calendar day, inclusive.
 - Each cell names its `row` code, its `column` (a string or `null`) and the `records` counted in it. Cells with no records are not written.
 - `pending`, `unmapped`, `blank` and `conflicted` list records not placed in any cell: a value waiting for a person to choose among codes, a value with no code in the form's version, no value to count, and concurrent values in a field the form places by (period, row or column). `total` lists every record in the period and must equal the cells plus those sets, each record in exactly one of them.
