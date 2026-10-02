@@ -36,6 +36,30 @@ public sealed class SchemeCatalog
             .MaxBy(s => s.Version);
 
     /// <summary>
+    /// The days after <paramref name="from"/> up to <paramref name="to"/> on which the version of
+    /// <paramref name="name"/> in force (see <see cref="InForce"/>) changes, in date order.
+    /// </summary>
+    public IReadOnlyList<SchemeBoundary> Boundaries(string name, DateOnly from, DateOnly to)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        var days = _schemes.Values
+            .Where(s => s.Name == name)
+            .SelectMany(s => new[] { s.EffectiveFrom, s.EffectiveTo?.AddDays(1) })
+            .OfType<DateOnly>()
+            .Where(d => d > from && d <= to)
+            .Distinct()
+            .Order();
+        var boundaries = new List<SchemeBoundary>();
+        foreach (var day in days)
+        {
+            var before = InForce(name, day.AddDays(-1))?.Version;
+            var after = InForce(name, day)?.Version;
+            if (before != after) boundaries.Add(new SchemeBoundary(day, before, after));
+        }
+        return boundaries;
+    }
+
+    /// <summary>
     /// Carries <paramref name="value"/> to <paramref name="targetVersion"/> of its scheme. A value
     /// lands on a code only when every step leaves exactly one candidate: an old code with one link
     /// is assigned, with two or more it waits for a person, and with none it is unmapped.
@@ -96,3 +120,10 @@ public sealed class SchemeCatalog
         return null;
     }
 }
+
+/// <summary>
+/// A day within a run's period on which the version of its row scheme in force changes, with the
+/// version in force the day before and that day (null when none was). Counts on either side of it
+/// were entered under different versions, so a series across it is not like for like.
+/// </summary>
+public sealed record SchemeBoundary(DateOnly Date, int? From, int? To);

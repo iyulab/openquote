@@ -164,9 +164,13 @@ public static partial class VaultReader
         return new(new Crosswalk(name, from, to, links), null);
     }
 
+    private static readonly string[] ReportFormats = ["openquote.report/0", "openquote.report/1"];
+
     private static Definition<ReportDefinition> ParseReport(VaultFile file)
     {
-        if (!TryRoot(file, "openquote.report/0", out var root, out var error)) return new(null, error);
+        // Format 1 adds rows.version "in-force": the version in force on the last day of the period run.
+        if (!TryRoot(file, ReportFormats, out var root, out var error)) return new(null, error);
+        var inForceAllowed = TryString(root, "format", out var format) && format == "openquote.report/1";
         var path = ReportPath().Match(file.Path);
 
         if (!TryString(root, "report", out var name) || !TryInt(root, "version", out var version) || version < 1
@@ -178,9 +182,13 @@ public static partial class VaultReader
             || !TryString(period, "unit", out var unit) || unit != "month" || !TryString(period, "field", out var periodField))
             return Bad<ReportDefinition>(file, UnreadableReason.Invalid, "period must be {\"unit\": \"month\", \"field\": ...}");
         if (!root.TryGetProperty("rows", out var rows) || rows.ValueKind != JsonValueKind.Object
-            || !TryString(rows, "field", out var rowField) || !TryString(rows, "scheme", out var rowScheme)
-            || !TryInt(rows, "version", out var rowVersion) || rowVersion < 1)
+            || !TryString(rows, "field", out var rowField) || !TryString(rows, "scheme", out var rowScheme))
             return Bad<ReportDefinition>(file, UnreadableReason.Invalid, "rows must name a field, a scheme and a scheme version");
+        int? rowVersion;
+        if (TryInt(rows, "version", out var named) && named >= 1) rowVersion = named;
+        else if (inForceAllowed && TryString(rows, "version", out var word) && word == "in-force") rowVersion = null;
+        else return Bad<ReportDefinition>(file, UnreadableReason.Invalid,
+            inForceAllowed ? "rows.version must be a scheme version or \"in-force\"" : "rows must name a field, a scheme and a scheme version");
 
         string? columnField = null;
         if (root.TryGetProperty("columns", out var columns))

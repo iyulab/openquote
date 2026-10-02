@@ -247,6 +247,50 @@ public class ReportRunnerTests
         Assert.Empty(ReportDiff.Compare(after, after, Catalog).Revised);
     }
 
+    // Version 1 of `kind` is in force up to the end of March 2026 and version 2 from April 15.
+    private static readonly SchemeCatalog Dated = new(
+        [
+            new Scheme("kind", 1, Catalog.Find("kind", 1)!.Items, null, new DateOnly(2026, 3, 31)),
+            new Scheme("kind", 2, Catalog.Find("kind", 2)!.Items, new DateOnly(2026, 4, 15)),
+        ],
+        [new Crosswalk("kind", 1, 2, [("a", "x"), ("b", "x"), ("c", "p"), ("c", "q")])]);
+
+    private static ReportDefinition InForce => Form(1) with { RowVersion = null };
+
+    [Fact]
+    public void A_form_without_a_version_counts_in_the_version_in_force_on_the_last_day()
+    {
+        var items = Entities([.. Item("i1", "2026-03-02", "a"), .. Item("i2", "2026-05-03", "a")]).ToList();
+
+        var march = ReportRunner.RunMonth(InForce, 2026, 3, items, Dated);
+        var may = ReportRunner.RunMonth(InForce, 2026, 5, items, Dated);
+
+        Assert.Equal((1, "a"), (march.Report.RowVersion!.Value, Assert.Single(march.Cells).Row));
+        Assert.Empty(march.Boundaries);
+        Assert.Equal((2, "x"), (may.Report.RowVersion!.Value, Assert.Single(may.Cells).Row));
+        Assert.Equal(["1-2"], may.Crosswalks);
+    }
+
+    [Fact]
+    public void A_period_across_a_change_of_version_says_on_which_days_it_changed()
+    {
+        var run = ReportRunner.Run(InForce, new DateOnly(2026, 3, 1), new DateOnly(2026, 4, 30),
+            Entities(Item("i1", "2026-03-02", "a")), Dated);
+
+        Assert.Equal(2, run.Report.RowVersion);
+        Assert.Equal([new SchemeBoundary(new DateOnly(2026, 4, 1), 1, null), new SchemeBoundary(new DateOnly(2026, 4, 15), null, 2)], run.Boundaries);
+        Assert.Empty(ReportRunner.Run(Form(2), new DateOnly(2026, 3, 1), new DateOnly(2026, 4, 30), [], Dated).Boundaries);
+    }
+
+    [Fact]
+    public void A_form_without_a_version_cannot_run_over_a_period_ending_when_none_is_in_force()
+    {
+        var error = Assert.Throws<ArgumentException>(() =>
+            ReportRunner.Run(InForce, new DateOnly(2026, 4, 1), new DateOnly(2026, 4, 10), [], Dated));
+
+        Assert.Contains("in force on 2026-04-10", error.Message, StringComparison.Ordinal);
+    }
+
     private static ReportRun Run(int version, ReportCell[] cells, string[]? pending = null, string[]? unmapped = null) =>
         new(Form(version), new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), version == 1 ? [] : ["1-2"],
             cells, pending ?? [], unmapped ?? [], [], []);

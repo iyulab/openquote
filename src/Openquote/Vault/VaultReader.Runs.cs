@@ -9,6 +9,7 @@ public static partial class VaultReader
 {
     internal const string RunFormat = "openquote.run/0";
     internal const string RunFormatSets = "openquote.run/1";
+    private static readonly string[] RunFormats = [RunFormat, RunFormatSets];
 
     // runs/<yyyy>/<change-id>.<device>.json
     [GeneratedRegex(@"^runs/[0-9]{4}/(?<id>[0-9a-f-]{36})\.(?<device>[a-z0-9]{4,16})\.json\z")]
@@ -22,7 +23,7 @@ public static partial class VaultReader
     /// </summary>
     private static Definition<KeptRun> ParseRun(VaultFile file, IReadOnlyList<ReportDefinition> reports)
     {
-        if (!TryRoot(file, new[] { RunFormat, RunFormatSets }, out var root, out var error)) return new(null, error);
+        if (!TryRoot(file, RunFormats, out var root, out var error)) return new(null, error);
         var sets = TryString(root, "format", out var format) && format == RunFormatSets;
         var path = RunPath().Match(file.Path);
 
@@ -40,12 +41,34 @@ public static partial class VaultReader
             return Bad<KeptRun>(file, UnreadableReason.Invalid, $"report form {name} v{version} is not in the vault");
 
         var crosswalks = new List<string>();
-        if (root.TryGetProperty("schemes", out var schemes) && schemes.ValueKind == JsonValueKind.Object
-            && schemes.TryGetProperty(report.RowScheme, out var scheme) && scheme.ValueKind == JsonValueKind.Object
-            && scheme.TryGetProperty("crosswalks", out var applied))
+        var boundaries = new List<Classification.SchemeBoundary>();
+        var scheme = default(JsonElement);
+        var hasScheme = root.TryGetProperty("schemes", out var schemes) && schemes.ValueKind == JsonValueKind.Object
+            && schemes.TryGetProperty(report.RowScheme, out scheme) && scheme.ValueKind == JsonValueKind.Object;
+        if (hasScheme && scheme.TryGetProperty("crosswalks", out var applied))
         {
             if (!TryIds(applied, out var list)) return Bad<KeptRun>(file, UnreadableReason.Invalid, "crosswalks must be a list of names");
             crosswalks.AddRange(list);
+        }
+        if (report.RowVersion is null)
+        {
+            // A form that counts in the version in force: the run says which version that was.
+            if (!hasScheme || !TryInt(scheme, "version", out var counted) || counted < 1)
+                return Bad<KeptRun>(file, UnreadableReason.Invalid, "a run of a form counting in the version in force names the version it counted in");
+            report = report with { RowVersion = counted };
+        }
+        if (hasScheme && scheme.TryGetProperty("boundaries", out var boundariesJson))
+        {
+            if (boundariesJson.ValueKind != JsonValueKind.Array)
+                return Bad<KeptRun>(file, UnreadableReason.Invalid, "boundaries must be a list");
+            foreach (var b in boundariesJson.EnumerateArray())
+            {
+                if (b.ValueKind != JsonValueKind.Object || !TryString(b, "date", out var dayText)
+                    || !DateOnly.TryParseExact(dayText, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day)
+                    || !TryVersionOrNull(b, "from", out var before) || !TryVersionOrNull(b, "to", out var after))
+                    return Bad<KeptRun>(file, UnreadableReason.Invalid, "a boundary has a date and the versions before and from it (or null)");
+                boundaries.Add(new Classification.SchemeBoundary(day, before, after));
+            }
         }
 
         if (!root.TryGetProperty("period", out var period) || period.ValueKind != JsonValueKind.Object
@@ -100,7 +123,7 @@ public static partial class VaultReader
             }
         }
 
-        var run = new ReportRun(report, from, to, crosswalks, cells, pending, unmapped, blank, conflicted, people);
+        var run = new ReportRun(report, from, to, crosswalks, cells, pending, unmapped, blank, conflicted, people) { Boundaries = boundaries };
         if (run.Total.Distinct(StringComparer.Ordinal).Count() != run.Total.Count
             || !run.Total.SequenceEqual(total.Order(StringComparer.Ordinal), StringComparer.Ordinal))
             return Bad<KeptRun>(file, UnreadableReason.Invalid,
@@ -108,6 +131,16 @@ public static partial class VaultReader
         if (people is not null && !people.Keys.Order(StringComparer.Ordinal).SequenceEqual(run.Total, StringComparer.Ordinal))
             return Bad<KeptRun>(file, UnreadableReason.Invalid, "people must name exactly the records in the total");
         return new(new KeptRun(id, device, at, file.Path, run), null);
+    }
+
+    private static bool TryVersionOrNull(JsonElement obj, string name, out int? version)
+    {
+        version = null;
+        if (!obj.TryGetProperty(name, out var value)) return false;
+        if (value.ValueKind == JsonValueKind.Null) return true;
+        if (value.ValueKind != JsonValueKind.Number || !value.TryGetInt32(out var v) || v < 1) return false;
+        version = v;
+        return true;
     }
 
     private static bool TrySet(JsonElement root, string name, out IReadOnlyList<string> ids)

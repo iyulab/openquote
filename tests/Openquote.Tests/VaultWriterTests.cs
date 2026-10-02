@@ -363,6 +363,42 @@ public class VaultWriterTests
     }
 
     [Fact]
+    public void A_run_of_a_form_counting_in_the_version_in_force_keeps_the_version_and_the_days_it_changed()
+    {
+        var formFile = new VaultFile("reports/monthly/v1.json", System.Text.Encoding.UTF8.GetBytes(
+            """{"format":"openquote.report/1","report":"monthly","version":1,"label":"M","counts":"session","period":{"unit":"month","field":"day"},"rows":{"field":"kind","scheme":"kind","version":"in-force"}}"""));
+        var counted = Monthly with { RowVersion = 2 };
+        var run = new ReportRun(counted, new DateOnly(2026, 3, 1), new DateOnly(2026, 4, 30), ["1-2"], [], [], ["r1"], [], [])
+        {
+            Boundaries = [new SchemeBoundary(new DateOnly(2026, 4, 1), 1, null), new SchemeBoundary(new DateOnly(2026, 4, 15), null, 2)],
+        };
+        var file = Writer().RunRecord(run);
+
+        var content = VaultReader.Read([file, formFile]);
+
+        Assert.Null(Assert.Single(content.Reports).RowVersion);
+        var kept = Assert.Single(content.Runs).Run;
+        Assert.Equal(counted, kept.Report);
+        Assert.Equal(run.Boundaries, kept.Boundaries);
+        Assert.Contains("\"boundaries\"", System.Text.Encoding.UTF8.GetString(file.Content.Span), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("openquote.report/0", "\"in-force\"")]
+    [InlineData("openquote.report/1", "\"latest\"")]
+    [InlineData("openquote.report/1", "0")]
+    public void Only_a_format_1_report_form_may_count_in_the_version_in_force(string format, string version)
+    {
+        var formFile = new VaultFile("reports/monthly/v1.json", System.Text.Encoding.UTF8.GetBytes(
+            "{\"format\":\"" + format + "\",\"report\":\"monthly\",\"version\":1,\"label\":\"M\",\"counts\":\"session\",\"period\":{\"unit\":\"month\",\"field\":\"day\"},\"rows\":{\"field\":\"kind\",\"scheme\":\"kind\",\"version\":" + version + "}}"));
+
+        var content = VaultReader.Read([formFile]);
+
+        Assert.Empty(content.Reports);
+        Assert.Equal(UnreadableReason.Invalid, Assert.Single(content.Unreadable).Reason);
+    }
+
+    [Fact]
     public void A_run_record_without_its_report_form_is_unreadable()
     {
         var form = new ReportDefinition("monthly", 1, "M", "session", "day", "kind", "kind", 1, null);

@@ -1,3 +1,5 @@
+using Openquote.Classification;
+
 namespace Openquote.Reports;
 
 /// <summary>One cell: the records counted in it. The count is always the number of records.</summary>
@@ -44,6 +46,12 @@ public sealed record ReportRun(
     IReadOnlyList<string> Conflicted,
     IReadOnlyDictionary<string, IReadOnlyList<string>>? People = null)
 {
+    /// <summary>
+    /// For a form that counts in the version in force, the days within the period on which that
+    /// version changes; empty otherwise, and when it does not change.
+    /// </summary>
+    public IReadOnlyList<SchemeBoundary> Boundaries { get; init; } = [];
+
     /// <summary>Every record in the period: the cells, pending, unmapped, blank and conflicted records.</summary>
     public IReadOnlyList<string> Total { get; } =
         Cells.SelectMany(c => c.Records).Concat(Pending).Concat(Unmapped).Concat(Blank).Concat(Conflicted)

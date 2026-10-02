@@ -9,8 +9,8 @@ public sealed record SchemeItem(string Code, string Label, string? Parent, bool 
 /// One immutable version of a classification scheme. Editing a scheme makes a new version; a
 /// renamed item keeps its code, so only the label changes. <paramref name="EffectiveFrom"/> and
 /// <paramref name="EffectiveTo"/> say when the version is in force, as the body that issues the scheme
-/// announces it; a version without them is in force throughout. They guide what a person enters and
-/// never decide what a report counts.
+/// announces it; a version without them is in force throughout. They guide what a person enters, and
+/// decide what a report counts only when its form asks for the version in force rather than naming one.
 /// </summary>
 public sealed record Scheme(string Name, int Version, IReadOnlyList<SchemeItem> Items, DateOnly? EffectiveFrom = null, DateOnly? EffectiveTo = null)
 {

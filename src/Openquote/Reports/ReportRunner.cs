@@ -19,8 +19,11 @@ public static class ReportRunner
     /// count (see <see cref="Entity.HasValue"/>), so an empty field is told apart from a gap in the
     /// crosswalks. Destroyed
     /// entities are not counted. Each counted record also carries the subjects it is about, so the
-    /// run gives a head count beside every record count.
+    /// run gives a head count beside every record count. A form that names no scheme version counts
+    /// in the version in force on <paramref name="to"/>, and the run notes any day within the period
+    /// on which that version changes.
     /// </summary>
+    /// <exception cref="ArgumentException">The form names no scheme version and none is in force on <paramref name="to"/>.</exception>
     public static ReportRun Run(ReportDefinition report, DateOnly from, DateOnly to,
         IEnumerable<Entity> entities, SchemeCatalog catalog)
     {
@@ -28,6 +31,10 @@ public static class ReportRunner
         ArgumentNullException.ThrowIfNull(entities);
         ArgumentNullException.ThrowIfNull(catalog);
         if (to < from) throw new ArgumentException("the period ends before it starts", nameof(to));
+        var inForce = report.RowVersion is null;
+        var form = report.For(to, catalog)
+            ?? throw new ArgumentException($"no version of scheme '{report.RowScheme}' is in force on {to:yyyy-MM-dd}", nameof(report));
+        var rowVersion = form.RowVersion!.Value;
 
         var cells = new SortedDictionary<(string Row, string Column), List<string>>();
         var pending = new List<string>();
@@ -58,7 +65,7 @@ public static class ReportRunner
                 conflicted.Add(id);
                 continue;
             }
-            var resolution = entity.Classify(report.RowField, report.RowScheme, report.RowVersion, catalog);
+            var resolution = entity.Classify(report.RowField, report.RowScheme, rowVersion, catalog);
             crosswalks.UnionWith(resolution.Crosswalks);
             switch (resolution.Kind)
             {
@@ -77,14 +84,17 @@ public static class ReportRunner
         }
 
         return new ReportRun(
-            report, from, to,
+            form, from, to,
             crosswalks.ToArray(),
             cells.Select(kv => new ReportCell(kv.Key.Row, kv.Key.Column.Length == 0 ? null : kv.Key.Column, Sorted(kv.Value))).ToArray(),
             Sorted(pending),
             Sorted(unmapped),
             Sorted(blank),
             Sorted(conflicted),
-            people);
+            people)
+        {
+            Boundaries = inForce ? catalog.Boundaries(report.RowScheme, from, to) : [],
+        };
     }
 
     /// <summary>Runs <paramref name="report"/> over one calendar month.</summary>

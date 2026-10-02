@@ -2,11 +2,11 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/iyulab/openquote/blob/main/docs/schema/report.schema.json",
   "title": "Openquote report form",
-  "description": "reports/<report>/v<version>.json.",
+  "description": "reports/<report>/v<version>.json. Format 1 lets rows.version be \"in-force\": the version of the scheme in force on the last day of the period run.",
   "type": "object",
   "required": ["format", "report", "version", "label", "counts", "period", "rows"],
   "properties": {
-    "format": { "const": "openquote.report/0" },
+    "format": { "enum": ["openquote.report/0", "openquote.report/1"] },
     "report": { "type": "string", "minLength": 1, "pattern": "^[^/]+$" },
     "version": { "type": "integer", "minimum": 1 },
     "label": { "type": "string", "minLength": 1 },
@@ -25,7 +25,7 @@
       "properties": {
         "field": { "type": "string", "minLength": 1 },
         "scheme": { "type": "string", "minLength": 1 },
-        "version": { "type": "integer", "minimum": 1 }
+        "version": { "oneOf": [{ "type": "integer", "minimum": 1 }, { "const": "in-force" }] }
       }
     },
     "columns": {
@@ -33,5 +33,7 @@
       "required": ["field"],
       "properties": { "field": { "type": "string", "minLength": 1 } }
     }
-  }
+  },
+  "if": { "properties": { "format": { "const": "openquote.report/0" } } },
+  "then": { "properties": { "rows": { "properties": { "version": { "type": "integer" } } } } }
 }

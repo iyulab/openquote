@@ -43,11 +43,26 @@ public static class ReportRunJson
 
             w.WriteStartObject("schemes");
             w.WriteStartObject(run.Report.RowScheme);
-            w.WriteNumber("version", run.Report.RowVersion);
+            w.WriteNumber("version", RowVersion(run));
             if (run.Crosswalks.Count > 0)
             {
                 w.WriteStartArray("crosswalks");
                 foreach (var c in run.Crosswalks) w.WriteStringValue(c);
+                w.WriteEndArray();
+            }
+            if (run.Boundaries.Count > 0)
+            {
+                w.WriteStartArray("boundaries");
+                foreach (var b in run.Boundaries)
+                {
+                    w.WriteStartObject();
+                    w.WriteString("date", b.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+                    if (b.From is { } before) w.WriteNumber("from", before);
+                    else w.WriteNull("from");
+                    if (b.To is { } after) w.WriteNumber("to", after);
+                    else w.WriteNull("to");
+                    w.WriteEndObject();
+                }
                 w.WriteEndArray();
             }
             w.WriteEndObject();
@@ -92,6 +107,9 @@ public static class ReportRunJson
         buffer.WriteByte((byte)'\n');
         return buffer.ToArray();
     }
+
+    private static int RowVersion(ReportRun run) =>
+        run.Report.RowVersion ?? throw new ArgumentException("a run counts in a scheme version its form names or a run chose", nameof(run));
 
     private static void WriteSet(Utf8JsonWriter w, string name, IReadOnlyList<string> ids)
     {

@@ -136,7 +136,7 @@ A `device` entity, kept in `devices/`, carries a human-readable name in its `nam
 - Every item has a `code` and a `label`. Codes are unique within a version. The code is the item's identity; the label is what people see.
 - `parent`, if present, must be the code of another item in the same version. Writing a child code as `parent/child` is a naming convention; hierarchy comes from `parent`.
 - `suggest` (default `false`) marks items a host may offer as suggestions. A pack can say otherwise without a new scheme version (see [Suggestions](#suggestions)).
-- `effective` (optional): `from` (required) and `to` (optional, on or after `from`), calendar dates on which the body that issues the scheme puts this version in force. Both dates are inclusive: the version is in force on `from` and on `to`. A version without it is in force throughout. It guides which version a host offers for input (`SchemeCatalog.InForce`, the highest version in force on a given date); reports never use it.
+- `effective` (optional): `from` (required) and `to` (optional, on or after `from`), calendar dates on which the body that issues the scheme puts this version in force. Both dates are inclusive: the version is in force on `from` and on `to`. A version without it is in force throughout. It guides which version a host offers for input (`SchemeCatalog.InForce`, the highest version in force on a given date); a report counts by it only when its form asks for the version in force (`"in-force"`, format 1) instead of naming one.
 
 ## Crosswalks
 
@@ -179,7 +179,7 @@ How values are carried across versions is described in [Concepts](concepts.md#cr
 
 - Path: `reports/<report>/v<version>.json`; `report` and `version` must match it.
 - `counts`: the entity type counted. `period.unit` is `month`; `period.field` is the calendar-date field that places a record in the period.
-- `rows`: the classified field and the scheme version the report counts in.
+- `rows`: the classified field and the scheme version the report counts in. In `openquote.report/1`, `version` may be `"in-force"`: a run counts in the version of the scheme in force on the last day of its period (see a scheme's `effective`), so a form follows a revision without being written again. The run record names the version it counted in.
 - `columns` (optional): a field whose string value splits the columns. Without it, or when a record has no string value there, the column is `null`.
 
 ## Run records
@@ -209,7 +209,7 @@ How values are carried across versions is described in [Concepts](concepts.md#cr
 
 - Path: `runs/<yyyy>/<id>.<device>.json`, where `yyyy` is the year of `at`. `id` and `device` must match the name.
 - `report` names the form and version run; that form must be in the vault.
-- `schemes` records, for the row scheme, the version counted in and the crosswalks applied (as `from-to`; omitted when none were).
+- `schemes` records, for the row scheme, the version counted in and the crosswalks applied (as `from-to`; omitted when none were). For a form that counts in the version in force, `boundaries` (omitted when empty) lists each day within the period on which the version in force changes, with the version before and from that day (`null` when none was in force): counts on either side were entered under different versions.
 - `period` gives the first and last calendar day, inclusive.
 - Each cell names its `row` code, its `column` (a string or `null`) and the `records` counted in it. Cells with no records are not written.
 - `pending`, `unmapped`, `blank` and `conflicted` list records not placed in any cell: a value waiting for a person to choose among codes, a value with no code in the form's version, no value to count, and concurrent values in a field the form places by (period, row or column). `total` lists every record in the period and must equal the cells plus those sets, each record in exactly one of them.

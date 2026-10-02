@@ -69,10 +69,11 @@ public sealed record ReportDiff(
         var b = Places(later);
         var revisedAcross = earlier.Report.RowScheme == later.Report.RowScheme
             && earlier.Report.RowVersion < later.Report.RowVersion;
+        var targetVersion = later.Report.RowVersion!.Value;
         var differ = a.Keys.Intersect(b.Keys).Where(k => a[k] != b[k]).ToList();
         var settled = differ.Where(k => a[k].Row == ConflictedPlace).ToList();
         var revised = revisedAcross
-            ? differ.Except(settled).Where(k => Carry(a[k], earlier.Report, later.Report.RowVersion, catalog) == b[k]).ToList()
+            ? differ.Except(settled).Where(k => Carry(a[k], earlier.Report, targetVersion, catalog) == b[k]).ToList()
             : [];
         return new ReportDiff(
             Sorted(b.Keys.Except(a.Keys)),
@@ -93,6 +94,7 @@ public sealed record ReportDiff(
         if (a.RowScheme != b.RowScheme) return $"its rows are scheme '{b.RowScheme}', not '{a.RowScheme}'";
         if (a.ColumnField != b.ColumnField)
             return $"its column field is {Quoted(b.ColumnField)}, not {Quoted(a.ColumnField)}";
+        if (a.RowVersion is null || b.RowVersion is null) return "a run counts in a scheme version, and one of them names none";
         if (earlier.From != later.From || earlier.To != later.To)
             return $"its period is {later.From:yyyy-MM-dd}..{later.To:yyyy-MM-dd}, not {earlier.From:yyyy-MM-dd}..{earlier.To:yyyy-MM-dd}";
         if (b.RowVersion < a.RowVersion)
@@ -108,7 +110,7 @@ public sealed record ReportDiff(
         int targetVersion, SchemeCatalog catalog)
     {
         if (place.Row is PendingPlace or UnmappedPlace or BlankPlace or ConflictedPlace) return null;
-        var resolution = catalog.Resolve(new CodedValue(form.RowScheme, form.RowVersion, place.Row), targetVersion);
+        var resolution = catalog.Resolve(new CodedValue(form.RowScheme, form.RowVersion!.Value, place.Row), targetVersion);
         return resolution.Kind switch
         {
             ResolutionKind.Assigned => (resolution.Code!, place.Column),
