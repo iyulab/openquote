@@ -54,10 +54,10 @@ A subject's folder holds the subject and everything recorded about that subject 
 }
 ```
 
-- `format` names the vault format. The engine reads only this key.
+- `format` names the vault format: `openquote.vault/0` or `openquote.vault/1`. The engine reads only this key, and reads a vault by the rules of the version it declares (`VaultContent.DeclaredVersion`).
 - `encryption` is written and read by the host (`"age"` or `"none"`). The engine ignores it.
 
-When `vault.json` is among the files given to the reader, it is checked before anything else. If it names a later version (`openquote.vault/1` and up), names an unknown format, lacks `format`, or is not valid JSON, the whole read is refused with `VaultFormatException`. A host that does not pass `vault.json` to the reader must perform this check itself.
+When `vault.json` is among the files given to the reader, it is checked before anything else. If it names a version later than the engine reads (`openquote.vault/2` and up), names an unknown format, lacks `format`, or is not valid JSON, the whole read is refused with `VaultFormatException`. A host that does not pass `vault.json` to the reader must perform this check itself.
 
 ## Change files
 

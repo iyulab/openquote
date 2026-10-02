@@ -26,6 +26,12 @@ public sealed record VaultContent(
     /// <summary>What the vault's packs say about suggesting scheme items, apart from the schemes.</summary>
     public IReadOnlyList<SuggestionSet> Suggestions { get; init; } = [];
 
+    /// <summary>
+    /// The version of the vault format its declaration (<c>vault.json</c>) names, or null when the
+    /// host left the declaration out of the read.
+    /// </summary>
+    public int? DeclaredVersion { get; init; }
+
     /// <summary>The schemes and crosswalks, ready to carry values between versions.</summary>
     public SchemeCatalog Catalog() => new(Schemes, Crosswalks);
 
@@ -61,12 +67,17 @@ public static partial class VaultReader
 {
     internal const string ChangeFormat = "openquote.change/0";
 
-    /// <summary>The vault format this engine reads, as a vault's declaration names it.</summary>
-    public const string VaultFormat = "openquote.vault/0";
+    /// <summary>
+    /// The latest vault format this engine reads, as a vault's declaration names it. It reads every
+    /// earlier version too, each by its own rules.
+    /// </summary>
+    public const string VaultFormat = VaultFormatPrefix + "1";
+
+    /// <summary>The version of <see cref="VaultFormat"/>.</summary>
+    public const int VaultFormatVersion = 1;
 
     private const string DeclarationPath = "vault.json";
     private const string VaultFormatPrefix = "openquote.vault/";
-    private const int VaultFormatVersion = 0;
 
     /// <summary>
     /// Reads every vault file among <paramref name="files"/>. Files outside the vault layout are ignored.
@@ -78,7 +89,7 @@ public static partial class VaultReader
     {
         ArgumentNullException.ThrowIfNull(files);
         var all = files as IReadOnlyCollection<VaultFile> ?? [.. files];
-        if (all.FirstOrDefault(f => f.Path == DeclarationPath) is { } declaration) CheckDeclaration(declaration);
+        int? declared = all.FirstOrDefault(f => f.Path == DeclarationPath) is { } declaration ? CheckDeclaration(declaration) : null;
 
         var unreadable = new List<UnreadableFile>();
         var byId = new Dictionary<string, List<(Change Change, JsonElement Json)>>(StringComparer.Ordinal);
@@ -168,12 +179,17 @@ public static partial class VaultReader
 
         changes.Sort((a, b) => string.CompareOrdinal(a.Id, b.Id));
         unreadable.Sort((a, b) => string.CompareOrdinal(a.Path, b.Path));
-        return new VaultContent(changes, schemes, crosswalks, reports, unreadable, runs, exports, packs, labels, fieldSets) { Suggestions = suggestions };
+        return new VaultContent(changes, schemes, crosswalks, reports, unreadable, runs, exports, packs, labels, fieldSets)
+        {
+            Suggestions = suggestions,
+            DeclaredVersion = declared,
+        };
     }
 
     // A per-file format this engine does not know makes that one file unreadable (§7 of the format);
     // a declaration it does not know refuses the whole vault, since every count could be wrong.
-    private static void CheckDeclaration(VaultFile file)
+    // Answers the version declared.
+    private static int CheckDeclaration(VaultFile file)
     {
         string? declared = null;
         try
@@ -187,11 +203,12 @@ public static partial class VaultReader
         {
         }
 
-        if (declared == VaultFormat) return;
-        var newer = declared is not null && declared.StartsWith(VaultFormatPrefix, StringComparison.Ordinal)
-            && int.TryParse(declared.AsSpan(VaultFormatPrefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out var version)
-            && version > VaultFormatVersion;
-        throw new VaultFormatException(declared, newer);
+        var version = -1;
+        var known = declared is not null && declared.StartsWith(VaultFormatPrefix, StringComparison.Ordinal)
+            && int.TryParse(declared.AsSpan(VaultFormatPrefix.Length), NumberStyles.None, CultureInfo.InvariantCulture, out version)
+            && declared == VaultFormatPrefix + version.ToString(CultureInfo.InvariantCulture);
+        if (known && version <= VaultFormatVersion) return version;
+        throw new VaultFormatException(declared, known);
     }
 
     private static readonly string[] LayoutFolders = ["schemes", "reports", "exports", "practitioners", "devices", "subjects", "groups", "runs", "packs", "labels", "fields", "suggestions"];

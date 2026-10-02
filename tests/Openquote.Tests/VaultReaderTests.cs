@@ -177,12 +177,24 @@ public class VaultReaderTests
     {
         var e = Assert.Throws<VaultFormatException>(() => VaultReader.Read(
         [
-            File("vault.json", """{"format":"openquote.vault/1","encryption":"age"}"""),
+            File("vault.json", """{"format":"openquote.vault/2","encryption":"age"}"""),
             File(Json(1, "e1", "create")),
         ]));
 
         Assert.True(e.IsNewer);
-        Assert.Equal("openquote.vault/1", e.Declared);
+        Assert.Equal("openquote.vault/2", e.Declared);
+    }
+
+    [Theory]
+    [InlineData("""{"format":"openquote.vault/0","encryption":"age"}""", 0)]
+    [InlineData("""{"format":"openquote.vault/1","encryption":"none"}""", 1)]
+    public void Reads_every_version_up_to_its_own_and_says_which_was_declared(string declaration, int version)
+    {
+        var content = VaultReader.Read([File("vault.json", declaration), File(Json(1, "e1", "create"))]);
+
+        Assert.Equal(version, content.DeclaredVersion);
+        Assert.Single(content.Changes);
+        Assert.Null(VaultReader.Read([File(Json(1, "e1", "create"))]).DeclaredVersion);
     }
 
     [Theory]
@@ -190,6 +202,7 @@ public class VaultReaderTests
     [InlineData("""{"encryption":"age"}""", null)]
     [InlineData("""not json""", null)]
     [InlineData("""{"format":"openquote.vault/x"}""", "openquote.vault/x")]
+    [InlineData("""{"format":"openquote.vault/01"}""", "openquote.vault/01")]
     public void Refuses_a_declaration_that_names_no_known_format(string declaration, string? declared)
     {
         var e = Assert.Throws<VaultFormatException>(() => VaultReader.Read([File("vault.json", declaration)]));
