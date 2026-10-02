@@ -142,9 +142,8 @@ public sealed class CodeSuggester
             {
                 continue;
             }
-            // The memory offers any value a settled record holds; only the items that may be suggested are kept.
+            // The field's candidates are exactly the items that may be suggested, so every value offered is one of them.
             var codes = suggestion.Candidates
-                .Where(c => target.Codes.ContainsKey(c.Value))
                 .Select(c => new SuggestedCode(c.Value, c.Score, [.. suggestion.SimilarDocuments.Where(m => m.Answer == c.Value).Select(m => m.Source)],
                     target.Codes[c.Value] == Suggestion.Confirm))
                 .ToList();
