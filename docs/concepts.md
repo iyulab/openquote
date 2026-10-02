@@ -33,6 +33,9 @@ A **classification scheme** (for example a list of topics) is stored as numbered
 
 - An item's **code** is its identity and its **label** is what people see. Relabelling an item keeps its code.
 - A record stores a classified value exactly as entered: scheme, version and code. It is never rewritten when the scheme moves on.
+- A version may say the dates it is in force. A host offers the version in force on a record's date (`SchemeCatalog.InForce`), and a report may count in the version in force on the last day of its period instead of a named one.
+- A scheme may **extend** another (format 1) — a body's own list beside a shared one. Each of its items names its **anchor**, the item of the extended scheme it counts as: a report counting the shared scheme counts a local value as its anchor, and one counting the local scheme counts its own items.
+- A coded field may take **several values** (format 1), one of them **primary**. A count places the record by its primary value, or by every value when the form says so. With several values and none marked primary, the record waits for a person to say which comes first, as a split category does (`VaultWriter.Reclassify` marks it and keeps the others).
 
 ## Crosswalks
 
@@ -52,6 +55,8 @@ The shape is not stored; it follows from the links. The rule the engine applies 
 - **Unmapped**: it leads to none, or no chain of crosswalks reaches the target version. This is counted apart from pending, because it points at a gap in the crosswalk rather than at a choice to make.
 
 Several revisions (v1 to v2 to v3) are crossed by chaining crosswalks, taking the shortest chain; after each step only codes that exist in the next version are kept.
+
+A format 1 crosswalk may also state how an old item relates to the new one. `equivalent` (the same meaning) and `narrower` (the new item holds all of the old one) carry a value without asking; `broader` (the new item holds only part of the old one) leaves it to a person even when it is the only link, since carrying it would claim more than was recorded; `retired` keeps where a retired item went nearest and carries nothing. A crosswalk may lead into another scheme — from a local list into one a report is made in — and values are carried along it as along a scheme's own versions.
 
 `Entity.Classify(field, scheme, version, catalog)` applies this rule to one record: it takes the record's most recent value entered in that scheme at that version or an earlier one and carries it forward. A pending result lists the codes a person chooses from, so a host never re-implements the rule. Report runs place records the same way.
 
