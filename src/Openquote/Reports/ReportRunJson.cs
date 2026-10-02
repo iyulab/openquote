@@ -5,9 +5,10 @@ using System.Text.Json;
 namespace Openquote.Reports;
 
 /// <summary>
-/// Writes a <see cref="ReportRun"/> as a run record file: <c>openquote.run/1</c> when it has blank or
-/// conflicted records, which only that format lists apart, and <c>openquote.run/0</c> otherwise, which
-/// an engine that predates them reads with the same total.
+/// Writes a <see cref="ReportRun"/> as a run record file: <c>openquote.run/0</c> when its form splits
+/// by rows and at most one column and it has no blank or conflicted records, which an engine that
+/// predates them reads with the same total; <c>openquote.run/1</c> otherwise, which keys each cell by
+/// every dimension and lists blank and conflicted records apart.
 /// </summary>
 public static class ReportRunJson
 {
@@ -30,8 +31,8 @@ public static class ReportRunJson
         using (var w = new Utf8JsonWriter(buffer, Options))
         {
             w.WriteStartObject();
-            var sets = run.Blank.Count > 0 || run.Conflicted.Count > 0;
-            w.WriteString("format", sets ? "openquote.run/1" : "openquote.run/0");
+            var v1 = run.Blank.Count > 0 || run.Conflicted.Count > 0 || !run.Report.RowsAndColumn;
+            w.WriteString("format", v1 ? "openquote.run/1" : "openquote.run/0");
             w.WriteString("id", id);
             w.WriteString("device", device);
             w.WriteString("at", at.ToString("yyyy-MM-dd'T'HH:mm:sszzz", CultureInfo.InvariantCulture));
@@ -42,30 +43,33 @@ public static class ReportRunJson
             w.WriteEndObject();
 
             w.WriteStartObject("schemes");
-            w.WriteStartObject(run.Report.RowScheme);
-            w.WriteNumber("version", RowVersion(run));
-            if (run.Crosswalks.Count > 0)
+            foreach (var scheme in run.Schemes)
             {
-                w.WriteStartArray("crosswalks");
-                foreach (var c in run.Crosswalks) w.WriteStringValue(c);
-                w.WriteEndArray();
-            }
-            if (run.Boundaries.Count > 0)
-            {
-                w.WriteStartArray("boundaries");
-                foreach (var b in run.Boundaries)
+                w.WriteStartObject(scheme.Scheme);
+                w.WriteNumber("version", scheme.Version);
+                if (scheme.Crosswalks.Count > 0)
                 {
-                    w.WriteStartObject();
-                    w.WriteString("date", b.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
-                    if (b.From is { } before) w.WriteNumber("from", before);
-                    else w.WriteNull("from");
-                    if (b.To is { } after) w.WriteNumber("to", after);
-                    else w.WriteNull("to");
-                    w.WriteEndObject();
+                    w.WriteStartArray("crosswalks");
+                    foreach (var c in scheme.Crosswalks) w.WriteStringValue(c);
+                    w.WriteEndArray();
                 }
-                w.WriteEndArray();
+                if (scheme.Boundaries.Count > 0)
+                {
+                    w.WriteStartArray("boundaries");
+                    foreach (var b in scheme.Boundaries)
+                    {
+                        w.WriteStartObject();
+                        w.WriteString("date", b.Date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+                        if (b.From is { } before) w.WriteNumber("from", before);
+                        else w.WriteNull("from");
+                        if (b.To is { } after) w.WriteNumber("to", after);
+                        else w.WriteNull("to");
+                        w.WriteEndObject();
+                    }
+                    w.WriteEndArray();
+                }
+                w.WriteEndObject();
             }
-            w.WriteEndObject();
             w.WriteEndObject();
 
             w.WriteStartObject("period");
@@ -77,9 +81,20 @@ public static class ReportRunJson
             foreach (var cell in run.Cells)
             {
                 w.WriteStartObject();
-                w.WriteString("row", cell.Row);
-                if (cell.Column is null) w.WriteNull("column");
-                else w.WriteString("column", cell.Column);
+                if (v1)
+                {
+                    w.WriteStartArray("key");
+                    foreach (var place in cell.Key)
+                        if (place is null) w.WriteNullValue();
+                        else w.WriteStringValue(place);
+                    w.WriteEndArray();
+                }
+                else
+                {
+                    w.WriteString("row", cell.Key[0]);
+                    if (cell.Key.Count < 2 || cell.Key[1] is null) w.WriteNull("column");
+                    else w.WriteString("column", cell.Key[1]);
+                }
                 w.WriteNumber("count", cell.Count);
                 WriteIds(w, "records", cell.Records);
                 w.WriteEndObject();
@@ -88,7 +103,7 @@ public static class ReportRunJson
 
             WriteSet(w, "pending", run.Pending);
             WriteSet(w, "unmapped", run.Unmapped);
-            if (sets)
+            if (v1)
             {
                 WriteSet(w, "blank", run.Blank);
                 WriteSet(w, "conflicted", run.Conflicted);
@@ -107,9 +122,6 @@ public static class ReportRunJson
         buffer.WriteByte((byte)'\n');
         return buffer.ToArray();
     }
-
-    private static int RowVersion(ReportRun run) =>
-        run.Report.RowVersion ?? throw new ArgumentException("a run counts in a scheme version its form names or a run chose", nameof(run));
 
     private static void WriteSet(Utf8JsonWriter w, string name, IReadOnlyList<string> ids)
     {

@@ -1,3 +1,4 @@
+using Openquote.Reports;
 using Openquote.Classification;
 using Openquote.Vault;
 using static Openquote.Tests.TestChanges;
@@ -39,8 +40,8 @@ public class VaultDefinitionTests
         Assert.Equal("a", scheme.Items[1].Parent);
         Assert.Equal([("a", "x"), ("a/b", "x")], Assert.Single(content.Crosswalks).Links);
         var report = Assert.Single(content.Reports);
-        Assert.Equal(("monthly", 1, "item", "day", "kind", "kind", 1, "owner"),
-            (report.Name, report.Version, report.Counts, report.PeriodField, report.RowField, report.RowScheme, report.RowVersion, report.ColumnField));
+        Assert.Equal(("monthly", 1, "item", "day"), (report.Name, report.Version, report.Counts, report.PeriodField));
+        Assert.Equal([new ReportDimension("kind", "kind", 1), new ReportDimension("owner")], report.Dimensions);
     }
 
     [Theory]

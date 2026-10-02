@@ -2,7 +2,7 @@
 
 This document specifies the plaintext layer of an Openquote vault: the folder layout, the JSON of each file kind, and the rules a reader applies. It describes what the engine in this repository reads and writes.
 
-> Status: version 0 is frozen; version 1 is in progress. Version 0 changes only by additions: a reader that predates an addition may pass over what it adds, and counts the same numbers. Version 1 makes the changes to the structure together — what a file means or what it counts: blank and conflicted records apart (run records, format 1), report forms that count in the version in force (format 1), schemes that extend others (format 1), and crosswalks that state relations or lead into another scheme (format 1). A vault holding an extending scheme or such a crosswalk is declared `openquote.vault/1` (`VaultContent.RequiredVersion`); the others an earlier engine skips file by file without counting differently.
+> Status: version 0 is frozen; version 1 is in progress. Version 0 changes only by additions: a reader that predates an addition may pass over what it adds, and counts the same numbers. Version 1 makes the changes to the structure together — what a file means or what it counts: blank and conflicted records apart (run records, format 1), report forms split by up to three dimensions and counting in the version in force (format 1), schemes that extend others (format 1), and crosswalks that state relations or lead into another scheme (format 1). A vault holding an extending scheme or such a crosswalk is declared `openquote.vault/1` (`VaultContent.RequiredVersion`); the others an earlier engine skips file by file without counting differently.
 
 Every file kind has a JSON Schema (draft 2020-12) in [schema/](schema/), named after its format (`openquote.<name>/0` and `/1` are both `schema/<name>.schema.json`). A schema checks the shape of one file. Rules that compare a file with its path, with other files, or with other values in it — a name matching its path, codes unique within a version, a run's totals adding up — are checked by the reader only.
 
@@ -181,8 +181,31 @@ How values are carried across versions is described in [Concepts](concepts.md#cr
 
 - Path: `reports/<report>/v<version>.json`; `report` and `version` must match it.
 - `counts`: the entity type counted. `period.unit` is `month`; `period.field` is the calendar-date field that places a record in the period.
-- `rows`: the classified field and the scheme version the report counts in. In `openquote.report/1`, `version` may be `"in-force"`: a run counts in the version of the scheme in force on the last day of its period (see a scheme's `effective`), so a form follows a revision without being written again. The run record names the version it counted in.
+- `rows`: the classified field and the scheme version the report counts in.
 - `columns` (optional): a field whose string value splits the columns. Without it, or when a record has no string value there, the column is `null`.
+
+In `openquote.report/1`, a form splits what it counts by one to three `dimensions` instead of rows and columns:
+
+```json
+{
+  "format": "openquote.report/1",
+  "report": "monthly-topic-level",
+  "version": 1,
+  "label": "Sessions by topic and school level",
+  "counts": "session",
+  "period": { "unit": "month", "field": "date" },
+  "dimensions": [
+    { "field": "topic", "scheme": "topic", "version": "in-force" },
+    { "field": "level", "scheme": "school-level", "version": 1 },
+    { "field": "practitioner" }
+  ]
+}
+```
+
+- A dimension with a `scheme` and a `version` counts the field's classified values in that scheme version; `version` may be `"in-force"`: a run counts in the version of the scheme in force on the last day of its period (see a scheme's `effective`), so a form follows a revision without being written again. The run record names the version it counted in.
+- A dimension with only a `field` splits by the field's string value, `null` when a record has none.
+- A form counts each scheme in one version: two dimensions of the same scheme name the same version.
+- A format 1 form never has `rows` or `columns`; a form that rows and a column describe is the same form either way, and its runs are the same.
 
 ## Run records
 
@@ -211,11 +234,12 @@ How values are carried across versions is described in [Concepts](concepts.md#cr
 
 - Path: `runs/<yyyy>/<id>.<device>.json`, where `yyyy` is the year of `at`. `id` and `device` must match the name.
 - `report` names the form and version run; that form must be in the vault.
-- `schemes` records, for the row scheme, the version counted in and the crosswalks applied (as `from-to`, or `<scheme>/<from>-<into>/<to>` across schemes; omitted when none were). For a form that counts in the version in force, `boundaries` (omitted when empty) lists each day within the period on which the version in force changes, with the version before and from that day (`null` when none was in force): counts on either side were entered under different versions.
+- `schemes` records, for each scheme the form counts in, the version counted in and the crosswalks applied (as `from-to`, or `<scheme>/<from>-<into>/<to>` across schemes; omitted when none were). For a form that counts in the version in force, `boundaries` (omitted when empty) lists each day within the period on which the version in force changes, with the version before and from that day (`null` when none was in force): counts on either side were entered under different versions.
 - `period` gives the first and last calendar day, inclusive.
 - Each cell names its `row` code, its `column` (a string or `null`) and the `records` counted in it. Cells with no records are not written.
-- `pending`, `unmapped`, `blank` and `conflicted` list records not placed in any cell: a value waiting for a person to choose among codes, a value with no code in the form's version, no value to count, and concurrent values in a field the form places by (period, row or column). `total` lists every record in the period and must equal the cells plus those sets, each record in exactly one of them.
-- `blank` and `conflicted` are written only in `openquote.run/1`, and both always are there. A run with neither stays `openquote.run/0`, which an engine that predates them reads. A format 0 record may still carry `blank` as a part of `unmapped`, as earlier engines wrote it; a reader takes those records out of `unmapped`.
+- In `openquote.run/1`, each cell names its `key` instead: one place per dimension of the form, in its order — a code where the dimension is classified, a string or `null` where it splits by a string value (`"key": ["school/attendance", null]`). A run whose form only has rows and a column, with no blank or conflicted records, is written in format 0, which an engine that predates format 1 reads; any other run is written in format 1.
+- `pending`, `unmapped`, `blank` and `conflicted` list records not placed in any cell: a value waiting for a person to choose among codes, a value with no code in the form's version, no value to count, and concurrent values in a field the form places by (its period field or a dimension's field). A record that several classified dimensions leave out of the cells is listed once: as pending when any of them waits for a person, otherwise as unmapped when any has no code, otherwise as blank. `total` lists every record in the period and must equal the cells plus those sets, each record in exactly one of them.
+- `blank` and `conflicted` are written only in `openquote.run/1`, and both always are there. A format 0 record may still carry `blank` as a part of `unmapped`, as earlier engines wrote it; a reader takes those records out of `unmapped`.
 - `count` keys are written for readability; readers derive every count from `records`.
 - `people` (optional) maps each record in `total` to the subject ids it concerns. Its keys must be exactly the records in `total`. A run record without `people` has an unknown head count, not zero.
 - A period with no records still produces a run record, with empty `cells` and an empty `total`.

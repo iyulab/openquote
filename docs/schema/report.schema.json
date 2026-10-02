@@ -2,9 +2,9 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/iyulab/openquote/blob/main/docs/schema/report.schema.json",
   "title": "Openquote report form",
-  "description": "reports/<report>/v<version>.json. Format 1 lets rows.version be \"in-force\": the version of the scheme in force on the last day of the period run.",
+  "description": "reports/<report>/v<version>.json. Format 0 splits by rows (a classified field) and an optional string column; format 1 by one to three dimensions, each a classified field in a scheme version (or \"in-force\": the version in force on the last day of the period run) or a field split by its string value. A form counts each scheme in one version; a reader checks that.",
   "type": "object",
-  "required": ["format", "report", "version", "label", "counts", "period", "rows"],
+  "required": ["format", "report", "version", "label", "counts", "period"],
   "properties": {
     "format": { "enum": ["openquote.report/0", "openquote.report/1"] },
     "report": { "type": "string", "minLength": 1, "pattern": "^[^/]+$" },
@@ -25,15 +25,34 @@
       "properties": {
         "field": { "type": "string", "minLength": 1 },
         "scheme": { "type": "string", "minLength": 1 },
-        "version": { "oneOf": [{ "type": "integer", "minimum": 1 }, { "const": "in-force" }] }
+        "version": { "type": "integer", "minimum": 1 }
       }
     },
     "columns": {
       "type": "object",
       "required": ["field"],
       "properties": { "field": { "type": "string", "minLength": 1 } }
+    },
+    "dimensions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["field"],
+        "properties": {
+          "field": { "type": "string", "minLength": 1 },
+          "scheme": { "type": "string", "minLength": 1 },
+          "version": { "oneOf": [{ "type": "integer", "minimum": 1 }, { "const": "in-force" }] }
+        },
+        "dependentRequired": { "scheme": ["version"], "version": ["scheme"] }
+      }
     }
   },
   "if": { "properties": { "format": { "const": "openquote.report/0" } } },
-  "then": { "properties": { "rows": { "properties": { "version": { "type": "integer" } } } } }
+  "then": { "required": ["rows"], "not": { "required": ["dimensions"] } },
+  "else": {
+    "required": ["dimensions"],
+    "not": { "anyOf": [{ "required": ["rows"] }, { "required": ["columns"] }] }
+  }
 }

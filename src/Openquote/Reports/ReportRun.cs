@@ -2,43 +2,61 @@ using Openquote.Classification;
 
 namespace Openquote.Reports;
 
-/// <summary>One cell: the records counted in it. The count is always the number of records.</summary>
-public sealed record ReportCell(string Row, string? Column, IReadOnlyList<string> Records)
+/// <summary>
+/// One cell: the records counted in it. Its key holds one value per dimension of the form, in the
+/// form's order — a code for a classified dimension, a string or null for a string dimension. The
+/// count is always the number of records.
+/// </summary>
+public sealed record ReportCell(IReadOnlyList<string?> Key, IReadOnlyList<string> Records)
 {
     /// <summary>How many records the cell holds.</summary>
     public int Count => Records.Count;
 }
 
 /// <summary>
+/// How a run counted in one scheme: the version, the crosswalks applied to reach it, and — for a
+/// form that counts in the version in force — the days within the period on which that version changes.
+/// </summary>
+/// <param name="Scheme">The scheme.</param>
+/// <param name="Version">The version counted in.</param>
+/// <param name="Crosswalks">Crosswalks applied to reach it, as <c>from-to</c> or <c>scheme/from-into/to</c>.</param>
+/// <param name="Boundaries">Days the version in force changes within the period; empty when it does not, or the form names its version.</param>
+public sealed record ReportScheme(string Scheme, int Version, IReadOnlyList<string> Crosswalks, IReadOnlyList<SchemeBoundary> Boundaries);
+
+/// <summary>
 /// The result of running a report form over a period. Every number traces back to the ids of the
 /// records behind it; the total is always the cells plus the pending, unmapped, blank and
 /// conflicted records, each record in exactly one of them.
 /// </summary>
-/// <param name="Report">The form that was run.</param>
+/// <param name="Report">The form that was run, with the scheme versions it counted in.</param>
 /// <param name="From">First day of the period, inclusive.</param>
 /// <param name="To">Last day of the period, inclusive.</param>
-/// <param name="Crosswalks">Crosswalks applied to reach the form's scheme version, as <c>from-to</c>.</param>
-/// <param name="Cells">Non-empty cells, ordered by row then column.</param>
-/// <param name="Pending">Records whose value maps to several codes and waits for a person.</param>
-/// <param name="Unmapped">Records whose value has no code in the form's scheme version.</param>
+/// <param name="Schemes">How the run counted in each scheme of the form's classified dimensions, in their order.</param>
+/// <param name="Cells">Non-empty cells, ordered by key.</param>
+/// <param name="Pending">Records a classified dimension's value maps to several codes for, waiting for a person.</param>
+/// <param name="Unmapped">Records a classified dimension's value has no code for in the version counted in.</param>
 /// <param name="Blank">
-/// Records whose row field holds no value to count — never set, or cleared with no earlier value —
-/// so an empty field is told apart from a gap in the crosswalks.
+/// Records whose field holds no value to count for a classified dimension — never set, or cleared
+/// with no earlier value — so an empty field is told apart from a gap in the crosswalks.
 /// </param>
 /// <param name="Conflicted">
-/// Records a field the form places by (its period, row or column field) holds two or more values
-/// for that were set without seeing each other. Until a person picks one, the record is in no cell:
-/// counting any of the values would decide for them.
+/// Records a field the form places by (its period field or a dimension's field) holds two or more
+/// values for that were set without seeing each other. Until a person picks one, the record is in
+/// no cell: counting any of the values would decide for them.
 /// </param>
 /// <param name="People">
 /// For every record in the period, the subjects it is about (see <see cref="Records.Entity.People"/>);
 /// null when the run did not record them, as with runs kept before people were counted.
 /// </param>
+/// <remarks>
+/// A record that more than one classified dimension leaves out of the cells is in one set only:
+/// pending when any of them waits for a person, otherwise unmapped when any has no code, otherwise blank.
+/// </remarks>
 public sealed record ReportRun(
     ReportDefinition Report,
     DateOnly From,
     DateOnly To,
-    IReadOnlyList<string> Crosswalks,
+    IReadOnlyList<ReportScheme> Schemes,
     IReadOnlyList<ReportCell> Cells,
     IReadOnlyList<string> Pending,
     IReadOnlyList<string> Unmapped,
@@ -46,12 +64,6 @@ public sealed record ReportRun(
     IReadOnlyList<string> Conflicted,
     IReadOnlyDictionary<string, IReadOnlyList<string>>? People = null)
 {
-    /// <summary>
-    /// For a form that counts in the version in force, the days within the period on which that
-    /// version changes; empty otherwise, and when it does not change.
-    /// </summary>
-    public IReadOnlyList<SchemeBoundary> Boundaries { get; init; } = [];
-
     /// <summary>Every record in the period: the cells, pending, unmapped, blank and conflicted records.</summary>
     public IReadOnlyList<string> Total { get; } =
         Cells.SelectMany(c => c.Records).Concat(Pending).Concat(Unmapped).Concat(Blank).Concat(Conflicted)

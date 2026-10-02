@@ -227,9 +227,10 @@ public static partial class VaultReader
 
     private static Definition<ReportDefinition> ParseReport(VaultFile file)
     {
-        // Format 1 adds rows.version "in-force": the version in force on the last day of the period run.
+        // Format 0 splits by rows (a classified field) and at most one column (a string field);
+        // format 1 by one to three dimensions, whose scheme version may be "in-force".
         if (!TryRoot(file, ReportFormats, out var root, out var error)) return new(null, error);
-        var inForceAllowed = TryString(root, "format", out var format) && format == "openquote.report/1";
+        var v1 = TryString(root, "format", out var format) && format == "openquote.report/1";
         var path = ReportPath().Match(file.Path);
 
         if (!TryString(root, "report", out var name) || !TryInt(root, "version", out var version) || version < 1
@@ -240,24 +241,56 @@ public static partial class VaultReader
         if (!root.TryGetProperty("period", out var period) || period.ValueKind != JsonValueKind.Object
             || !TryString(period, "unit", out var unit) || unit != "month" || !TryString(period, "field", out var periodField))
             return Bad<ReportDefinition>(file, UnreadableReason.Invalid, "period must be {\"unit\": \"month\", \"field\": ...}");
-        if (!root.TryGetProperty("rows", out var rows) || rows.ValueKind != JsonValueKind.Object
-            || !TryString(rows, "field", out var rowField) || !TryString(rows, "scheme", out var rowScheme))
-            return Bad<ReportDefinition>(file, UnreadableReason.Invalid, "rows must name a field, a scheme and a scheme version");
-        int? rowVersion;
-        if (TryInt(rows, "version", out var named) && named >= 1) rowVersion = named;
-        else if (inForceAllowed && TryString(rows, "version", out var word) && word == "in-force") rowVersion = null;
-        else return Bad<ReportDefinition>(file, UnreadableReason.Invalid,
-            inForceAllowed ? "rows.version must be a scheme version or \"in-force\"" : "rows must name a field, a scheme and a scheme version");
 
-        string? columnField = null;
-        if (root.TryGetProperty("columns", out var columns))
+        var dimensions = new List<ReportDimension>();
+        if (v1)
         {
-            if (columns.ValueKind != JsonValueKind.Object || !TryString(columns, "field", out var c))
-                return Bad<ReportDefinition>(file, UnreadableReason.Invalid, "columns must name a field");
-            columnField = c;
+            if (root.TryGetProperty("rows", out _) || root.TryGetProperty("columns", out _))
+                return Bad<ReportDefinition>(file, UnreadableReason.Invalid, "a format 1 report splits by dimensions, not rows and columns");
+            if (!root.TryGetProperty("dimensions", out var list) || list.ValueKind != JsonValueKind.Array)
+                return Bad<ReportDefinition>(file, UnreadableReason.Invalid, "a format 1 report lists its dimensions");
+            foreach (var d in list.EnumerateArray())
+            {
+                if (d.ValueKind != JsonValueKind.Object || !TryString(d, "field", out var field))
+                    return Bad<ReportDefinition>(file, UnreadableReason.Invalid, "a dimension names a field");
+                var hasScheme = d.TryGetProperty("scheme", out _);
+                var hasVersion = d.TryGetProperty("version", out _);
+                if (!hasScheme && !hasVersion)
+                {
+                    dimensions.Add(new ReportDimension(field));
+                    continue;
+                }
+                if (!TryString(d, "scheme", out var scheme) || !TryDimensionVersion(d, out var counted))
+                    return Bad<ReportDefinition>(file, UnreadableReason.Invalid,
+                        "a classified dimension names a scheme and a scheme version or \"in-force\"");
+                dimensions.Add(new ReportDimension(field, scheme, counted));
+            }
+        }
+        else
+        {
+            if (!root.TryGetProperty("rows", out var rows) || rows.ValueKind != JsonValueKind.Object
+                || !TryString(rows, "field", out var rowField) || !TryString(rows, "scheme", out var rowScheme)
+                || !TryInt(rows, "version", out var rowVersion) || rowVersion < 1)
+                return Bad<ReportDefinition>(file, UnreadableReason.Invalid, "rows must name a field, a scheme and a scheme version");
+            dimensions.Add(new ReportDimension(rowField, rowScheme, rowVersion));
+            if (root.TryGetProperty("columns", out var columns))
+            {
+                if (columns.ValueKind != JsonValueKind.Object || !TryString(columns, "field", out var columnField))
+                    return Bad<ReportDefinition>(file, UnreadableReason.Invalid, "columns must name a field");
+                dimensions.Add(new ReportDimension(columnField));
+            }
         }
 
-        return new(new ReportDefinition(name, version, label, counts, periodField, rowField, rowScheme, rowVersion, columnField), null);
+        var report = new ReportDefinition(name, version, label, counts, periodField, dimensions);
+        return report.Problem() is { } problem ? Bad<ReportDefinition>(file, UnreadableReason.Invalid, problem) : new(report, null);
+    }
+
+    // A scheme version, or "in-force" (null): the version in force on the last day of the period run.
+    private static bool TryDimensionVersion(JsonElement dimension, out int? version)
+    {
+        version = null;
+        if (TryInt(dimension, "version", out var named)) { version = named; return named >= 1; }
+        return TryString(dimension, "version", out var word) && word == "in-force";
     }
 
     private static Definition<ExportDefinition> ParseExport(VaultFile file)

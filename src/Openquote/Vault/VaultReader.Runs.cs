@@ -40,36 +40,48 @@ public static partial class VaultReader
         if (reports.FirstOrDefault(r => r.Name == name && r.Version == version) is not { } report)
             return Bad<KeptRun>(file, UnreadableReason.Invalid, $"report form {name} v{version} is not in the vault");
 
-        var crosswalks = new List<string>();
-        var boundaries = new List<Classification.SchemeBoundary>();
-        var scheme = default(JsonElement);
-        var hasScheme = root.TryGetProperty("schemes", out var schemes) && schemes.ValueKind == JsonValueKind.Object
-            && schemes.TryGetProperty(report.RowScheme, out scheme) && scheme.ValueKind == JsonValueKind.Object;
-        if (hasScheme && scheme.TryGetProperty("crosswalks", out var applied))
+        var counted = new List<ReportScheme>();
+        var schemes = root.TryGetProperty("schemes", out var schemesJson) && schemesJson.ValueKind == JsonValueKind.Object
+            ? schemesJson : default;
+        foreach (var schemeName in report.Schemes)
         {
-            if (!TryIds(applied, out var list)) return Bad<KeptRun>(file, UnreadableReason.Invalid, "crosswalks must be a list of names");
-            crosswalks.AddRange(list);
-        }
-        if (report.RowVersion is null)
-        {
-            // A form that counts in the version in force: the run says which version that was.
-            if (!hasScheme || !TryInt(scheme, "version", out var counted) || counted < 1)
-                return Bad<KeptRun>(file, UnreadableReason.Invalid, "a run of a form counting in the version in force names the version it counted in");
-            report = report with { RowVersion = counted };
-        }
-        if (hasScheme && scheme.TryGetProperty("boundaries", out var boundariesJson))
-        {
-            if (boundariesJson.ValueKind != JsonValueKind.Array)
-                return Bad<KeptRun>(file, UnreadableReason.Invalid, "boundaries must be a list");
-            foreach (var b in boundariesJson.EnumerateArray())
+            var scheme = default(JsonElement);
+            var hasScheme = schemes.ValueKind == JsonValueKind.Object
+                && schemes.TryGetProperty(schemeName, out scheme) && scheme.ValueKind == JsonValueKind.Object;
+            var crosswalks = new List<string>();
+            var boundaries = new List<Classification.SchemeBoundary>();
+            if (hasScheme && scheme.TryGetProperty("crosswalks", out var applied))
             {
-                if (b.ValueKind != JsonValueKind.Object || !TryString(b, "date", out var dayText)
-                    || !DateOnly.TryParseExact(dayText, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day)
-                    || !TryVersionOrNull(b, "from", out var before) || !TryVersionOrNull(b, "to", out var after))
-                    return Bad<KeptRun>(file, UnreadableReason.Invalid, "a boundary has a date and the versions before and from it (or null)");
-                boundaries.Add(new Classification.SchemeBoundary(day, before, after));
+                if (!TryIds(applied, out var list)) return Bad<KeptRun>(file, UnreadableReason.Invalid, "crosswalks must be a list of names");
+                crosswalks.AddRange(list);
             }
+            var schemeVersion = report.VersionOf(schemeName);
+            if (schemeVersion is null)
+            {
+                // A form that counts in the version in force: the run says which version that was.
+                if (!hasScheme || !TryInt(scheme, "version", out var inForce) || inForce < 1)
+                    return Bad<KeptRun>(file, UnreadableReason.Invalid, "a run of a form counting in the version in force names the version it counted in");
+                schemeVersion = inForce;
+            }
+            if (hasScheme && scheme.TryGetProperty("boundaries", out var boundariesJson))
+            {
+                if (boundariesJson.ValueKind != JsonValueKind.Array)
+                    return Bad<KeptRun>(file, UnreadableReason.Invalid, "boundaries must be a list");
+                foreach (var b in boundariesJson.EnumerateArray())
+                {
+                    if (b.ValueKind != JsonValueKind.Object || !TryString(b, "date", out var dayText)
+                        || !DateOnly.TryParseExact(dayText, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day)
+                        || !TryVersionOrNull(b, "from", out var before) || !TryVersionOrNull(b, "to", out var after))
+                        return Bad<KeptRun>(file, UnreadableReason.Invalid, "a boundary has a date and the versions before and from it (or null)");
+                    boundaries.Add(new Classification.SchemeBoundary(day, before, after));
+                }
+            }
+            counted.Add(new ReportScheme(schemeName, schemeVersion.Value, crosswalks, boundaries));
         }
+        report = report with
+        {
+            Dimensions = [.. report.Dimensions.Select(d => d.Classified ? d with { Version = counted.First(c => c.Scheme == d.Scheme).Version } : d)],
+        };
 
         if (!root.TryGetProperty("period", out var period) || period.ValueKind != JsonValueKind.Object
             || !TryString(period, "from", out var fromText) || !TryString(period, "to", out var toText)
@@ -82,12 +94,13 @@ public static partial class VaultReader
             return Bad<KeptRun>(file, UnreadableReason.Invalid, "a run record lists its cells");
         foreach (var cell in cellsJson.EnumerateArray())
         {
-            if (cell.ValueKind != JsonValueKind.Object || !TryString(cell, "row", out var row)
-                || !cell.TryGetProperty("column", out var column)
-                || column.ValueKind is not (JsonValueKind.String or JsonValueKind.Null)
-                || !cell.TryGetProperty("records", out var records) || !TryIds(records, out var ids))
-                return Bad<KeptRun>(file, UnreadableReason.Invalid, "a cell has a row, a column (or null) and its records");
-            cells.Add(new ReportCell(row, column.ValueKind == JsonValueKind.Null ? null : column.GetString(), ids));
+            if (cell.ValueKind != JsonValueKind.Object || !cell.TryGetProperty("records", out var records) || !TryIds(records, out var ids))
+                return Bad<KeptRun>(file, UnreadableReason.Invalid, "a cell lists its records");
+            if ((sets ? KeyOf(cell, report) : RowAndColumnOf(cell, report)) is not { } key)
+                return Bad<KeptRun>(file, UnreadableReason.Invalid, sets
+                    ? "a cell's key holds a code for each classified dimension and a string or null for each other, in order"
+                    : "a cell has a row, a column (or null) and its records");
+            cells.Add(new ReportCell(key, ids));
         }
 
         if (!TrySet(root, "pending", out var pending) || !TrySet(root, "unmapped", out var unmapped) || !TrySet(root, "total", out var total))
@@ -123,7 +136,7 @@ public static partial class VaultReader
             }
         }
 
-        var run = new ReportRun(report, from, to, crosswalks, cells, pending, unmapped, blank, conflicted, people) { Boundaries = boundaries };
+        var run = new ReportRun(report, from, to, counted, cells, pending, unmapped, blank, conflicted, people);
         if (run.Total.Distinct(StringComparer.Ordinal).Count() != run.Total.Count
             || !run.Total.SequenceEqual(total.Order(StringComparer.Ordinal), StringComparer.Ordinal))
             return Bad<KeptRun>(file, UnreadableReason.Invalid,
@@ -131,6 +144,32 @@ public static partial class VaultReader
         if (people is not null && !people.Keys.Order(StringComparer.Ordinal).SequenceEqual(run.Total, StringComparer.Ordinal))
             return Bad<KeptRun>(file, UnreadableReason.Invalid, "people must name exactly the records in the total");
         return new(new KeptRun(id, device, at, file.Path, run), null);
+    }
+
+    // Format 1: one place per dimension, a code where it is classified and a string or null elsewhere.
+    private static string?[]? KeyOf(JsonElement cell, ReportDefinition report)
+    {
+        if (!cell.TryGetProperty("key", out var key) || key.ValueKind != JsonValueKind.Array
+            || key.GetArrayLength() != report.Dimensions.Count) return null;
+        var places = new string?[report.Dimensions.Count];
+        var i = 0;
+        foreach (var place in key.EnumerateArray())
+        {
+            if (place.ValueKind == JsonValueKind.String) places[i] = place.GetString();
+            else if (place.ValueKind != JsonValueKind.Null || report.Dimensions[i].Classified) return null;
+            i++;
+        }
+        return places;
+    }
+
+    // Format 0: a row code and a column (a string or null); the key has the column only when the form does.
+    private static string?[]? RowAndColumnOf(JsonElement cell, ReportDefinition report)
+    {
+        if (!report.RowsAndColumn || !TryString(cell, "row", out var row) || !cell.TryGetProperty("column", out var column)
+            || column.ValueKind is not (JsonValueKind.String or JsonValueKind.Null)) return null;
+        var value = column.ValueKind == JsonValueKind.Null ? null : column.GetString();
+        if (report.Dimensions.Count == 1) return value is null ? [row] : null;
+        return [row, value];
     }
 
     private static bool TryVersionOrNull(JsonElement obj, string name, out int? version)

@@ -18,7 +18,7 @@ public class ReportRunnerTests
         [new Crosswalk("kind", 1, 2, [("a", "x"), ("b", "x"), ("c", "p"), ("c", "q")])]);
 
     private static ReportDefinition Form(int version, string? columns = "owner") =>
-        new("monthly", version, "Monthly", "item", "day", "kind", "kind", version, columns);
+        TestReports.Form("monthly", version, "Monthly", "item", "day", "kind", "kind", version, columns);
 
     private static JsonObject Coded(int version, string code) => new() { ["scheme"] = "kind", ["version"] = version, ["code"] = code };
 
@@ -255,7 +255,7 @@ public class ReportRunnerTests
         ],
         [new Crosswalk("kind", 1, 2, [("a", "x"), ("b", "x"), ("c", "p"), ("c", "q")])]);
 
-    private static ReportDefinition InForce => Form(1) with { RowVersion = null };
+    private static ReportDefinition InForce => Form(1).WithRowVersion(null);
 
     [Fact]
     public void A_form_without_a_version_counts_in_the_version_in_force_on_the_last_day()
@@ -328,7 +328,7 @@ public class ReportRunnerTests
     [Fact]
     public void A_form_counting_the_extending_scheme_counts_its_own_items()
     {
-        var local = new ReportDefinition("local", 1, "Local", "item", "day", "kind", "kind.local", 1, null);
+        var local = TestReports.Form("local", 1, "Local", "item", "day", "kind", "kind.local", 1, null);
         var items = Entities([.. Local("i1", "2026-03-02", "a-group"), .. Local("i2", "2026-03-03", "a-call"), .. Item("i3", "2026-03-04", "a")]);
 
         var run = ReportRunner.RunMonth(local, 2026, 3, items, Extended);
@@ -338,13 +338,13 @@ public class ReportRunnerTests
     }
 
     private static ReportRun Run(int version, ReportCell[] cells, string[]? pending = null, string[]? unmapped = null) =>
-        new(Form(version), new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), version == 1 ? [] : ["1-2"],
+        new(Form(version), new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), [new ReportScheme("kind", version, version == 1 ? [] : ["1-2"], [])],
             cells, pending ?? [], unmapped ?? [], [], []);
 
     [Fact]
     public void A_code_with_no_link_is_revised_into_unmapped()
     {
-        var diff = ReportDiff.Compare(Run(1, [new("h", "o1", ["i1"])]), Run(2, [], unmapped: ["i1"]), Catalog);
+        var diff = ReportDiff.Compare(Run(1, [TestReports.Cell("h", "o1", ["i1"])]), Run(2, [], unmapped: ["i1"]), Catalog);
 
         Assert.Equal(["i1"], diff.Revised);
         Assert.Empty(diff.Moved);
@@ -354,7 +354,7 @@ public class ReportRunnerTests
     public void A_place_the_crosswalks_do_not_reach_is_a_move()
     {
         // a carries to x; the record now counts under p, so someone changed it.
-        var diff = ReportDiff.Compare(Run(1, [new("a", "o1", ["i1"])]), Run(2, [new("p", "o1", ["i1"])]), Catalog);
+        var diff = ReportDiff.Compare(Run(1, [TestReports.Cell("a", "o1", ["i1"])]), Run(2, [TestReports.Cell("p", "o1", ["i1"])]), Catalog);
 
         Assert.Empty(diff.Revised);
         Assert.Equal(["i1"], diff.Moved);
@@ -363,7 +363,7 @@ public class ReportRunnerTests
     [Fact]
     public void Another_column_is_a_move_even_when_the_row_was_carried()
     {
-        var diff = ReportDiff.Compare(Run(1, [new("a", "o1", ["i1"])]), Run(2, [new("x", "o2", ["i1"])]), Catalog);
+        var diff = ReportDiff.Compare(Run(1, [TestReports.Cell("a", "o1", ["i1"])]), Run(2, [TestReports.Cell("x", "o2", ["i1"])]), Catalog);
 
         Assert.Empty(diff.Revised);
         Assert.Equal(["i1"], diff.Moved);
@@ -372,7 +372,7 @@ public class ReportRunnerTests
     [Fact]
     public void A_pending_record_a_person_placed_is_a_move()
     {
-        var diff = ReportDiff.Compare(Run(2, [], pending: ["i1"]), Run(2, [new("q", "o1", ["i1"])]), Catalog);
+        var diff = ReportDiff.Compare(Run(2, [], pending: ["i1"]), Run(2, [TestReports.Cell("q", "o1", ["i1"])]), Catalog);
 
         Assert.Empty(diff.Revised);
         Assert.Equal(["i1"], diff.Moved);
@@ -382,7 +382,7 @@ public class ReportRunnerTests
     public void Without_a_later_version_nothing_is_revised()
     {
         // Same version: no revision lies between the runs.
-        var sameVersion = ReportDiff.Compare(Run(2, [new("x", "o1", ["i1"])]), Run(2, [new("p", "o1", ["i1"])]), Catalog);
+        var sameVersion = ReportDiff.Compare(Run(2, [TestReports.Cell("x", "o1", ["i1"])]), Run(2, [TestReports.Cell("p", "o1", ["i1"])]), Catalog);
 
         Assert.Empty(sameVersion.Revised);
         Assert.Equal(["i1"], sameVersion.Moved);
@@ -391,7 +391,7 @@ public class ReportRunnerTests
     [Fact]
     public void Runs_in_the_reverse_order_are_refused()
     {
-        var v1 = Run(1, [new("a", "o1", ["i1"])]);
+        var v1 = Run(1, [TestReports.Cell("a", "o1", ["i1"])]);
         var v2 = Run(2, [], unmapped: ["i1"]);
 
         var error = Assert.Throws<ArgumentException>(() => ReportDiff.Compare(v2, v1, Catalog));
@@ -404,16 +404,16 @@ public class ReportRunnerTests
     [MemberData(nameof(Incomparable))]
     public void Runs_that_do_not_count_the_same_thing_over_the_same_period_are_refused(string differs)
     {
-        var earlier = Run(1, [new("a", "o1", ["i1"])]);
+        var earlier = Run(1, [TestReports.Cell("a", "o1", ["i1"])]);
         var form = earlier.Report;
         var later = differs switch
         {
             "name" => earlier with { Report = form with { Name = "other" } },
             "counts" => earlier with { Report = form with { Counts = "session" } },
             "period field" => earlier with { Report = form with { PeriodField = "entered" } },
-            "row field" => earlier with { Report = form with { RowField = "topic" } },
-            "row scheme" => earlier with { Report = form with { RowScheme = "topic" } },
-            "columns" => earlier with { Report = form with { ColumnField = null } },
+            "row field" => earlier with { Report = form with { Dimensions = [form.Dimensions[0] with { Field = "topic" }, form.Dimensions[1]] } },
+            "row scheme" => earlier with { Report = form with { Dimensions = [form.Dimensions[0] with { Scheme = "topic" }, form.Dimensions[1]] } },
+            "columns" => earlier with { Report = form with { Dimensions = [form.Dimensions[0]] } },
             "from" => earlier with { From = new DateOnly(2026, 2, 1) },
             "to" => earlier with { To = new DateOnly(2026, 4, 30) },
             _ => throw new ArgumentOutOfRangeException(nameof(differs)),
@@ -426,7 +426,7 @@ public class ReportRunnerTests
     [Fact]
     public void A_new_form_version_and_label_still_compare()
     {
-        var earlier = Run(1, [new("a", "o1", ["i1"])]);
+        var earlier = Run(1, [TestReports.Cell("a", "o1", ["i1"])]);
         var later = earlier with { Report = earlier.Report with { Version = 2, Label = "Renamed" } };
 
         Assert.Equal(["i1"], ReportDiff.Compare(earlier, later, Catalog).Unchanged);
@@ -451,5 +451,112 @@ public class ReportRunnerTests
         Assert.Equal("i1", cell.GetProperty("records")[0].GetString());
         Assert.Equal(1, root.GetProperty("pending").GetProperty("count").GetInt32());
         Assert.Equal(2, root.GetProperty("total").GetProperty("count").GetInt32());
+    }
+
+    // `kind` as above, and `level` v1 with two levels.
+    private static readonly SchemeCatalog Levels = new(
+        [
+            Catalog.Find("kind", 1)!, Catalog.Find("kind", 2)!,
+            new Scheme("level", 1, [new("mid", "Middle", null, false), new("high", "High", null, false)]),
+        ],
+        [new Crosswalk("kind", 1, 2, [("a", "x"), ("b", "x"), ("c", "p"), ("c", "q")])]);
+
+    private static ReportDefinition ByKindLevelOwner(int kindVersion) => new("by-level", 1, "By level", "item", "day",
+        [new ReportDimension("kind", "kind", kindVersion), new ReportDimension("level", "level", 1), new ReportDimension("owner")]);
+
+    private static List<JsonObject> Leveled(string id, string? code, string? level, string? owner = "o1")
+    {
+        var fields = new JsonObject { ["day"] = "2026-03-02" };
+        if (code is not null) fields["kind"] = Coded(1, code);
+        if (level is not null) fields["level"] = new JsonObject { ["scheme"] = "level", ["version"] = 1, ["code"] = level };
+        if (owner is not null) fields["owner"] = owner;
+        return [Json(Interlocked.Increment(ref _n), id, "create", entityType: "item", fields: fields)];
+    }
+
+    [Fact]
+    public void Each_cell_is_keyed_by_every_dimension_in_order()
+    {
+        var items = Entities([.. Leveled("i1", "a", "mid"), .. Leveled("i2", "b", "mid"), .. Leveled("i3", "a", "high", owner: null),
+            .. Leveled("i4", "a", "mid", owner: "o2")]);
+
+        var run = ReportRunner.RunMonth(ByKindLevelOwner(2), 2026, 3, items, Levels);
+
+        Assert.Collection(run.Cells,
+            c => { Assert.Equal(["x", "high", null], c.Key); Assert.Equal(["i3"], c.Records); },
+            c => { Assert.Equal(["x", "mid", "o1"], c.Key); Assert.Equal(["i1", "i2"], c.Records); },
+            c => { Assert.Equal(["x", "mid", "o2"], c.Key); Assert.Equal(["i4"], c.Records); });
+        Assert.Equal([("kind", 2), ("level", 1)], run.Schemes.Select(x => (x.Scheme, x.Version)));
+        Assert.Equal(["1-2"], run.Schemes[0].Crosswalks);
+        Assert.Empty(run.Schemes[1].Crosswalks);
+    }
+
+    [Fact]
+    public void A_record_several_dimensions_leave_out_is_in_one_set_pending_before_unmapped_before_blank()
+    {
+        // c is split in v2 (pending); h has no link (unmapped); a missing value is blank; "low" is no level.
+        var items = Entities([.. Leveled("i1", "c", "low"), .. Leveled("i2", null, "low"), .. Leveled("i3", null, "mid"),
+            .. Leveled("i4", "h", null), .. Leveled("i5", "a", null)]);
+
+        var run = ReportRunner.RunMonth(ByKindLevelOwner(2), 2026, 3, items, Levels);
+
+        Assert.Empty(run.Cells);
+        Assert.Equal(["i1"], run.Pending);
+        Assert.Equal(["i2", "i4"], run.Unmapped);
+        Assert.Equal(["i3", "i5"], run.Blank);
+        Assert.Equal(["i1", "i2", "i3", "i4", "i5"], run.Total);
+    }
+
+    [Fact]
+    public void A_conflict_in_any_dimension_leaves_the_record_conflicted()
+    {
+        var create = Json(900, "i1", "create", entityType: "item",
+            fields: new JsonObject { ["day"] = "2026-03-02", ["kind"] = Coded(1, "a"), ["level"] = new JsonObject { ["scheme"] = "level", ["version"] = 1, ["code"] = "mid" } });
+        var one = Json(901, "i1", "update", [900], new JsonObject { ["owner"] = "o1" }, entityType: "item");
+        var two = Json(902, "i1", "update", [900], new JsonObject { ["owner"] = "o2" }, entityType: "item");
+
+        var run = ReportRunner.RunMonth(ByKindLevelOwner(2), 2026, 3, Entities([create, one, two]), Levels);
+
+        Assert.Equal(["i1"], run.Conflicted);
+        Assert.Empty(run.Cells);
+    }
+
+    [Fact]
+    public void A_form_counting_one_scheme_in_two_versions_cannot_be_run()
+    {
+        var form = new ReportDefinition("twice", 1, "Twice", "item", "day",
+            [new ReportDimension("kind", "kind", 1), new ReportDimension("kind", "kind", 2)]);
+
+        Assert.NotNull(form.Problem());
+        Assert.Throws<ArgumentException>(() => ReportRunner.RunMonth(form, 2026, 3, [], Levels));
+        Assert.Null((form with { Dimensions = [new ReportDimension("kind", "kind", 2), new ReportDimension("other", "kind", 2)] }).Problem());
+    }
+
+    [Fact]
+    public void A_revision_of_one_dimension_is_told_apart_from_a_move_in_another()
+    {
+        var before = Entities([.. Leveled("i1", "a", "mid"), .. Leveled("i2", "c", "mid"), .. Leveled("i3", "b", "high")]);
+        var earlier = ReportRunner.RunMonth(ByKindLevelOwner(1), 2026, 3, before, Levels);
+        var after = Entities([.. Leveled("i1", "a", "mid"), .. Leveled("i2", "c", "mid"), .. Leveled("i3", "b", "mid")]);
+        var later = ReportRunner.RunMonth(ByKindLevelOwner(2), 2026, 3, after, Levels);
+
+        var diff = ReportDiff.Compare(earlier, later, Levels);
+
+        Assert.Equal(["i1", "i2"], diff.Revised); // a carried to x; c split into pending
+        Assert.Equal(["i3"], diff.Moved); // its level changed, which no revision explains
+    }
+
+    [Fact]
+    public void A_run_of_more_than_rows_and_a_column_is_written_with_keys()
+    {
+        var run = ReportRunner.RunMonth(ByKindLevelOwner(2), 2026, 3, Entities(Leveled("i1", "a", "mid", owner: null)), Levels);
+
+        using var doc = JsonDocument.Parse(ReportRunJson.Write(run, Id(2), "dev1", new DateTimeOffset(2026, 4, 1, 9, 0, 0, TimeSpan.Zero)));
+        var root = doc.RootElement;
+
+        Assert.Equal("openquote.run/1", root.GetProperty("format").GetString());
+        var key = root.GetProperty("cells")[0].GetProperty("key");
+        Assert.Equal(["x", "mid", null], key.EnumerateArray().Select(k => k.ValueKind == JsonValueKind.Null ? null : k.GetString()));
+        Assert.False(root.GetProperty("cells")[0].TryGetProperty("row", out _));
+        Assert.Equal(1, root.GetProperty("schemes").GetProperty("level").GetProperty("version").GetInt32());
     }
 }

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/iyulab/openquote/blob/main/docs/schema/run.schema.json",
   "title": "Openquote report run record",
-  "description": "runs/<yyyy>/<id>.<device>.json. The report form it names must be in the vault, total must equal the cells plus pending, unmapped, blank and conflicted with each record in exactly one of them, and people must name exactly the records in total; a reader checks all three. In format 0, blank is optional and lists records that are also in unmapped. Counts are derived from records.",
+  "description": "runs/<yyyy>/<id>.<device>.json. The report form it names must be in the vault, a format 1 cell's key holds one place per dimension of the form — a code where it is classified, a string or null elsewhere — and a format 0 cell a row and a column (or null); total must equal the cells plus pending, unmapped, blank and conflicted with each record in exactly one of them, and people must name exactly the records in total; a reader checks all three. In format 0, blank is optional and lists records that are also in unmapped. Counts are derived from records.",
   "type": "object",
   "required": ["format", "id", "device", "at", "report", "schemes", "period", "cells", "pending", "unmapped", "total"],
   "properties": {
@@ -53,10 +53,11 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["row", "column", "records"],
+        "required": ["records"],
         "properties": {
           "row": { "type": "string", "minLength": 1 },
           "column": { "type": ["string", "null"] },
+          "key": { "type": "array", "minItems": 1, "maxItems": 3, "items": { "type": ["string", "null"] } },
           "count": { "type": "integer", "minimum": 0 },
           "records": { "$ref": "#/$defs/ids" }
         }
@@ -70,8 +71,14 @@
     "people": { "type": "object", "additionalProperties": { "$ref": "#/$defs/ids" } }
   },
   "if": { "properties": { "format": { "const": "openquote.run/1" } } },
-  "then": { "required": ["blank", "conflicted"] },
-  "else": { "not": { "required": ["conflicted"] } },
+  "then": {
+    "required": ["blank", "conflicted"],
+    "properties": { "cells": { "items": { "required": ["key"], "not": { "anyOf": [{ "required": ["row"] }, { "required": ["column"] }] } } } }
+  },
+  "else": {
+    "not": { "required": ["conflicted"] },
+    "properties": { "cells": { "items": { "required": ["row", "column"], "not": { "required": ["key"] } } } }
+  },
   "$defs": {
     "date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
     "ids": { "type": "array", "items": { "type": "string" } },
