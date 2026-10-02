@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Suggested classification codes for a record being entered, learned from the vault's settled records with Gil — no model, rebuilt in memory from the vault each time.</Description>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Gil" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Openquote\Openquote.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Openquote.Tests" />
+  </ItemGroup>
+
+</Project>

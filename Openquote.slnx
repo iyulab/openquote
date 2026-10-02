@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Openquote/Openquote.csproj" />
+    <Project Path="src/Openquote.Gil/Openquote.Gil.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Openquote.Tests/Openquote.Tests.csproj" />
