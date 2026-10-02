@@ -1,10 +1,10 @@
-# Vault format, version 0
+# Vault format, versions 0 and 1
 
 This document specifies the plaintext layer of an Openquote vault: the folder layout, the JSON of each file kind, and the rules a reader applies. It describes what the engine in this repository reads and writes.
 
-> Status: version 0 is frozen. Changes to it only add: a reader that predates an addition may pass over what it adds, and counts the same numbers. A change to the structure — what a file means or what it counts — waits for version 1, which will make such changes together.
+> Status: version 0 is frozen; version 1 is in progress. Version 0 changes only by additions: a reader that predates an addition may pass over what it adds, and counts the same numbers. Version 1 makes the changes to the structure together — what a file means or what it counts: blank and conflicted records apart (run records, format 1), report forms that count in the version in force (format 1), schemes that extend others (format 1), and crosswalks that state relations or lead into another scheme (format 1). A vault holding an extending scheme or such a crosswalk is declared `openquote.vault/1` (`VaultContent.RequiredVersion`); the others an earlier engine skips file by file without counting differently.
 
-Every file kind has a JSON Schema (draft 2020-12) in [schema/](schema/), named after its format (`openquote.<name>/0` is `schema/<name>.schema.json`). A schema checks the shape of one file. Rules that compare a file with its path, with other files, or with other values in it — a name matching its path, codes unique within a version, a run's totals adding up — are checked by the reader only.
+Every file kind has a JSON Schema (draft 2020-12) in [schema/](schema/), named after its format (`openquote.<name>/0` and `/1` are both `schema/<name>.schema.json`). A schema checks the shape of one file. Rules that compare a file with its path, with other files, or with other values in it — a name matching its path, codes unique within a version, a run's totals adding up — are checked by the reader only.
 
 ## Plaintext and encryption
 
@@ -400,6 +400,7 @@ The only condition that refuses the whole read is the declaration check describe
 
 - A change a previous engine could ignore without producing a wrong number (a new optional key) is additive and keeps the declared version.
 - A change that would make a previous engine count wrongly without noticing (a new folder of records, a key that changes what is counted) raises the declared vault format, so that previous engines refuse the vault instead of reading it. Folders a previous engine ignores without changing any count — `packs/`, `labels/`, `fields/`, `suggestions/` — are additive.
+- Version 1 file formats are new format versions of their file kinds (`openquote.scheme/1`, `openquote.crosswalk/1`, `openquote.report/1`, `openquote.run/1`), so an engine that reads only version 0 reports each such file as a format it does not know rather than misreading it. What it would then count differently — values of an extending scheme, values a crosswalk it skipped would have carried — is why a vault holding them declares version 1: an earlier engine refuses the vault before counting anything. A version 1 engine reads a version 0 vault as it is, and counts blank and conflicted records apart in it too.
 - A pack manifest may name a definition file in a folder a previous engine does not know; that engine reads the manifest without the line. Engines before `suggestions/` was added (package versions up to 0.6) read a manifest that names a suggestion file as unreadable instead, and keep using the pack's earlier version.
 
 `VaultWriter` produces indented UTF-8 JSON with `\n` line endings and a trailing newline, stamps `at` in the device's local time with its offset, and gives every file a fresh id, so its path never names an existing file.
