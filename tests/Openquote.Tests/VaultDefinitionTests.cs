@@ -136,4 +136,32 @@ public class VaultDefinitionTests
     {
         Assert.Equal(UnreadableReason.Invalid, Assert.Single(VaultReader.Read([File("schemes/kind.local/v1.json", json)]).Unreadable).Reason);
     }
+
+    [Fact]
+    public void Reads_the_relation_a_format_1_crosswalk_states_for_a_link()
+    {
+        var json = """
+            { "format": "openquote.crosswalk/1", "scheme": "kind", "from": 1, "to": 2,
+              "links": [ ["a", "a", "equivalent"], ["b", "x", "narrower"], ["c", "y", "broader"], ["d", "z", "retired"], ["e", "w"] ] }
+            """;
+
+        var content = VaultReader.Read([File("schemes/kind/v1-v2.json", json)]);
+
+        var crosswalk = Assert.Single(content.Crosswalks);
+        Assert.Equal(5, crosswalk.Links.Count);
+        Assert.Equal(LinkRelation.Broader, crosswalk.Relations[("c", "y")]);
+        Assert.False(crosswalk.Relations.ContainsKey(("e", "w")));
+        Assert.Equal(1, content.RequiredVersion);
+    }
+
+    [Theory]
+    [InlineData("openquote.crosswalk/0", """["a", "a", "equivalent"]""")]
+    [InlineData("openquote.crosswalk/1", """["a", "a", "same"]""")]
+    [InlineData("openquote.crosswalk/1", """["a", "a", "equivalent", "x"]""")]
+    public void A_relation_outside_format_1_or_not_one_of_the_four_is_reported(string format, string link)
+    {
+        var json = $$"""{ "format": "{{format}}", "scheme": "kind", "from": 1, "to": 2, "links": [ {{link}} ] }""";
+
+        Assert.Equal(UnreadableReason.Invalid, Assert.Single(VaultReader.Read([File("schemes/kind/v1-v2.json", json)]).Unreadable).Reason);
+    }
 }

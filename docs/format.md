@@ -159,6 +159,7 @@ A `device` entity, kept in `devices/`, carries a human-readable name in its `nam
 
 - Path: `schemes/<scheme>/v<from>-v<to>.json`; `to` must be greater than `from`.
 - `links` are `[old code, new code]` pairs. Link types (1:1, N:1, 1:N, N:M) are not stored; they follow from the pairs.
+- In `openquote.crosswalk/1`, a link may state how the old item relates to the new one as a third element: `equivalent` (the same meaning) and `narrower` (the new item holds all of the old one) carry a value without asking; `broader` (the new item holds only part of the old one) leaves it for a person to decide, even as the only link; `retired` records where a retired item went nearest and carries nothing. A link without a relation is carried as in format 0. A vault holding such a crosswalk needs format 1 (`VaultContent.RequiredVersion`): an earlier engine skips the file and leaves its values unmapped.
 - There is no implicit identity crosswalk. A new version that only relabels items still needs a crosswalk linking each code to itself. A relabel that keeps every code can instead be given as labels (see [Labels](#labels)), which needs no new version.
 
 How values are carried across versions is described in [Concepts](concepts.md#crosswalks).

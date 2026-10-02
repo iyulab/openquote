@@ -123,4 +123,48 @@ public class SchemeCatalogTests
         var catalog = new SchemeCatalog([new Scheme("kind", 1, [], new DateOnly(2026, 3, 1))], []);
         Assert.Null(catalog.InForce("kind", new DateOnly(2026, 2, 28)));
     }
+
+    // v1 → v2 with stated relations: a is the same item, b fits inside x, c is wider than y (y holds
+    // only part of it), d was retired (z is only where it went nearest), e has an unstated link.
+    private static SchemeCatalog Related() => new(
+        [Scheme(1, "a", "b", "c", "d", "e"), Scheme(2, "a", "x", "y", "z", "w")],
+        [Links(1, 2, ("a", "a"), ("b", "x"), ("c", "y"), ("d", "z"), ("e", "w")) with
+        {
+            Relations = new Dictionary<(string From, string To), LinkRelation>
+            {
+                [("a", "a")] = LinkRelation.Equivalent,
+                [("b", "x")] = LinkRelation.Narrower,
+                [("c", "y")] = LinkRelation.Broader,
+                [("d", "z")] = LinkRelation.Retired,
+            },
+        }]);
+
+    [Theory]
+    [InlineData("a", "a")]
+    [InlineData("b", "x")]
+    [InlineData("e", "w")]
+    public void An_equivalent_a_narrower_or_an_unstated_single_link_is_assigned(string from, string to)
+    {
+        var r = Related().Resolve(new CodedValue("kind", 1, from), 2);
+
+        Assert.Equal((ResolutionKind.Assigned, to), (r.Kind, r.Code));
+    }
+
+    [Fact]
+    public void A_link_from_a_broader_item_waits_for_a_person_even_alone()
+    {
+        var r = Related().Resolve(new CodedValue("kind", 1, "c"), 2);
+
+        Assert.Equal(ResolutionKind.Pending, r.Kind);
+        Assert.Equal(["y"], r.Candidates);
+    }
+
+    [Fact]
+    public void A_retired_link_carries_nothing()
+    {
+        var r = Related().Resolve(new CodedValue("kind", 1, "d"), 2);
+
+        Assert.Equal(ResolutionKind.Unmapped, r.Kind);
+        Assert.Equal(["1-2"], r.Crosswalks);
+    }
 }

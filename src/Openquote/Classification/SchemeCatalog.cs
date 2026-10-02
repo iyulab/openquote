@@ -103,7 +103,10 @@ public sealed class SchemeCatalog
     /// <summary>
     /// Carries <paramref name="value"/> to <paramref name="targetVersion"/> of its scheme. A value
     /// lands on a code only when every step leaves exactly one candidate: an old code with one link
-    /// is assigned, with two or more it waits for a person, and with none it is unmapped.
+    /// is assigned, with two or more it waits for a person, and with none it is unmapped. Where a
+    /// crosswalk states how its links relate (see <see cref="Crosswalk.Relations"/>), a link from a
+    /// broader item makes a person decide even when it is the only one, and a retired link carries
+    /// nothing.
     /// </summary>
     public Resolution Resolve(CodedValue value, int targetVersion)
     {
@@ -116,10 +119,13 @@ public sealed class SchemeCatalog
             return Unmapped([]);
 
         string[] codes = [value.Code];
+        var review = false;
         var applied = new List<string>();
         foreach (var crosswalk in path)
         {
-            codes = codes.SelectMany(crosswalk.Targets).Distinct(StringComparer.Ordinal).ToArray();
+            var carried = codes.Select(crosswalk.Carry).ToList();
+            review |= carried.Any(c => c.Review);
+            codes = carried.SelectMany(c => c.Codes).Distinct(StringComparer.Ordinal).ToArray();
             // A link to a code the next version does not have is a defect in the crosswalk, not a
             // place to put a record.
             if (Find(value.Scheme, crosswalk.To) is { } next) codes = codes.Where(next.Contains).ToArray();
@@ -127,7 +133,7 @@ public sealed class SchemeCatalog
             if (codes.Length == 0) return Unmapped(applied);
         }
 
-        return codes.Length == 1
+        return codes.Length == 1 && !review
             ? new Resolution(ResolutionKind.Assigned, codes[0], [], applied)
             : new Resolution(ResolutionKind.Pending, null, codes.Order(StringComparer.Ordinal).ToArray(), applied);
     }

@@ -162,7 +162,9 @@ public static partial class VaultReader
 
     private static Definition<Crosswalk> ParseCrosswalk(VaultFile file)
     {
-        if (!TryRoot(file, "openquote.crosswalk/0", out var root, out var error)) return new(null, error);
+        // Format 1 lets a link state its relation as a third element.
+        if (!TryRoot(file, CrosswalkFormats, out var root, out var error)) return new(null, error);
+        var related = TryString(root, "format", out var format) && format == "openquote.crosswalk/1";
         var path = SchemePath().Match(file.Path);
 
         if (!TryString(root, "scheme", out var name) || !TryInt(root, "from", out var from) || !TryInt(root, "to", out var to))
@@ -177,16 +179,39 @@ public static partial class VaultReader
             return Bad<Crosswalk>(file, UnreadableReason.Invalid, "links must be an array");
 
         var links = new List<(string, string)>();
+        var relations = new Dictionary<(string From, string To), LinkRelation>();
         foreach (var link in linksArray.EnumerateArray())
         {
-            if (link.ValueKind != JsonValueKind.Array || link.GetArrayLength() != 2
+            var length = link.ValueKind == JsonValueKind.Array ? link.GetArrayLength() : 0;
+            if ((length != 2 && !(related && length == 3))
                 || link[0].ValueKind != JsonValueKind.String || link[1].ValueKind != JsonValueKind.String)
-                return Bad<Crosswalk>(file, UnreadableReason.Invalid, "every link is a pair of codes");
-            links.Add((link[0].GetString()!, link[1].GetString()!));
+                return Bad<Crosswalk>(file, UnreadableReason.Invalid,
+                    related ? "every link is a pair of codes, with its relation as a third element if stated" : "every link is a pair of codes");
+            var pair = (link[0].GetString()!, link[1].GetString()!);
+            links.Add(pair);
+            if (length == 3)
+            {
+                if (link[2].ValueKind != JsonValueKind.String || Relation(link[2].GetString()!) is not { } relation)
+                    return Bad<Crosswalk>(file, UnreadableReason.Invalid, "a relation is equivalent, narrower, broader or retired");
+                if (relations.TryGetValue(pair, out var stated) && stated != relation)
+                    return Bad<Crosswalk>(file, UnreadableReason.Invalid, $"{pair.Item1} → {pair.Item2} states two relations");
+                relations[pair] = relation;
+            }
         }
 
-        return new(new Crosswalk(name, from, to, links), null);
+        return new(new Crosswalk(name, from, to, links) { Relations = relations }, null);
     }
+
+    private static readonly string[] CrosswalkFormats = ["openquote.crosswalk/0", "openquote.crosswalk/1"];
+
+    private static LinkRelation? Relation(string text) => text switch
+    {
+        "equivalent" => LinkRelation.Equivalent,
+        "narrower" => LinkRelation.Narrower,
+        "broader" => LinkRelation.Broader,
+        "retired" => LinkRelation.Retired,
+        _ => null,
+    };
 
     private static readonly string[] ReportFormats = ["openquote.report/0", "openquote.report/1"];
 
