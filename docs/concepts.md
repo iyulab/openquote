@@ -59,26 +59,26 @@ A person's choice for a pending record is a `reclassify` change that sets the fi
 
 ## Report forms and run records
 
-A **report form** is an immutable, versioned definition: which entity type it counts, which calendar-date field places a record in a month, which classified field and scheme version form the rows, and optionally which field splits the columns.
+A **report form** is an immutable, versioned definition: which entity type it counts, which calendar-date field places a record in a period and the unit it is run over (a day, a month, a year from any month, or any range of days), and one to three **dimensions** whose values make each cell's key. A dimension is a classified field of the record — counted by its primary value, or by every value it holds — or a field the record or the people it concerns hold as written. A form may also set **conditions** every counted record meets, and the **measures** it shows: records, people (distinct subjects) and visits (each record's subjects, added up). A classified dimension counts in a named scheme version, or in the version in force on the last day of the period.
 
 Running a form (`ReportRunner`) for a period does not guess:
 
-- Each record's value is carried to the form's scheme version. An assigned value lands in a cell; a pending value goes to `pending`; a value with no code there goes to `unmapped`; a field with no value at all (never set, or cleared with no earlier value to count) goes to `blank`, so an empty field is told apart from a gap in the crosswalks. A record whose period, row or column field holds values set without seeing each other goes to `conflicted` and in no cell — counting any one of them would decide for the person who has to pick; a disputed date puts it in every period one of its dates falls in.
+- Each record's value is carried to the form's scheme version. An assigned value lands in a cell; a pending value goes to `pending`; a value with no code there goes to `unmapped`; a field with no value at all (never set, or cleared with no earlier value to count) goes to `blank`, so an empty field is told apart from a gap in the crosswalks. A record whose period field, a dimension or a condition holds values set without seeing each other goes to `conflicted` and in no cell — counting any one of them would decide for the person who has to pick; a disputed date puts it in every period one of its dates falls in.
 - If a record has since been reclassified to a version newer than the form's, the run uses the most recent value that is at or below the form's version. Earlier values are never lost, so an older form can be run again later.
 - The total is always the cells plus pending, unmapped, blank and conflicted, each record in exactly one. Nothing is dropped to make numbers look complete.
 
 Each run can be kept as a **run record**. A run record is never edited; running the form again produces a new one. It holds:
 
-- the form and version, the scheme version counted in, and the crosswalks applied;
+- the form and version, the scheme versions counted in, and the crosswalks applied;
 - the period;
 - for every cell, and for pending, unmapped, blank, conflicted and the total, the ids of the records behind the number;
 - for every record, the subjects it concerns, from which a **head count** (distinct people) is computed beside every record count. A group-held record contributes its `attendees`.
 
-Because every number keeps its evidence, two runs of the same form can be compared record by record (`ReportDiff`): records entered late, records removed or destroyed since, records moved by a scheme revision, records moved for another reason, and records unchanged. Only runs that place records the same way are compared — the same form name, entity type, period field, row field and scheme, columns, and period; the form and scheme versions may differ. Any other pair is refused, since every record would read as moved by a person.
+Because every number keeps its evidence, two runs of the same form can be compared record by record (`ReportDiff`): records entered late, records removed or destroyed since, records moved by a scheme revision, records that were in conflict and now have a place (a person settled the values), records moved for another reason, and records unchanged. Only runs that place records the same way are compared — the same form name, entity type, period field, dimensions in order, and period; the form and scheme versions may differ. Any other pair is refused, since every record would read as moved by a person.
 
 ### One pass: run, settle, run again, compare
 
-A run's `Cells` hold the records behind each number, `Pending`, `Unmapped`, `Blank` and `Conflicted` the records in no cell, and `PeopleOf` the distinct subjects behind any of them. A pending record is settled by a person choosing one of the candidates `Entity.Classify` lists; the next run counts it where it was placed, and comparing with the kept run shows it as moved rather than entered late:
+A run's `Cells` hold the records behind each number by key — one value per dimension — `Pending`, `Unmapped`, `Blank` and `Conflicted` the records in no cell, and `PeopleOf` the distinct subjects behind any of them. A pending record is settled by a person choosing one of the candidates `Entity.Classify` lists; the next run counts it where it was placed, and comparing with the kept run shows it as moved rather than entered late:
 
 ```csharp
 using Openquote.Classification;
@@ -103,17 +103,18 @@ var writer = new VaultWriter("desk01");
 // 1. Run the form for April and keep the run.
 var before = ReportRunner.RunMonth(form, 2026, 4, records.Values, catalog);
 foreach (var cell in before.Cells)
-    Console.WriteLine($"{cell.Row} / {cell.Column}: {cell.Count} records, {before.PeopleOf(cell.Records)?.Count} people");
-Console.WriteLine($"pending {before.Pending.Count}, unmapped {before.Unmapped.Count}, total {before.Total.Count}");
+    Console.WriteLine($"{string.Join(" / ", cell.Key)}: {cell.Count} records, {before.PeopleOf(cell.Records)?.Count} people");
+Console.WriteLine($"pending {before.Pending.Count}, unmapped {before.Unmapped.Count}, blank {before.Blank.Count}, conflicted {before.Conflicted.Count}, total {before.Total.Count}");
 Save(writer.RunRecord(before));
 
-// 2. A person settles each pending record by choosing one of its candidates.
+// 2. A person settles each pending record by choosing one of its candidates, in the version the run counted in.
+var topic = before.Report.Dimensions.First(d => d.Classified);
 foreach (var id in before.Pending)
 {
     var record = records[new EntityRef(form.Counts, id)];
-    var waiting = record.Classify(form.RowField, form.RowScheme, form.RowVersion, catalog);
+    var waiting = record.Classify(topic.Field, topic.Scheme!, topic.Version!.Value, catalog);
     var chosen = waiting.Candidates[0]; // in an application, the person's choice
-    Save(writer.Reclassify(record, form.RowField, new CodedValue(form.RowScheme, form.RowVersion, chosen), catalog));
+    Save(writer.Reclassify(record, topic.Field, new CodedValue(topic.Scheme!, topic.Version.Value, chosen), catalog));
 }
 
 // 3. Read the vault again, run again, and explain the difference from the kept run.
