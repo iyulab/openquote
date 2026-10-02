@@ -28,6 +28,8 @@ public class SchemaTests
     [InlineData("pack", """{ "format": "openquote.pack/0", "pack": "care", "version": 1, "label": "Care", "provides": [ "schemes/topic/v1-v2.json", "reports/monthly/v1.json", "exports/list/v2.json", "labels/care/v1.en-US.json", "fields/care/session/v1.json" ] }""")]
     [InlineData("fields", """{ "format": "openquote.fields/0", "pack": "care.school", "type": "session", "version": 1, "constrain": [ { "name": "method", "hidden": true } ] }""")]
     [InlineData("labels", """{ "format": "openquote.labels/0", "pack": "region-a", "version": 1, "locale": "fr", "aliases": { "subject": { "name": [ "nom" ] } }, "reports": { "monthly": { "1": "Mensuel" } }, "exports": { "list": { "1": { "label": "Liste", "columns": { "0": "Jour" } }, "2": { "columns": { "3": "Sujet" } } } } }""")]
+    [InlineData("suggestions", """{ "format": "openquote.suggestions/0", "pack": "care.school", "version": 2, "schemes": { "topic": { "1": { "crisis": "confirm", "other": "off", "stress": "offer" } } } }""")]
+    [InlineData("pack", """{ "format": "openquote.pack/0", "pack": "care", "version": 2, "label": "Care", "provides": [ "suggestions/care/v2.json", "guidance/care/v2.json" ] }""")]
     public void The_documented_shape_is_accepted(string schema, string json) => Assert.True(Valid(schema, json));
 
     [Theory]
@@ -52,6 +54,11 @@ public class SchemaTests
     [InlineData("run", """{ "format": "openquote.run/0", "id": "0199b2e0-3a57-7012-8c64-4f1d2e3b5a71", "device": "desk01", "at": "2026-04-02T09:00:00+01:00", "report": { "report": "monthly", "version": 1 }, "schemes": { "kind": { "version": 1 } }, "period": { "from": "2026-03-01", "to": "2026-03-31" }, "cells": [ { "row": "", "column": null, "records": [] } ], "pending": { "records": [] }, "unmapped": { "records": [] }, "total": { "records": [] } }""")]
     [InlineData("change", """{ "format": "openquote.change/0", "id": "0199A1D4-2B18-7E06-B3C7-8A5D4E2F1C90", "device": "desk01", "at": "2026-03-04T10:12:05+01:00", "entity": { "type": "session", "id": "x" }, "op": "update", "base": [], "fields": {} }""")]
     [InlineData("change", """{ "format": "openquote.change/0", "id": "0199a1d4-2b18-7e06-b3c7-8a5d4e2f1c90", "device": "desk01", "at": "2026-03-04T10:12:05Z", "entity": { "type": "session", "id": "x" }, "op": "update", "base": [], "fields": {} }""")]
+    [InlineData("suggestions", """{ "format": "openquote.suggestions/0", "pack": "care", "version": 1, "schemes": { "topic": { "1": { "crisis": "always" } } } }""")]
+    [InlineData("suggestions", """{ "format": "openquote.suggestions/0", "pack": "care", "version": 1, "schemes": { "topic": { "01": { "crisis": "off" } } } }""")]
+    [InlineData("suggestions", """{ "format": "openquote.suggestions/0", "pack": "local", "version": 1 }""")]
+    [InlineData("pack", """{ "format": "openquote.pack/0", "pack": "care", "version": 1, "label": "C", "provides": [ "vault.json" ] }""")]
+    [InlineData("pack", """{ "format": "openquote.pack/0", "pack": "care", "version": 1, "label": "C", "provides": [ "suggestions/care.json" ] }""")]
     public void A_shape_the_reader_refuses_is_refused(string schema, string json) => Assert.False(Valid(schema, json));
 
     // Every ```json block in the format document, with the schema its "format" names (openquote.<name>/0).

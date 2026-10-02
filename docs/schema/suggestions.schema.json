@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/iyulab/openquote/blob/main/docs/schema/suggestions.schema.json",
+  "title": "Openquote suggestions",
+  "description": "suggestions/<pack>/v<version>.json.",
+  "type": "object",
+  "required": ["format", "pack", "version"],
+  "properties": {
+    "format": { "const": "openquote.suggestions/0" },
+    "pack": { "type": "string", "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$", "not": { "enum": ["local", "oq"] } },
+    "version": { "type": "integer", "minimum": 1 },
+    "schemes": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "propertyNames": { "pattern": "^[1-9][0-9]*$" },
+        "additionalProperties": { "type": "object", "additionalProperties": { "enum": ["off", "offer", "confirm"] } }
+      }
+    }
+  }
+}

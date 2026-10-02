@@ -24,7 +24,13 @@
     "packId": { "type": "string", "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$" },
     "definitionPath": {
       "type": "string",
-      "pattern": "^(?:schemes/[^/]+/v[1-9][0-9]*(?:-v[1-9][0-9]*)?|reports/[^/]+/v[1-9][0-9]*|exports/[^/]+/v[1-9][0-9]*|labels/[^/]+/v[1-9][0-9]*\\.[^/]+|fields/[^/]+/[^/]+/v[1-9][0-9]*)\\.json$"
+      "anyOf": [
+        { "pattern": "^(?:schemes/[^/]+/v[1-9][0-9]*(?:-v[1-9][0-9]*)?|reports/[^/]+/v[1-9][0-9]*|exports/[^/]+/v[1-9][0-9]*|labels/[^/]+/v[1-9][0-9]*\\.[^/]+|fields/[^/]+/[^/]+/v[1-9][0-9]*|suggestions/[^/]+/v[1-9][0-9]*)\\.json$" },
+        {
+          "description": "A definition file of a kind a later format adds, in a folder of its own: read without it.",
+          "pattern": "^(?!(?:schemes|reports|exports|practitioners|devices|subjects|groups|runs|packs|labels|fields|suggestions)/)[^/]+/.+\\.json$"
+        }
+      ]
     }
   }
 }
