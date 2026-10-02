@@ -49,11 +49,13 @@ public sealed record ReportDiff(
     /// <remarks>
     /// Only runs that place records the same way can be compared: the same form name, counting the
     /// same entity type by the same period field, split by the same dimensions — the same fields, each
-    /// classified in the same scheme or split by its string value — over the same period. The form's
-    /// version, label, and the scheme versions may differ. Otherwise every record would read as moved
-    /// by a person, so such pairs are refused. The order is checked only where the runs show it: a
-    /// later run that counts an earlier version of a scheme is refused, while two runs of one version
-    /// cannot tell which came first.
+    /// classified in the same scheme or split by its string value, of the record or of its subjects —
+    /// and filtered the same way, over the same period. The form's version, label, and the scheme
+    /// versions may differ. Otherwise every record would read as moved by a person, so such pairs are
+    /// refused. The order is checked only where the runs show it: a later run that counts an earlier
+    /// version of a scheme is refused, while two runs of one version cannot tell which came first. A
+    /// revision of a filter's scheme can let a record into the run or out of it; it then reads as
+    /// late or removed.
     /// </remarks>
     /// <exception cref="ArgumentException">
     /// <paramref name="later"/> does not count the same thing over the same period as
@@ -95,18 +97,23 @@ public sealed record ReportDiff(
         {
             var (x, y) = (a.Dimensions[i], b.Dimensions[i]);
             if (x.Field != y.Field) return $"dimension {i + 1} is field '{y.Field}', not '{x.Field}'";
-            if (x.Scheme != y.Scheme) return $"dimension {i + 1} is {Split(y)}, not {Split(x)}";
+            if (x.Scheme != y.Scheme || x.OfSubject != y.OfSubject) return $"dimension {i + 1} is {Split(y)}, not {Split(x)}";
         }
+        if (a.Filters.Count != b.Filters.Count
+            || a.Filters.Zip(b.Filters).Any(p => p.First.On with { Version = null } != p.Second.On with { Version = null }
+                || !p.First.In.Order(StringComparer.Ordinal).SequenceEqual(p.Second.In.Order(StringComparer.Ordinal), StringComparer.Ordinal)))
+            return "it filters the records differently";
         if (!a.Resolved || !b.Resolved) return "a run counts in scheme versions, and one of them names none";
         if (earlier.From != later.From || earlier.To != later.To)
             return $"its period is {later.From:yyyy-MM-dd}..{later.To:yyyy-MM-dd}, not {earlier.From:yyyy-MM-dd}..{earlier.To:yyyy-MM-dd}";
-        foreach (var (x, y) in a.Dimensions.Zip(b.Dimensions))
+        foreach (var (x, y) in a.Dimensions.Zip(b.Dimensions).Concat(a.Filters.Zip(b.Filters).Select(p => (p.First.On, p.Second.On))))
             if (y.Version < x.Version)
                 return $"the later run counts version {y.Version} of '{y.Scheme}', before the earlier run's {x.Version}";
         return null;
     }
 
-    private static string Split(ReportDimension d) => d.Scheme is { } scheme ? $"classified in '{scheme}'" : "split by its string value";
+    private static string Split(ReportDimension d) =>
+        (d.Scheme is { } scheme ? $"classified in '{scheme}'" : "split by its string value") + (d.OfSubject ? " of the subjects" : "");
 
     // Where a revision alone would put a record from `place`: each classified place carried to the
     // later run's version. Places other than a cell hold no code, so nothing is carried from them.
@@ -118,7 +125,7 @@ public sealed record ReportDiff(
         for (var i = 0; i < place.Length; i++)
         {
             var (from, to) = (earlier.Dimensions[i], later.Dimensions[i]);
-            if (!from.Classified || from.Version == to.Version)
+            if (!from.Classified || from.Version == to.Version || place[i] is null)
             {
                 carried[i] = place[i];
                 continue;

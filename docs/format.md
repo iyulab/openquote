@@ -196,15 +196,20 @@ In `openquote.report/1`, a form splits what it counts by one to three `dimension
   "period": { "unit": "month", "field": "date" },
   "dimensions": [
     { "field": "topic", "scheme": "topic", "version": "in-force" },
-    { "field": "level", "scheme": "school-level", "version": 1 },
+    { "field": "level", "scheme": "school-level", "version": 1, "of": "subject" },
     { "field": "practitioner" }
+  ],
+  "filters": [
+    { "field": "gender", "of": "subject", "in": ["f"] }
   ]
 }
 ```
 
 - A dimension with a `scheme` and a `version` counts the field's classified values in that scheme version; `version` may be `"in-force"`: a run counts in the version of the scheme in force on the last day of its period (see a scheme's `effective`), so a form follows a revision without being written again. The run record names the version it counted in.
 - A dimension with only a `field` splits by the field's string value, `null` when a record has none.
-- A form counts each scheme in one version: two dimensions of the same scheme name the same version.
+- With `"of": "subject"`, a dimension reads the field of the subjects a record is about rather than of the record. A record about one subject takes that subject's value — pending, unmapped, blank or conflicted as the record's own field would be. A record about several subjects takes their value when they all have the same one; otherwise, and when it is about none, its place is `null`: no single value.
+- `filters` (optional): each is read as a dimension is, with `in` listing the codes or string values it lets through. A record whose value there is not listed — or is `null` — is not in the run at all. A record a filter cannot place yet (pending, unmapped, blank or conflicted there) is kept and listed with those records, so a filter never drops a record silently.
+- A form counts each scheme in one version: two dimensions or filters of the same scheme name the same version.
 - A format 1 form never has `rows` or `columns`; a form that rows and a column describe is the same form either way, and its runs are the same.
 
 ## Run records
@@ -237,7 +242,7 @@ In `openquote.report/1`, a form splits what it counts by one to three `dimension
 - `schemes` records, for each scheme the form counts in, the version counted in and the crosswalks applied (as `from-to`, or `<scheme>/<from>-<into>/<to>` across schemes; omitted when none were). For a form that counts in the version in force, `boundaries` (omitted when empty) lists each day within the period on which the version in force changes, with the version before and from that day (`null` when none was in force): counts on either side were entered under different versions.
 - `period` gives the first and last calendar day, inclusive.
 - Each cell names its `row` code, its `column` (a string or `null`) and the `records` counted in it. Cells with no records are not written.
-- In `openquote.run/1`, each cell names its `key` instead: one place per dimension of the form, in its order — a code where the dimension is classified, a string or `null` where it splits by a string value (`"key": ["school/attendance", null]`). A run whose form only has rows and a column, with no blank or conflicted records, is written in format 0, which an engine that predates format 1 reads; any other run is written in format 1.
+- In `openquote.run/1`, each cell names its `key` instead: one place per dimension of the form, in its order — a code where the dimension is classified, a string or `null` where it splits by a string value, and `null` where the subjects a record is about have no single value (`"key": ["school/attendance", null]`). A run whose form only has rows and a column of the record, no filter, and no blank or conflicted records, is written in format 0, which an engine that predates format 1 reads; any other run is written in format 1.
 - `pending`, `unmapped`, `blank` and `conflicted` list records not placed in any cell: a value waiting for a person to choose among codes, a value with no code in the form's version, no value to count, and concurrent values in a field the form places by (its period field or a dimension's field). A record that several classified dimensions leave out of the cells is listed once: as pending when any of them waits for a person, otherwise as unmapped when any has no code, otherwise as blank. `total` lists every record in the period and must equal the cells plus those sets, each record in exactly one of them.
 - `blank` and `conflicted` are written only in `openquote.run/1`, and both always are there. A format 0 record may still carry `blank` as a part of `unmapped`, as earlier engines wrote it; a reader takes those records out of `unmapped`.
 - `count` keys are written for readability; readers derive every count from `records`.

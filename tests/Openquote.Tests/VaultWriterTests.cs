@@ -432,6 +432,45 @@ public class VaultWriterTests
         Assert.Equal(run.Total, kept.Total);
     }
 
+    [Fact]
+    public void A_format_1_form_reads_dimensions_of_the_subjects_and_filters()
+    {
+        var formFile = FormFile(""" "format":"openquote.report/1","dimensions":[{"field":"kind","scheme":"kind","version":1},{"field":"level","scheme":"level","version":"in-force","of":"subject"}],"filters":[{"field":"grade","of":"subject","in":["2","3"]},{"field":"kind","scheme":"kind","version":1,"in":["a"]}]}""");
+
+        var form = Assert.Single(VaultReader.Read([formFile]).Reports);
+
+        Assert.Equal(new ReportDimension("level", "level", null, OfSubject: true), form.Dimensions[1]);
+        Assert.Equal([new ReportFilter(new ReportDimension("grade", OfSubject: true), ["2", "3"]), new ReportFilter(new ReportDimension("kind", "kind", 1), ["a"])], form.Filters);
+        Assert.Equal(["kind", "level"], form.Schemes);
+    }
+
+    [Theory]
+    [InlineData(""" "dimensions":[{"field":"kind","scheme":"kind","version":1,"of":"group"}]}""")] // only the subjects
+    [InlineData(""" "dimensions":[{"field":"kind","scheme":"kind","version":1}],"filters":[{"field":"grade"}]}""")] // no values
+    [InlineData(""" "dimensions":[{"field":"kind","scheme":"kind","version":1}],"filters":[{"field":"grade","in":[]}]}""")] // lets nothing through
+    [InlineData(""" "dimensions":[{"field":"kind","scheme":"kind","version":1}],"filters":[{"field":"kind","scheme":"kind","version":2,"in":["a"]}]}""")] // one scheme, two versions
+    public void A_format_1_form_with_a_dimension_or_filter_the_engine_cannot_run_is_unreadable(string rest)
+    {
+        var content = VaultReader.Read([FormFile(""" "format":"openquote.report/1",""" + rest)]);
+
+        Assert.Empty(content.Reports);
+        Assert.Equal(UnreadableReason.Invalid, Assert.Single(content.Unreadable).Reason);
+    }
+
+    [Fact]
+    public void A_run_with_no_single_subject_value_reads_back_with_a_null_place()
+    {
+        var formFile = FormFile(""" "format":"openquote.report/1","dimensions":[{"field":"kind","scheme":"kind","version":1},{"field":"level","scheme":"level","version":1,"of":"subject"}]}""");
+        var form = Assert.Single(VaultReader.Read([formFile]).Reports);
+        var run = new ReportRun(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31),
+            [new ReportScheme("kind", 1, [], []), new ReportScheme("level", 1, [], [])],
+            [new ReportCell(["a", null], ["r1"]), new ReportCell(["a", "mid"], ["r2"])], [], [], [], []);
+
+        var kept = Assert.Single(VaultReader.Read([Writer().RunRecord(run), formFile]).Runs).Run;
+
+        Assert.Equal(run.Cells.Select(c => c.Key), kept.Cells.Select(c => c.Key));
+    }
+
     [Theory]
     [InlineData("""[null, "mid", "p1"]""")] // a classified place holds a code
     [InlineData("""["a", "mid"]""")] // one place per dimension

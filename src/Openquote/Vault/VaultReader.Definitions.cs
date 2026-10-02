@@ -243,6 +243,7 @@ public static partial class VaultReader
             return Bad<ReportDefinition>(file, UnreadableReason.Invalid, "period must be {\"unit\": \"month\", \"field\": ...}");
 
         var dimensions = new List<ReportDimension>();
+        var filters = new List<ReportFilter>();
         if (v1)
         {
             if (root.TryGetProperty("rows", out _) || root.TryGetProperty("columns", out _))
@@ -251,19 +252,20 @@ public static partial class VaultReader
                 return Bad<ReportDefinition>(file, UnreadableReason.Invalid, "a format 1 report lists its dimensions");
             foreach (var d in list.EnumerateArray())
             {
-                if (d.ValueKind != JsonValueKind.Object || !TryString(d, "field", out var field))
-                    return Bad<ReportDefinition>(file, UnreadableReason.Invalid, "a dimension names a field");
-                var hasScheme = d.TryGetProperty("scheme", out _);
-                var hasVersion = d.TryGetProperty("version", out _);
-                if (!hasScheme && !hasVersion)
+                if (ParseDimension(d) is not { } dimension)
+                    return Bad<ReportDefinition>(file, UnreadableReason.Invalid, DimensionShape);
+                dimensions.Add(dimension);
+            }
+            if (root.TryGetProperty("filters", out var filtersJson))
+            {
+                if (filtersJson.ValueKind != JsonValueKind.Array)
+                    return Bad<ReportDefinition>(file, UnreadableReason.Invalid, "filters must be a list");
+                foreach (var f in filtersJson.EnumerateArray())
                 {
-                    dimensions.Add(new ReportDimension(field));
-                    continue;
+                    if (ParseDimension(f) is not { } on || !f.TryGetProperty("in", out var values) || !TryIds(values, out var allowed))
+                        return Bad<ReportDefinition>(file, UnreadableReason.Invalid, $"{DimensionShape}; a filter also lists the values it lets through in \"in\"");
+                    filters.Add(new ReportFilter(on, allowed));
                 }
-                if (!TryString(d, "scheme", out var scheme) || !TryDimensionVersion(d, out var counted))
-                    return Bad<ReportDefinition>(file, UnreadableReason.Invalid,
-                        "a classified dimension names a scheme and a scheme version or \"in-force\"");
-                dimensions.Add(new ReportDimension(field, scheme, counted));
             }
         }
         else
@@ -281,8 +283,27 @@ public static partial class VaultReader
             }
         }
 
-        var report = new ReportDefinition(name, version, label, counts, periodField, dimensions);
+        var report = new ReportDefinition(name, version, label, counts, periodField, dimensions) { Filters = filters };
         return report.Problem() is { } problem ? Bad<ReportDefinition>(file, UnreadableReason.Invalid, problem) : new(report, null);
+    }
+
+    private const string DimensionShape =
+        "a dimension names a field, with a scheme and a scheme version or \"in-force\" when it is classified, and \"of\": \"subject\" to read the subjects' field";
+
+    // {field, scheme?, version?, of?}: classified when it has a scheme and a version, of the subjects with of "subject".
+    private static ReportDimension? ParseDimension(JsonElement d)
+    {
+        if (d.ValueKind != JsonValueKind.Object || !TryString(d, "field", out var field)) return null;
+        var ofSubject = false;
+        if (d.TryGetProperty("of", out _))
+        {
+            if (!TryString(d, "of", out var of) || of != "subject") return null;
+            ofSubject = true;
+        }
+        if (!d.TryGetProperty("scheme", out _) && !d.TryGetProperty("version", out _)) return new ReportDimension(field, OfSubject: ofSubject);
+        return TryString(d, "scheme", out var scheme) && TryDimensionVersion(d, out var counted)
+            ? new ReportDimension(field, scheme, counted, ofSubject)
+            : null;
     }
 
     // A scheme version, or "in-force" (null): the version in force on the last day of the period run.

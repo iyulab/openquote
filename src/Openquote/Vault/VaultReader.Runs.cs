@@ -78,10 +78,7 @@ public static partial class VaultReader
             }
             counted.Add(new ReportScheme(schemeName, schemeVersion.Value, crosswalks, boundaries));
         }
-        report = report with
-        {
-            Dimensions = [.. report.Dimensions.Select(d => d.Classified ? d with { Version = counted.First(c => c.Scheme == d.Scheme).Version } : d)],
-        };
+        report = report.Counted(counted.ToDictionary(c => c.Scheme, c => c.Version, StringComparer.Ordinal));
 
         if (!root.TryGetProperty("period", out var period) || period.ValueKind != JsonValueKind.Object
             || !TryString(period, "from", out var fromText) || !TryString(period, "to", out var toText)
@@ -146,7 +143,8 @@ public static partial class VaultReader
         return new(new KeptRun(id, device, at, file.Path, run), null);
     }
 
-    // Format 1: one place per dimension, a code where it is classified and a string or null elsewhere.
+    // Format 1: one place per dimension — a code where it is classified, a string or null elsewhere,
+    // and null where the subjects a record is about have no single value.
     private static string?[]? KeyOf(JsonElement cell, ReportDefinition report)
     {
         if (!cell.TryGetProperty("key", out var key) || key.ValueKind != JsonValueKind.Array
@@ -156,7 +154,7 @@ public static partial class VaultReader
         foreach (var place in key.EnumerateArray())
         {
             if (place.ValueKind == JsonValueKind.String) places[i] = place.GetString();
-            else if (place.ValueKind != JsonValueKind.Null || report.Dimensions[i].Classified) return null;
+            else if (place.ValueKind != JsonValueKind.Null || (report.Dimensions[i].Classified && !report.Dimensions[i].OfSubject)) return null;
             i++;
         }
         return places;

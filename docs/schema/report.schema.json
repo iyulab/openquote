@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/iyulab/openquote/blob/main/docs/schema/report.schema.json",
   "title": "Openquote report form",
-  "description": "reports/<report>/v<version>.json. Format 0 splits by rows (a classified field) and an optional string column; format 1 by one to three dimensions, each a classified field in a scheme version (or \"in-force\": the version in force on the last day of the period run) or a field split by its string value. A form counts each scheme in one version; a reader checks that.",
+  "description": "reports/<report>/v<version>.json. Format 0 splits by rows (a classified field) and an optional string column; format 1 by one to three dimensions, each a classified field in a scheme version (or \"in-force\": the version in force on the last day of the period run) or a field split by its string value — of the record, or with of \"subject\" of the subjects it is about — and filters that let through only the records whose value is listed in \"in\". A form counts each scheme in one version; a reader checks that.",
   "type": "object",
   "required": ["format", "report", "version", "label", "counts", "period"],
   "properties": {
@@ -33,24 +33,31 @@
       "required": ["field"],
       "properties": { "field": { "type": "string", "minLength": 1 } }
     },
-    "dimensions": {
+    "dimensions": { "type": "array", "minItems": 1, "maxItems": 3, "items": { "$ref": "#/$defs/dimension" } },
+    "filters": {
       "type": "array",
-      "minItems": 1,
-      "maxItems": 3,
       "items": {
-        "type": "object",
-        "required": ["field"],
-        "properties": {
-          "field": { "type": "string", "minLength": 1 },
-          "scheme": { "type": "string", "minLength": 1 },
-          "version": { "oneOf": [{ "type": "integer", "minimum": 1 }, { "const": "in-force" }] }
-        },
-        "dependentRequired": { "scheme": ["version"], "version": ["scheme"] }
+        "allOf": [{ "$ref": "#/$defs/dimension" }],
+        "required": ["in"],
+        "properties": { "in": { "type": "array", "minItems": 1, "items": { "type": "string" } } }
       }
     }
   },
+  "$defs": {
+    "dimension": {
+      "type": "object",
+      "required": ["field"],
+      "properties": {
+        "field": { "type": "string", "minLength": 1 },
+        "scheme": { "type": "string", "minLength": 1 },
+        "version": { "oneOf": [{ "type": "integer", "minimum": 1 }, { "const": "in-force" }] },
+        "of": { "const": "subject" }
+      },
+      "dependentRequired": { "scheme": ["version"], "version": ["scheme"] }
+    }
+  },
   "if": { "properties": { "format": { "const": "openquote.report/0" } } },
-  "then": { "required": ["rows"], "not": { "required": ["dimensions"] } },
+  "then": { "required": ["rows"], "not": { "anyOf": [{ "required": ["dimensions"] }, { "required": ["filters"] }] } },
   "else": {
     "required": ["dimensions"],
     "not": { "anyOf": [{ "required": ["rows"] }, { "required": ["columns"] }] }

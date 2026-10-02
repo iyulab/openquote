@@ -18,8 +18,11 @@ public static class ReportRunner
     /// place in the key, several leave the entity pending, none leave it unmapped — or blank when the
     /// field holds no value to count (see <see cref="Entity.HasValue"/>), so an empty field is told
     /// apart from a gap in the crosswalks. When dimensions disagree, pending wins over unmapped and
-    /// unmapped over blank. A string dimension's place is the field's string value, or null.
-    /// Destroyed entities are not counted. Each counted record also carries the subjects it is
+    /// unmapped over blank. A string dimension's place is the field's string value, or null. A
+    /// dimension of the subjects reads their field instead (see <see cref="ReportDimension.OfSubject"/>).
+    /// A record a filter places outside its values is not in the run at all; one a filter cannot
+    /// place yet — pending, unmapped, blank or conflicted there — is listed with those records, so a
+    /// filter never drops a record silently. Destroyed entities are not counted. Each counted record also carries the subjects it is
     /// about, so the run gives a head count beside every record count. A dimension that names no
     /// scheme version counts in the version in force on <paramref name="to"/>, and the run notes any
     /// day within the period on which that version changes.
@@ -38,58 +41,54 @@ public static class ReportRunner
         if (report.Problem() is { } problem) throw new ArgumentException(problem, nameof(report));
         var form = report.For(to, catalog)
             ?? throw new ArgumentException(
-                $"no version of scheme '{report.Dimensions.First(d => d.Classified && d.Version is null && catalog.InForce(d.Scheme!, to) is null).Scheme}' is in force on {to:yyyy-MM-dd}",
+                $"no version of scheme '{report.Schemes.First(s => report.VersionOf(s) is null && catalog.InForce(s, to) is null)}' is in force on {to:yyyy-MM-dd}",
                 nameof(report));
         var dimensions = form.Dimensions;
+        var placing = new Placing(catalog,
+            form.Schemes.ToDictionary(s => s, _ => new SortedSet<string>(StringComparer.Ordinal), StringComparer.Ordinal),
+            Subjects(entities, form));
 
         var cells = new SortedDictionary<IReadOnlyList<string?>, List<string>>(KeyComparer.Instance);
         var pending = new List<string>();
         var unmapped = new List<string>();
         var blank = new List<string>();
         var conflicted = new List<string>();
-        var crosswalks = form.Schemes.ToDictionary(s => s, _ => new SortedSet<string>(StringComparer.Ordinal), StringComparer.Ordinal);
         var people = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
 
         foreach (var entity in entities)
         {
             if (entity.Destroyed || entity.Reference.Type != report.Counts) continue;
             var id = entity.Reference.Id;
-            if (entity.Conflicts.TryGetValue(report.PeriodField, out var dates))
+            var disputed = entity.Conflicts.TryGetValue(report.PeriodField, out var dates);
+            if (disputed)
             {
-                if (!dates.Any(d => ParseDate(d.Value) is { } day && day >= from && day <= to)) continue;
-                people[id] = entity.People;
-                conflicted.Add(id);
-                continue;
+                if (!dates!.Any(d => ParseDate(d.Value) is { } day && day >= from && day <= to)) continue;
             }
-            if (!entity.Fields.TryGetValue(report.PeriodField, out var dateValue) || ParseDate(dateValue) is not { } date
+            else if (!entity.Fields.TryGetValue(report.PeriodField, out var dateValue) || ParseDate(dateValue) is not { } date
                 || date < from || date > to) continue;
 
-            people[id] = entity.People;
-            if (dimensions.Any(d => entity.Conflicts.ContainsKey(d.Field)))
+            // A filter that reads a value outside its list leaves the record out of the run; one that
+            // cannot read a value yet keeps it in, among the records waiting for that value.
+            var outcome = disputed ? Outcome.Conflicted : Outcome.Placed;
+            var excluded = false;
+            foreach (var filter in form.Filters)
             {
-                conflicted.Add(id);
-                continue;
-            }
-            var key = new string?[dimensions.Count];
-            var outcome = Outcome.Placed;
-            for (var i = 0; i < dimensions.Count; i++)
-            {
-                var d = dimensions[i];
-                if (!d.Classified)
+                var (filterOutcome, value) = placing.Place(entity, filter.On);
+                if (filterOutcome == Outcome.Placed && (value is null || !filter.In.Contains(value, StringComparer.Ordinal)))
                 {
-                    key[i] = StringOf(entity, d.Field);
-                    continue;
+                    excluded = true;
+                    break;
                 }
-                var resolution = entity.Classify(d.Field, d.Scheme!, d.Version!.Value, catalog);
-                crosswalks[d.Scheme!].UnionWith(resolution.Crosswalks);
-                key[i] = resolution.Code;
-                var missed = resolution.Kind switch
-                {
-                    ResolutionKind.Assigned => Outcome.Placed,
-                    ResolutionKind.Pending => Outcome.Pending,
-                    _ => entity.HasValue(d.Field) ? Outcome.Unmapped : Outcome.Blank,
-                };
-                if (missed > outcome) outcome = missed;
+                outcome = Max(outcome, filterOutcome);
+            }
+            if (excluded) continue;
+
+            people[id] = entity.People;
+            var key = new string?[dimensions.Count];
+            for (var i = 0; i < dimensions.Count && outcome != Outcome.Conflicted; i++)
+            {
+                (var placed, key[i]) = placing.Place(entity, dimensions[i]);
+                outcome = Max(outcome, placed);
             }
             switch (outcome)
             {
@@ -97,6 +96,7 @@ public static class ReportRunner
                     if (!cells.TryGetValue(key, out var list)) cells[key] = list = [];
                     list.Add(id);
                     break;
+                case Outcome.Conflicted: conflicted.Add(id); break;
                 case Outcome.Pending: pending.Add(id); break;
                 case Outcome.Unmapped: unmapped.Add(id); break;
                 default: blank.Add(id); break;
@@ -105,7 +105,7 @@ public static class ReportRunner
 
         return new ReportRun(
             form, from, to,
-            [.. form.Schemes.Select(s => new ReportScheme(s, form.VersionOf(s)!.Value, crosswalks[s].ToArray(),
+            [.. form.Schemes.Select(s => new ReportScheme(s, form.VersionOf(s)!.Value, placing.Crosswalks[s].ToArray(),
                 report.VersionOf(s) is null ? catalog.Boundaries(s, from, to) : []))],
             cells.Select(kv => new ReportCell(kv.Key, Sorted(kv.Value))).ToArray(),
             Sorted(pending),
@@ -122,8 +122,53 @@ public static class ReportRunner
         return Run(report, from, from.AddMonths(1).AddDays(-1), entities, catalog);
     }
 
-    // Ordered so a record several dimensions leave out lands in the set the later member names.
-    private enum Outcome { Placed, Blank, Unmapped, Pending }
+    // Ordered so a record placed several ways lands in the set the later member names.
+    private enum Outcome { Placed, Blank, Unmapped, Pending, Conflicted }
+
+    private static Outcome Max(Outcome a, Outcome b) => a > b ? a : b;
+
+    // The subjects records may be placed by, by id — only when the form reads a subject's field.
+    private static Dictionary<string, Entity> Subjects(IEnumerable<Entity> entities, ReportDefinition form) =>
+        form.Dimensions.Concat(form.Filters.Select(f => f.On)).Any(d => d.OfSubject)
+            ? entities.Where(e => !e.Destroyed && e.Reference.Type == "subject")
+                .ToDictionary(e => e.Reference.Id, StringComparer.Ordinal)
+            : new Dictionary<string, Entity>();
+
+    private sealed record Placing(SchemeCatalog Catalog, Dictionary<string, SortedSet<string>> Crosswalks,
+        Dictionary<string, Entity> Subjects)
+    {
+        // Where a dimension places a record: by the record's own field, or by its subjects' — the
+        // subject's place when there is one, their common value when there are several and they
+        // agree on it, and otherwise no single value (null).
+        public (Outcome, string?) Place(Entity record, ReportDimension d)
+        {
+            if (!d.OfSubject) return PlaceIn(record, d);
+            var places = record.People
+                .Select(id => Subjects.GetValueOrDefault(id))
+                .OfType<Entity>()
+                .Select(subject => PlaceIn(subject, d))
+                .ToList();
+            if (places.Count == 1) return places[0];
+            return places.Count > 0 && places.All(p => p.Item1 == Outcome.Placed && p.Item2 is not null)
+                && places.Select(p => p.Item2).Distinct(StringComparer.Ordinal).Count() == 1
+                ? places[0]
+                : (Outcome.Placed, null);
+        }
+
+        private (Outcome, string?) PlaceIn(Entity entity, ReportDimension d)
+        {
+            if (entity.Conflicts.ContainsKey(d.Field)) return (Outcome.Conflicted, null);
+            if (!d.Classified) return (Outcome.Placed, StringOf(entity, d.Field));
+            var resolution = entity.Classify(d.Field, d.Scheme!, d.Version!.Value, Catalog);
+            Crosswalks[d.Scheme!].UnionWith(resolution.Crosswalks);
+            return resolution.Kind switch
+            {
+                ResolutionKind.Assigned => (Outcome.Placed, resolution.Code),
+                ResolutionKind.Pending => (Outcome.Pending, null),
+                _ => (entity.HasValue(d.Field) ? Outcome.Unmapped : Outcome.Blank, null),
+            };
+        }
+    }
 
     // An absent or cleared string value is the null place.
     private static string? StringOf(Entity entity, string field) =>

@@ -559,4 +559,115 @@ public class ReportRunnerTests
         Assert.False(root.GetProperty("cells")[0].TryGetProperty("row", out _));
         Assert.Equal(1, root.GetProperty("schemes").GetProperty("level").GetProperty("version").GetInt32());
     }
+
+    private sealed class StepClock : TimeProvider
+    {
+        private DateTimeOffset _now = new(2026, 4, 1, 0, 0, 0, TimeSpan.Zero);
+        public override DateTimeOffset GetUtcNow() => _now = _now.AddSeconds(1);
+    }
+
+    private static Dictionary<string, JsonNode?> Fields(params (string Key, JsonNode? Value)[] fields) =>
+        fields.ToDictionary(f => f.Key, f => f.Value);
+
+    private static JsonObject Level(string code) => new() { ["scheme"] = "level", ["version"] = 1, ["code"] = code };
+
+    // Subjects one (grade 2, middle), two (grade 3, high) and three (grade 2, no level); a session of
+    // each, and group sessions of one with two and of one with three.
+    private static (IReadOnlyList<Entity> Entities, Dictionary<string, string> Sessions) Pupils()
+    {
+        var w = new VaultWriter("dev1", new StepClock());
+        var files = new List<VaultFile>();
+        string Add(VaultFile f)
+        {
+            files.Add(f);
+            return VaultReader.Read([f]).Changes[0].Entity.Id;
+        }
+        var one = Add(w.CreateSubject(Fields(("grade", "2"), ("level", Level("mid")))));
+        var two = Add(w.CreateSubject(Fields(("grade", "3"), ("level", Level("high")))));
+        var three = Add(w.CreateSubject(Fields(("grade", "2"))));
+        var group = Add(w.CreateGroup(Fields(("name", "g"))));
+        JsonObject Kind() => Coded(1, "a");
+        var sessions = new Dictionary<string, string>
+        {
+            ["one"] = Add(w.CreateInSubject(one, "session", Fields(("day", "2026-03-02"), ("kind", Kind())))),
+            ["two"] = Add(w.CreateInSubject(two, "session", Fields(("day", "2026-03-03"), ("kind", Kind())))),
+            ["one+two"] = Add(w.CreateInGroup(group, "session", Fields(("day", "2026-03-04"), ("kind", Kind()), ("attendees", new JsonArray(one, two))))),
+            ["one+three"] = Add(w.CreateInGroup(group, "session", Fields(("day", "2026-03-05"), ("kind", Kind()), ("attendees", new JsonArray(one, three))))),
+            ["three"] = Add(w.CreateInSubject(three, "session", Fields(("day", "2026-03-06"), ("kind", Kind())))),
+        };
+        return (EntityMerger.Merge(VaultReader.Read(files).Changes).Values.ToList(), sessions);
+    }
+
+    private static ReportDefinition Sessions(params ReportDimension[] dimensions) =>
+        new("pupils", 1, "Pupils", "session", "day", [new ReportDimension("kind", "kind", 1), .. dimensions]);
+
+    private static string[] Ids(Dictionary<string, string> sessions, params string[] names) =>
+        [.. names.Select(n => sessions[n]).Order(StringComparer.Ordinal)];
+
+    [Fact]
+    public void A_dimension_of_the_subjects_reads_their_field_and_has_no_single_value_when_they_differ()
+    {
+        var (entities, s) = Pupils();
+
+        var run = ReportRunner.RunMonth(Sessions(new ReportDimension("grade", OfSubject: true)), 2026, 3, entities, Levels);
+
+        Assert.Collection(run.Cells,
+            c => { Assert.Equal(["a", null], c.Key); Assert.Equal(Ids(s, "one+two"), c.Records); },
+            c => { Assert.Equal(["a", "2"], c.Key); Assert.Equal(Ids(s, "one", "one+three", "three"), c.Records); },
+            c => { Assert.Equal(["a", "3"], c.Key); Assert.Equal(Ids(s, "two"), c.Records); });
+    }
+
+    [Fact]
+    public void A_classified_dimension_of_one_subject_leaves_a_missing_value_blank()
+    {
+        var (entities, s) = Pupils();
+
+        var run = ReportRunner.RunMonth(Sessions(new ReportDimension("level", "level", 1, OfSubject: true)), 2026, 3, entities, Levels);
+
+        Assert.Equal(Ids(s, "three"), run.Blank);
+        Assert.Equal([["a", null], ["a", "high"], ["a", "mid"]], run.Cells.Select(c => c.Key));
+        Assert.Equal(Ids(s, "one+two", "one+three"), run.Cells[0].Records);
+        Assert.Equal(5, run.Total.Count);
+    }
+
+    [Fact]
+    public void A_filter_leaves_out_records_whose_value_is_not_listed_and_keeps_those_it_cannot_place_yet()
+    {
+        var (entities, s) = Pupils();
+        var byGrade = Sessions() with { Filters = [new ReportFilter(new ReportDimension("grade", OfSubject: true), ["2"])] };
+        var byLevel = Sessions() with { Filters = [new ReportFilter(new ReportDimension("level", "level", 1, OfSubject: true), ["mid"])] };
+
+        var grade = ReportRunner.RunMonth(byGrade, 2026, 3, entities, Levels);
+        var level = ReportRunner.RunMonth(byLevel, 2026, 3, entities, Levels);
+
+        Assert.Equal(Ids(s, "one", "one+three", "three"), grade.Total); // two is grade 3; one+two has no single grade
+        Assert.Equal(Ids(s, "one"), Assert.Single(level.Cells).Records);
+        Assert.Equal(Ids(s, "three"), level.Blank); // no level yet: listed, not dropped
+        Assert.Equal(Ids(s, "one", "three"), level.Total);
+        Assert.Equal(["level"], level.Schemes.Skip(1).Select(x => x.Scheme));
+    }
+
+    [Fact]
+    public void Runs_filtered_differently_are_not_compared()
+    {
+        var (entities, _) = Pupils();
+        var form = Sessions() with { Filters = [new ReportFilter(new ReportDimension("grade", OfSubject: true), ["2"])] };
+        var earlier = ReportRunner.RunMonth(form, 2026, 3, entities, Levels);
+        var later = ReportRunner.RunMonth(form with { Filters = [new ReportFilter(new ReportDimension("grade", OfSubject: true), ["3"])] }, 2026, 3, entities, Levels);
+
+        Assert.Throws<ArgumentException>(() => ReportDiff.Compare(earlier, later, Levels));
+        Assert.Empty(ReportDiff.Compare(earlier, ReportRunner.RunMonth(form, 2026, 3, entities, Levels), Levels).Moved);
+    }
+
+    [Fact]
+    public void A_run_with_a_filter_or_a_dimension_of_the_subjects_is_written_with_keys()
+    {
+        var (entities, _) = Pupils();
+        var run = ReportRunner.RunMonth(Sessions(new ReportDimension("grade", OfSubject: true)), 2026, 3, entities, Levels);
+
+        var text = System.Text.Encoding.UTF8.GetString(ReportRunJson.Write(run, Id(3), "dev1", new DateTimeOffset(2026, 4, 1, 9, 0, 0, TimeSpan.Zero)));
+
+        Assert.Contains("\"openquote.run/1\"", text, StringComparison.Ordinal);
+        Assert.False((Sessions() with { Filters = [new ReportFilter(new ReportDimension("grade"), ["2"])] }).RowsAndColumn);
+    }
 }
