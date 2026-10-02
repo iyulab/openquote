@@ -26,7 +26,8 @@ public sealed record ReportScheme(string Scheme, int Version, IReadOnlyList<stri
 /// <summary>
 /// The result of running a report form over a period. Every number traces back to the ids of the
 /// records behind it; the total is always the cells plus the pending, unmapped, blank and
-/// conflicted records, each record in exactly one of them.
+/// conflicted records, each record in exactly one of them — unless the run is
+/// <see cref="Multiple"/>, where a record is in every cell its values lead to.
 /// </summary>
 /// <param name="Report">The form that was run, with the scheme versions it counted in.</param>
 /// <param name="From">First day of the period, inclusive.</param>
@@ -51,6 +52,8 @@ public sealed record ReportScheme(string Scheme, int Version, IReadOnlyList<stri
 /// <remarks>
 /// A record that more than one classified dimension leaves out of the cells is in one set only:
 /// pending when any of them waits for a person, otherwise unmapped when any has no code, otherwise blank.
+/// In a <see cref="Multiple"/> run, a record whose values lead to cells and also include one that
+/// cannot be placed is in those cells and in the set for that value.
 /// </remarks>
 public sealed record ReportRun(
     ReportDefinition Report,
@@ -64,10 +67,17 @@ public sealed record ReportRun(
     IReadOnlyList<string> Conflicted,
     IReadOnlyDictionary<string, IReadOnlyList<string>>? People = null)
 {
-    /// <summary>Every record in the period: the cells, pending, unmapped, blank and conflicted records.</summary>
+    /// <summary>
+    /// True when the form counts every value of a field holding several (see
+    /// <see cref="ReportDimension.All"/>): a record may then be in several cells, and the cells add up
+    /// to more than <see cref="Total"/>.
+    /// </summary>
+    public bool Multiple => Report.Dimensions.Any(d => d.All);
+
+    /// <summary>Every record in the period, once: the cells, pending, unmapped, blank and conflicted records.</summary>
     public IReadOnlyList<string> Total { get; } =
         Cells.SelectMany(c => c.Records).Concat(Pending).Concat(Unmapped).Concat(Blank).Concat(Conflicted)
-            .Order(StringComparer.Ordinal).ToArray();
+            .Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
 
     /// <summary>
     /// The visits behind <paramref name="records"/>: for each record, the number of people it is

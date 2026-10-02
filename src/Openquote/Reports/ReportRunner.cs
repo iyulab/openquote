@@ -84,18 +84,30 @@ public static class ReportRunner
             if (excluded) continue;
 
             people[id] = entity.People;
-            var key = new string?[dimensions.Count];
+            // Each dimension gives the places it puts the record in — one, or for a dimension counting
+            // every value, one per value — and what it could not place. A record a single-valued
+            // dimension cannot place is in no cell; one a value of an every-value dimension cannot
+            // place is in the cells its other values lead to and in the set for that value.
+            var places = new List<IReadOnlyList<string?>>(dimensions.Count);
+            var missed = Outcome.Placed;
             for (var i = 0; i < dimensions.Count && outcome != Outcome.Conflicted; i++)
             {
-                (var placed, key[i]) = placing.Place(entity, dimensions[i]);
-                outcome = Max(outcome, placed);
+                var (each, failed) = placing.PlaceEach(entity, dimensions[i]);
+                places.Add(each);
+                if (dimensions[i].All) missed = Max(missed, failed);
+                else outcome = Max(outcome, failed);
             }
-            switch (outcome)
+            if (outcome == Outcome.Placed)
             {
-                case Outcome.Placed:
+                foreach (var key in Keys(places))
+                {
                     if (!cells.TryGetValue(key, out var list)) cells[key] = list = [];
                     list.Add(id);
-                    break;
+                }
+            }
+            switch (Max(outcome, missed))
+            {
+                case Outcome.Placed: break;
                 case Outcome.Conflicted: conflicted.Add(id); break;
                 case Outcome.Pending: pending.Add(id); break;
                 case Outcome.Unmapped: unmapped.Add(id); break;
@@ -135,6 +147,14 @@ public static class ReportRunner
         return Run(report, from, to, entities, catalog);
     }
 
+    // Every key the places make, one place from each dimension.
+    private static IEnumerable<string?[]> Keys(List<IReadOnlyList<string?>> places)
+    {
+        IEnumerable<string?[]> keys = [[]];
+        foreach (var each in places) keys = keys.SelectMany(k => each.Select(p => (string?[])[.. k, p]));
+        return keys;
+    }
+
     // Ordered so a record placed several ways lands in the set the later member names.
     private enum Outcome { Placed, Blank, Unmapped, Pending, Conflicted }
 
@@ -166,6 +186,30 @@ public static class ReportRunner
                 && places.Select(p => p.Item2).Distinct(StringComparer.Ordinal).Count() == 1
                 ? places[0]
                 : (Outcome.Placed, null);
+        }
+
+        // The places a dimension puts a record in, and the worst it could not place: for a dimension
+        // counting every value, each value carried on its own — the distinct codes they lead to.
+        public (IReadOnlyList<string?> Places, Outcome Missed) PlaceEach(Entity record, ReportDimension d)
+        {
+            if (!d.All)
+            {
+                var (outcome, place) = Place(record, d);
+                return outcome == Outcome.Placed ? ([place], Outcome.Placed) : ([], outcome);
+            }
+            if (record.Conflicts.ContainsKey(d.Field)) return ([], Outcome.Conflicted);
+            if (record.ClassifiedValues(d.Field, d.Scheme!, d.Version!.Value, Catalog) is not { } values)
+                return ([], record.HasValue(d.Field) ? Outcome.Unmapped : Outcome.Blank);
+            var codes = new SortedSet<string>(StringComparer.Ordinal);
+            var missed = Outcome.Placed;
+            foreach (var value in values.Values.Where(v => Catalog.Reaches(v, d.Scheme!, d.Version!.Value)))
+            {
+                var resolution = Catalog.Resolve(value, d.Scheme!, d.Version!.Value);
+                Crosswalks[d.Scheme!].UnionWith(resolution.Crosswalks);
+                if (resolution.Kind == ResolutionKind.Assigned) codes.Add(resolution.Code!);
+                else missed = Max(missed, resolution.Kind == ResolutionKind.Pending ? Outcome.Pending : Outcome.Unmapped);
+            }
+            return ([.. codes], missed);
         }
 
         private (Outcome, string?) PlaceIn(Entity entity, ReportDimension d)

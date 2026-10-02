@@ -7,6 +7,7 @@
   "required": ["format", "id", "device", "at", "report", "schemes", "period", "cells", "pending", "unmapped", "total"],
   "properties": {
     "format": { "enum": ["openquote.run/0", "openquote.run/1"] },
+    "multiple": { "const": true, "description": "Format 1, when the form counts every value of a field: a record may be in several cells and in one set besides." },
     "id": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$" },
     "device": { "type": "string", "pattern": "^[a-z0-9]{4,16}$" },
     "at": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}$" },
@@ -76,7 +77,7 @@
     "properties": { "cells": { "items": { "required": ["key"], "not": { "anyOf": [{ "required": ["row"] }, { "required": ["column"] }] } } } }
   },
   "else": {
-    "not": { "required": ["conflicted"] },
+    "not": { "anyOf": [{ "required": ["conflicted"] }, { "required": ["multiple"] }] },
     "properties": { "cells": { "items": { "required": ["row", "column"], "not": { "required": ["key"] } } } }
   },
   "$defs": {

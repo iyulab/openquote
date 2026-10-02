@@ -326,9 +326,10 @@ public static partial class VaultReader
     };
 
     private const string DimensionShape =
-        "a dimension names a field, with a scheme and a scheme version or \"in-force\" when it is classified, and \"of\": \"subject\" to read the subjects' field";
+        "a dimension names a field, with a scheme and a scheme version or \"in-force\" when it is classified, \"of\": \"subject\" to read the subjects' field, and \"values\": \"primary\" or \"all\"";
 
-    // {field, scheme?, version?, of?}: classified when it has a scheme and a version, of the subjects with of "subject".
+    // {field, scheme?, version?, of?, values?}: classified when it has a scheme and a version, of the
+    // subjects with of "subject", by every value with values "all".
     private static ReportDimension? ParseDimension(JsonElement d)
     {
         if (d.ValueKind != JsonValueKind.Object || !TryString(d, "field", out var field)) return null;
@@ -338,9 +339,15 @@ public static partial class VaultReader
             if (!TryString(d, "of", out var of) || of != "subject") return null;
             ofSubject = true;
         }
-        if (!d.TryGetProperty("scheme", out _) && !d.TryGetProperty("version", out _)) return new ReportDimension(field, OfSubject: ofSubject);
+        var all = false;
+        if (d.TryGetProperty("values", out _))
+        {
+            if (!TryString(d, "values", out var values) || values is not ("primary" or "all")) return null;
+            all = values == "all";
+        }
+        if (!d.TryGetProperty("scheme", out _) && !d.TryGetProperty("version", out _)) return new ReportDimension(field, OfSubject: ofSubject, All: all);
         return TryString(d, "scheme", out var scheme) && TryDimensionVersion(d, out var counted)
-            ? new ReportDimension(field, scheme, counted, ofSubject)
+            ? new ReportDimension(field, scheme, counted, ofSubject, all)
             : null;
     }
 

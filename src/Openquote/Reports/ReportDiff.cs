@@ -72,9 +72,9 @@ public sealed record ReportDiff(
         var b = Places(later);
         var revisedAcross = earlier.Report.Dimensions.Zip(later.Report.Dimensions).Any(p => p.First.Version < p.Second.Version);
         var differ = a.Keys.Intersect(b.Keys).Where(k => !Same(a[k], b[k])).ToList();
-        var settled = differ.Where(k => Same(a[k], ConflictedPlace)).ToList();
+        var settled = differ.Where(k => Same(a[k], [ConflictedPlace])).ToList();
         var revised = revisedAcross
-            ? differ.Except(settled).Where(k => Carry(a[k], earlier.Report, later.Report, catalog) is { } carried && Same(carried, b[k])).ToList()
+            ? differ.Except(settled).Where(k => Same([.. a[k].Select(p => Carry(p, earlier.Report, later.Report, catalog))], b[k])).ToList()
             : [];
         return new ReportDiff(
             Sorted(b.Keys.Except(a.Keys)),
@@ -97,7 +97,7 @@ public sealed record ReportDiff(
         {
             var (x, y) = (a.Dimensions[i], b.Dimensions[i]);
             if (x.Field != y.Field) return $"dimension {i + 1} is field '{y.Field}', not '{x.Field}'";
-            if (x.Scheme != y.Scheme || x.OfSubject != y.OfSubject) return $"dimension {i + 1} is {Split(y)}, not {Split(x)}";
+            if (x.Scheme != y.Scheme || x.OfSubject != y.OfSubject || x.All != y.All) return $"dimension {i + 1} is {Split(y)}, not {Split(x)}";
         }
         if (a.Filters.Count != b.Filters.Count
             || a.Filters.Zip(b.Filters).Any(p => p.First.On with { Version = null } != p.Second.On with { Version = null }
@@ -113,13 +113,14 @@ public sealed record ReportDiff(
     }
 
     private static string Split(ReportDimension d) =>
-        (d.Scheme is { } scheme ? $"classified in '{scheme}'" : "split by its string value") + (d.OfSubject ? " of the subjects" : "");
+        (d.Scheme is { } scheme ? $"classified in '{scheme}'" : "split by its string value") + (d.OfSubject ? " of the subjects" : "")
+        + (d.All ? " by every value" : "");
 
     // Where a revision alone would put a record from `place`: each classified place carried to the
-    // later run's version. Places other than a cell hold no code, so nothing is carried from them.
-    private static string?[]? Carry(string?[] place, ReportDefinition earlier, ReportDefinition later, SchemeCatalog catalog)
+    // later run's version. Places other than a cell hold no code, so they stay where they are.
+    private static string?[] Carry(string?[] place, ReportDefinition earlier, ReportDefinition later, SchemeCatalog catalog)
     {
-        if (place.Length == 1 && place[0]?.StartsWith('\u0000') == true) return null;
+        if (place.Length == 1 && place[0]?.StartsWith('\u0000') == true) return place;
         var carried = new string?[place.Length];
         var outcome = ResolutionKind.Assigned;
         for (var i = 0; i < place.Length; i++)
@@ -143,19 +144,28 @@ public sealed record ReportDiff(
         };
     }
 
-    private static Dictionary<string, string?[]> Places(ReportRun run)
+    // Every place each record is in: one, or in a run counting every value, one per cell and set.
+    private static Dictionary<string, List<string?[]>> Places(ReportRun run)
     {
-        var places = new Dictionary<string, string?[]>(StringComparer.Ordinal);
+        var places = new Dictionary<string, List<string?[]>>(StringComparer.Ordinal);
+        void Add(string id, string?[] place)
+        {
+            if (!places.TryGetValue(id, out var list)) places[id] = list = [];
+            list.Add(place);
+        }
         foreach (var cell in run.Cells)
-            foreach (var id in cell.Records) places[id] = [.. cell.Key];
-        foreach (var id in run.Pending) places[id] = PendingPlace;
-        foreach (var id in run.Unmapped) places[id] = UnmappedPlace;
-        foreach (var id in run.Blank) places[id] = BlankPlace;
-        foreach (var id in run.Conflicted) places[id] = ConflictedPlace;
+            foreach (var id in cell.Records) Add(id, [.. cell.Key]);
+        foreach (var id in run.Pending) Add(id, PendingPlace);
+        foreach (var id in run.Unmapped) Add(id, UnmappedPlace);
+        foreach (var id in run.Blank) Add(id, BlankPlace);
+        foreach (var id in run.Conflicted) Add(id, ConflictedPlace);
         return places;
     }
 
-    private static bool Same(string?[] a, string?[] b) => KeyComparer.Instance.Equals(a, b);
+    // The same places, as a set: order and repeats do not matter.
+    private static bool Same(IEnumerable<string?[]> a, IEnumerable<string?[]> b) =>
+        a.Distinct(KeyComparer.Instance).Order(KeyComparer.Instance)
+            .SequenceEqual(b.Distinct(KeyComparer.Instance).Order(KeyComparer.Instance), KeyComparer.Instance);
 
     private static string[] Sorted(IEnumerable<string> ids) => [.. ids.Order(StringComparer.Ordinal)];
 }

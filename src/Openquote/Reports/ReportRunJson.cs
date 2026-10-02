@@ -36,6 +36,7 @@ public static class ReportRunJson
             w.WriteString("id", id);
             w.WriteString("device", device);
             w.WriteString("at", at.ToString("yyyy-MM-dd'T'HH:mm:sszzz", CultureInfo.InvariantCulture));
+            if (run.Multiple) w.WriteBoolean("multiple", true);
 
             w.WriteStartObject("report");
             w.WriteString("report", run.Report.Name);

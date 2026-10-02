@@ -18,7 +18,12 @@ namespace Openquote.Reports;
 /// rather than of the record. A record about several subjects has a value only when they all have
 /// the same one; otherwise, and when it is about none, its place is null — no single value.
 /// </param>
-public sealed record ReportDimension(string Field, string? Scheme = null, int? Version = null, bool OfSubject = false)
+/// <param name="All">
+/// For a classified dimension of the record, true to place a field holding several values by every
+/// one of them rather than by the primary one: a record then counts once in each cell its values
+/// lead to — the cells add up to more than the records (see <see cref="ReportRun.Multiple"/>).
+/// </param>
+public sealed record ReportDimension(string Field, string? Scheme = null, int? Version = null, bool OfSubject = false, bool All = false)
 {
     /// <summary>True when the dimension places by classified values rather than by a string value.</summary>
     public bool Classified => Scheme is not null;
@@ -125,6 +130,8 @@ public sealed record ReportDefinition(
         if (Dimensions.Count is 0 or > MaxDimensions) return $"a report has one to {MaxDimensions} dimensions";
         if (Placers.Any(d => !d.Classified && d.Version is not null)) return "only a classified dimension or filter names a scheme version";
         if (Filters.Any(f => f.In.Count == 0)) return "a filter names the values it lets through";
+        if (Placers.Any(d => d.All && (!d.Classified || d.OfSubject))) return "only a classified dimension of the record counts every value";
+        if (Filters.Any(f => f.On.All)) return "a filter reads the primary value";
         if (Placers.Where(d => d.Classified).GroupBy(d => d.Scheme).Any(g => g.Select(d => d.Version).Distinct().Count() > 1))
             return "a report counts each scheme in one version";
         return null;
@@ -172,6 +179,6 @@ public sealed record ReportDefinition(
     /// the form a format 0 record was made for.
     /// </summary>
     public bool RowsAndColumn =>
-        Filters.Count == 0 && Period.Unit == PeriodUnit.Month && Dimensions.Count is 1 or 2 && Dimensions.All(d => !d.OfSubject)
+        Filters.Count == 0 && Period.Unit == PeriodUnit.Month && Dimensions.Count is 1 or 2 && Dimensions.All(d => !d.OfSubject && !d.All)
         && Dimensions[0].Classified && (Dimensions.Count == 1 || !Dimensions[1].Classified);
 }

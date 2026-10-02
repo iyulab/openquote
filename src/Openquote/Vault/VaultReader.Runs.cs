@@ -134,10 +134,20 @@ public static partial class VaultReader
         }
 
         var run = new ReportRun(report, from, to, counted, cells, pending, unmapped, blank, conflicted, people);
-        if (run.Total.Distinct(StringComparer.Ordinal).Count() != run.Total.Count
-            || !run.Total.SequenceEqual(total.Order(StringComparer.Ordinal), StringComparer.Ordinal))
-            return Bad<KeptRun>(file, UnreadableReason.Invalid,
-                "the total is not the cells plus pending, unmapped, blank and conflicted, each record once");
+        // Each record once in all of them — or, counting every value, once in each cell and in at most one set.
+        IEnumerable<IReadOnlyList<string>> lists = [.. cells.Select(c => c.Records), pending, unmapped, blank, conflicted];
+        IReadOnlyList<string>[] apart = [pending, unmapped, blank, conflicted];
+        var once = run.Multiple
+            ? lists.All(l => l.Distinct(StringComparer.Ordinal).Count() == l.Count)
+                && apart.Sum(s => s.Count) == apart.SelectMany(s => s).Distinct(StringComparer.Ordinal).Count()
+            : lists.Sum(l => l.Count) == run.Total.Count;
+        if (!once || !run.Total.SequenceEqual(total.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal), StringComparer.Ordinal)
+            || total.Count != run.Total.Count)
+            return Bad<KeptRun>(file, UnreadableReason.Invalid, run.Multiple
+                ? "the total is not every record in the cells, pending, unmapped, blank and conflicted, each once in a cell and in at most one set"
+                : "the total is not the cells plus pending, unmapped, blank and conflicted, each record once");
+        if ((root.TryGetProperty("multiple", out var multiple) && multiple.ValueKind == JsonValueKind.True) != run.Multiple)
+            return Bad<KeptRun>(file, UnreadableReason.Invalid, "multiple says whether the form counts every value of a field, as the form does");
         if (people is not null && !people.Keys.Order(StringComparer.Ordinal).SequenceEqual(run.Total, StringComparer.Ordinal))
             return Bad<KeptRun>(file, UnreadableReason.Invalid, "people must name exactly the records in the total");
         return new(new KeptRun(id, device, at, file.Path, run), null);

@@ -747,4 +747,85 @@ public class ReportRunnerTests
         Assert.NotNull((Form(1) with { Measures = [ReportMeasure.Visits, ReportMeasure.Visits] }).Problem());
         Assert.Null((Form(1) with { Measures = [ReportMeasure.Visits] }).Problem());
     }
+
+    private static List<JsonObject> Mentions(string id, params string[] codes)
+    {
+        var n = Interlocked.Increment(ref _n);
+        var values = new JsonArray();
+        foreach (var code in codes) values.Add(Coded(1, code));
+        return [Json(n, id, "create", entityType: "item", fields: new JsonObject { ["day"] = "2026-03-02", ["kind"] = values })];
+    }
+
+    private static ReportDefinition EveryValue(int version) =>
+        new("mentions", 1, "Mentions", "item", new ReportPeriod("day"), [new ReportDimension("kind", "kind", version, All: true)]);
+
+    private static IEnumerable<JsonObject> MentionItems() =>
+        [.. Mentions("i1", "a", "b"), .. Mentions("i2", "a", "h"), .. Mentions("i3", "c", "a"), .. Mentions("i4"), .. Item("i5", "2026-03-02", "a")];
+
+    [Fact]
+    public void Counting_every_value_puts_a_record_in_each_cell_its_values_lead_to_and_in_the_set_of_one_that_cannot_be_placed()
+    {
+        var run = ReportRunner.RunMonth(EveryValue(2), 2026, 3, Entities(MentionItems()), Catalog);
+
+        Assert.True(run.Multiple);
+        Assert.Equal(["i1", "i2", "i3", "i5"], Assert.Single(run.Cells).Records); // a and b both lead to x: once
+        Assert.Equal(["i3"], run.Pending);   // c also leads to p or q
+        Assert.Equal(["i2"], run.Unmapped);  // h also has no link
+        Assert.Equal(["i4"], run.Blank);     // an empty list is no value
+        Assert.Equal(["i1", "i2", "i3", "i4", "i5"], run.Total);
+    }
+
+    [Fact]
+    public void In_the_version_entered_every_value_is_its_own_cell_and_the_cells_add_up_to_more_than_the_records()
+    {
+        var run = ReportRunner.RunMonth(EveryValue(1), 2026, 3, Entities(MentionItems()), Catalog);
+
+        Assert.Equal([["a"], ["b"], ["c"], ["h"]], run.Cells.Select(c => c.Key));
+        Assert.Equal(["i1", "i2", "i3", "i5"], run.Cells[0].Records);
+        Assert.Equal(7, run.Cells.Sum(c => c.Count));
+        Assert.Equal(5, run.Total.Count);
+    }
+
+    [Fact]
+    public void Counting_by_the_primary_value_places_each_record_once()
+    {
+        var form = EveryValue(2) with { Dimensions = [new ReportDimension("kind", "kind", 2)] };
+
+        var run = ReportRunner.RunMonth(form, 2026, 3, Entities(MentionItems()), Catalog);
+
+        Assert.False(run.Multiple);
+        Assert.Equal(["i1", "i5"], Assert.Single(run.Cells).Records); // a and b, unmarked, both lead to x
+        Assert.Equal(["i2", "i3"], run.Pending); // which comes first is a person's to say
+        Assert.Equal(["i4"], run.Blank);
+    }
+
+    [Fact]
+    public void A_revision_explains_a_record_counted_by_every_value_when_all_its_places_carry()
+    {
+        var entities = Entities(MentionItems());
+        var earlier = ReportRunner.RunMonth(EveryValue(1), 2026, 3, entities, Catalog);
+        var later = ReportRunner.RunMonth(EveryValue(2), 2026, 3, entities, Catalog);
+
+        var diff = ReportDiff.Compare(earlier, later, Catalog);
+
+        Assert.Equal(["i1", "i2", "i3", "i5"], diff.Revised); // {a, b} → {x}; {a, h} → {x, unmapped}; {c, a} → {pending, x}
+        Assert.Equal(["i4"], diff.Unchanged);
+        Assert.Throws<ArgumentException>(() => ReportDiff.Compare(earlier, later with { Report = EveryValue(2) with { Dimensions = [new ReportDimension("kind", "kind", 2)] } }, Catalog));
+    }
+
+    [Theory]
+    [InlineData("string")]
+    [InlineData("subject")]
+    [InlineData("filter")]
+    public void Only_a_classified_dimension_of_the_record_counts_every_value(string where)
+    {
+        var form = where switch
+        {
+            "string" => EveryValue(1) with { Dimensions = [new ReportDimension("kind", "kind", 1), new ReportDimension("owner", All: true)] },
+            "subject" => EveryValue(1) with { Dimensions = [new ReportDimension("kind", "kind", 1, OfSubject: true, All: true)] },
+            _ => EveryValue(1) with { Filters = [new ReportFilter(new ReportDimension("kind", "kind", 1, All: true), ["a"])] },
+        };
+
+        Assert.NotNull(form.Problem());
+    }
 }

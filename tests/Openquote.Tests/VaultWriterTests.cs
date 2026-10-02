@@ -614,6 +614,54 @@ public class VaultWriterTests
         Assert.Equal(UnreadableReason.Invalid, Assert.Single(content.Unreadable).Reason);
     }
 
+    private static VaultFile MentionsForm() => FormFile(""" "format":"openquote.report/1","dimensions":[{"field":"kind","scheme":"kind","version":1,"values":"all"}]}""");
+
+    private static VaultFile MentionsRun(string multiple, string cells, string sets, string total) =>
+        new("runs/2026/0199b2e0-3a57-7012-8c64-4f1d2e3b5a71.desk01.json", System.Text.Encoding.UTF8.GetBytes(
+            """{"format":"openquote.run/1","id":"0199b2e0-3a57-7012-8c64-4f1d2e3b5a71","device":"desk01","at":"2026-04-02T09:00:00+01:00",""" + multiple
+            + """ "report":{"report":"monthly","version":1},"schemes":{"kind":{"version":1}},"period":{"from":"2026-03-01","to":"2026-03-31"},"cells":""" + cells
+            + "," + sets + ""","total":{"records":""" + total + "}}"));
+
+    private const string NoSets = """ "pending":{"records":[]},"unmapped":{"records":[]},"blank":{"records":[]},"conflicted":{"records":[]}""";
+
+    [Fact]
+    public void A_run_counting_every_value_says_so_and_reads_back_with_a_record_in_several_cells()
+    {
+        var form = Assert.Single(VaultReader.Read([MentionsForm()]).Reports);
+        var run = new ReportRun(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), [new ReportScheme("kind", 1, [], [])],
+            [new ReportCell(["a"], ["r1", "r2"]), new ReportCell(["c"], ["r1"])], ["r2"], [], [], []);
+        var file = Writer().RunRecord(run);
+
+        var kept = Assert.Single(VaultReader.Read([file, MentionsForm()]).Runs).Run;
+
+        Assert.Contains("\"multiple\": true", System.Text.Encoding.UTF8.GetString(file.Content.Span), StringComparison.Ordinal);
+        Assert.True(kept.Multiple);
+        Assert.Equal(["r1", "r2"], kept.Total);
+        Assert.Equal(run.Cells.Select(c => c.Records), kept.Cells.Select(c => c.Records));
+    }
+
+    [Theory]
+    [InlineData("", """[{"key":["a"],"records":["r1"]}]""", """["r1"]""")] // multiple left out
+    [InlineData(""" "multiple":true,""", """[{"key":["a"],"records":["r1","r1"]}]""", """["r1"]""")] // twice in one cell
+    [InlineData(""" "multiple":true,""", """[{"key":["a"],"records":["r1"]}]""", """["r1","r1"]""")] // twice in the total
+    public void A_run_counting_every_value_that_does_not_add_up_is_unreadable(string multiple, string cells, string total)
+    {
+        var content = VaultReader.Read([MentionsForm(), MentionsRun(multiple, cells, NoSets, total)]);
+
+        Assert.Empty(content.Runs);
+        Assert.Equal(UnreadableReason.Invalid, Assert.Single(content.Unreadable).Reason);
+    }
+
+    [Fact]
+    public void A_record_of_a_run_counting_every_value_is_in_at_most_one_set()
+    {
+        var sets = """ "pending":{"records":["r1"]},"unmapped":{"records":["r1"]},"blank":{"records":[]},"conflicted":{"records":[]}""";
+
+        var content = VaultReader.Read([MentionsForm(), MentionsRun(""" "multiple":true,""", "[]", sets, """["r1"]""")]);
+
+        Assert.Empty(content.Runs);
+    }
+
     [Theory]
     [InlineData("""[null, "mid", "p1"]""")] // a classified place holds a code
     [InlineData("""["a", "mid"]""")] // one place per dimension
