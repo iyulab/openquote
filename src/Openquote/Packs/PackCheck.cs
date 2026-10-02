@@ -22,8 +22,11 @@ public enum PackIssueKind
 /// <summary>One problem with a vault's packs, named by the pack (or packs) it concerns.</summary>
 public sealed record PackIssue(PackIssueKind Kind, string Pack, string Detail);
 
-/// <summary>Checks the packs a vault holds against each other and against the files it holds.</summary>
-public static class PackCheck
+/// <summary>
+/// Checks the packs a vault holds against each other and against the files it holds. Reached through
+/// <see cref="Vault.VaultContent.CheckPacks"/>.
+/// </summary>
+internal static class PackCheck
 {
     /// <summary>
     /// Checks <paramref name="packs"/> against <paramref name="paths"/>, the definition files the vault

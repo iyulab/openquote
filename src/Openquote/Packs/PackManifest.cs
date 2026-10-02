@@ -22,8 +22,8 @@ public sealed partial record PackManifest(
     private static partial Regex IdPattern();
 
     /// <summary>True if <paramref name="id"/> is lowercase letters and digits in words joined by <c>.</c> or <c>-</c>.</summary>
-    public static bool IsId(string id) => id is not null && IdPattern().IsMatch(id);
+    internal static bool IsId(string id) => id is not null && IdPattern().IsMatch(id);
 
     /// <summary>True if <paramref name="id"/> is kept for the vault itself and cannot name a pack.</summary>
-    public static bool IsReserved(string id) => Reserved.Contains(id, StringComparer.Ordinal);
+    internal static bool IsReserved(string id) => Reserved.Contains(id, StringComparer.Ordinal);
 }
