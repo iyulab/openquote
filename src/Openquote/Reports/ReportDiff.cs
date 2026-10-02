@@ -5,8 +5,9 @@ namespace Openquote.Reports;
 /// <summary>
 /// Why two runs of a report over the same period differ, record by record: records that appear only
 /// in the later run (entered late), only in the earlier one (removed or destroyed), or in both but
-/// in a different place — either because the scheme was revised between the two runs, or for a
-/// reason the revision does not explain (reclassified by a person, or moved to another column).
+/// in a different place — because the scheme was revised between the two runs, because a person
+/// settled values that were in conflict, or for a reason neither explains (reclassified by a person,
+/// or moved to another column).
 /// </summary>
 /// <param name="Late">Only in the later run.</param>
 /// <param name="Removed">Only in the earlier run.</param>
@@ -15,7 +16,11 @@ namespace Openquote.Reports;
 /// alone moved it — into a new row, into pending when its old code was split, or into unmapped when
 /// its old code has no link.
 /// </param>
-/// <param name="Moved">In a different place that the revision does not explain.</param>
+/// <param name="Settled">
+/// Conflicted in the earlier run and anywhere else in the later one: a person picked a value, or a
+/// change that was missing arrived and showed the values were not concurrent after all.
+/// </param>
+/// <param name="Moved">In a different place that neither the revision nor a settled conflict explains.</param>
 /// <param name="Unchanged">In the same place in both runs.</param>
 /// <remarks>
 /// A run keeps where each record was counted, not the value it was counted from, so the reason is
@@ -27,11 +32,14 @@ public sealed record ReportDiff(
     IReadOnlyList<string> Late,
     IReadOnlyList<string> Removed,
     IReadOnlyList<string> Revised,
+    IReadOnlyList<string> Settled,
     IReadOnlyList<string> Moved,
     IReadOnlyList<string> Unchanged)
 {
     private const string PendingPlace = "\u0000pending";
     private const string UnmappedPlace = "\u0000unmapped";
+    private const string BlankPlace = "\u0000blank";
+    private const string ConflictedPlace = "\u0000conflicted";
 
     /// <summary>
     /// Compares <paramref name="earlier"/> with <paramref name="later"/>. When the later run counts
@@ -62,14 +70,16 @@ public sealed record ReportDiff(
         var revisedAcross = earlier.Report.RowScheme == later.Report.RowScheme
             && earlier.Report.RowVersion < later.Report.RowVersion;
         var differ = a.Keys.Intersect(b.Keys).Where(k => a[k] != b[k]).ToList();
+        var settled = differ.Where(k => a[k].Row == ConflictedPlace).ToList();
         var revised = revisedAcross
-            ? differ.Where(k => Carry(a[k], earlier.Report, later.Report.RowVersion, catalog) == b[k]).ToList()
+            ? differ.Except(settled).Where(k => Carry(a[k], earlier.Report, later.Report.RowVersion, catalog) == b[k]).ToList()
             : [];
         return new ReportDiff(
             Sorted(b.Keys.Except(a.Keys)),
             Sorted(a.Keys.Except(b.Keys)),
             Sorted(revised),
-            Sorted(differ.Except(revised)),
+            Sorted(settled),
+            Sorted(differ.Except(revised).Except(settled)),
             Sorted(a.Keys.Intersect(b.Keys).Where(k => a[k] == b[k])));
     }
 
@@ -92,12 +102,12 @@ public sealed record ReportDiff(
 
     private static string Quoted(string? field) => field is null ? "none" : $"'{field}'";
 
-    // Where a revision alone would put a record from `place`. Pending and unmapped places hold no
+    // Where a revision alone would put a record from `place`. Places other than a cell hold no
     // code, so nothing is carried from them.
     private static (string Row, string? Column)? Carry((string Row, string? Column) place, ReportDefinition form,
         int targetVersion, SchemeCatalog catalog)
     {
-        if (place.Row is PendingPlace or UnmappedPlace) return null;
+        if (place.Row is PendingPlace or UnmappedPlace or BlankPlace or ConflictedPlace) return null;
         var resolution = catalog.Resolve(new CodedValue(form.RowScheme, form.RowVersion, place.Row), targetVersion);
         return resolution.Kind switch
         {
@@ -114,6 +124,8 @@ public sealed record ReportDiff(
             foreach (var id in cell.Records) places[id] = (cell.Row, cell.Column);
         foreach (var id in run.Pending) places[id] = (PendingPlace, null);
         foreach (var id in run.Unmapped) places[id] = (UnmappedPlace, null);
+        foreach (var id in run.Blank) places[id] = (BlankPlace, null);
+        foreach (var id in run.Conflicted) places[id] = (ConflictedPlace, null);
         return places;
     }
 

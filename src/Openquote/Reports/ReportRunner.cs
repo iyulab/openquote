@@ -11,10 +11,13 @@ public static class ReportRunner
     /// <summary>
     /// Runs <paramref name="report"/> over the calendar days <paramref name="from"/> to
     /// <paramref name="to"/> inclusive. An entity is in the period when its period field holds a
-    /// date in range. Its row is its classified value carried to the form's scheme version: one
-    /// code places it in a cell, several leave it pending, none leave it unmapped. An unmapped
-    /// record whose row field holds no value (see <see cref="Entity.HasValue"/>) is also listed as
-    /// blank, so an empty field is told apart from a gap in the crosswalks. Destroyed
+    /// date in range. When a field the form places by — period, row or column — holds concurrent
+    /// values (see <see cref="Entity.Conflicts"/>), the entity is conflicted and in no cell; a
+    /// disputed date puts it in every period one of its values falls in. Otherwise its row is its
+    /// classified value carried to the form's scheme version: one code places it in a cell, several
+    /// leave it pending, none leave it unmapped — or blank when the row field holds no value to
+    /// count (see <see cref="Entity.HasValue"/>), so an empty field is told apart from a gap in the
+    /// crosswalks. Destroyed
     /// entities are not counted. Each counted record also carries the subjects it is about, so the
     /// run gives a head count beside every record count.
     /// </summary>
@@ -30,17 +33,31 @@ public static class ReportRunner
         var pending = new List<string>();
         var unmapped = new List<string>();
         var blank = new List<string>();
+        var conflicted = new List<string>();
         var crosswalks = new SortedSet<string>(StringComparer.Ordinal);
         var people = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
 
         foreach (var entity in entities)
         {
             if (entity.Destroyed || entity.Reference.Type != report.Counts) continue;
+            var id = entity.Reference.Id;
+            if (entity.Conflicts.TryGetValue(report.PeriodField, out var dates))
+            {
+                if (!dates.Any(d => ParseDate(d.Value) is { } day && day >= from && day <= to)) continue;
+                people[id] = entity.People;
+                conflicted.Add(id);
+                continue;
+            }
             if (!entity.Fields.TryGetValue(report.PeriodField, out var dateValue) || ParseDate(dateValue) is not { } date
                 || date < from || date > to) continue;
 
-            var id = entity.Reference.Id;
             people[id] = entity.People;
+            if (entity.Conflicts.ContainsKey(report.RowField)
+                || (report.ColumnField is { } column && entity.Conflicts.ContainsKey(column)))
+            {
+                conflicted.Add(id);
+                continue;
+            }
             var resolution = entity.Classify(report.RowField, report.RowScheme, report.RowVersion, catalog);
             crosswalks.UnionWith(resolution.Crosswalks);
             switch (resolution.Kind)
@@ -54,8 +71,7 @@ public static class ReportRunner
                     pending.Add(id);
                     break;
                 default:
-                    unmapped.Add(id);
-                    if (!entity.HasValue(report.RowField)) blank.Add(id);
+                    (entity.HasValue(report.RowField) ? unmapped : blank).Add(id);
                     break;
             }
         }
@@ -67,6 +83,7 @@ public static class ReportRunner
             Sorted(pending),
             Sorted(unmapped),
             Sorted(blank),
+            Sorted(conflicted),
             people);
     }
 

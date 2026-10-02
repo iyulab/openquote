@@ -9,7 +9,8 @@ public sealed record ReportCell(string Row, string? Column, IReadOnlyList<string
 
 /// <summary>
 /// The result of running a report form over a period. Every number traces back to the ids of the
-/// records behind it; the total is always the cells plus the pending and unmapped records.
+/// records behind it; the total is always the cells plus the pending, unmapped, blank and
+/// conflicted records, each record in exactly one of them.
 /// </summary>
 /// <param name="Report">The form that was run.</param>
 /// <param name="From">First day of the period, inclusive.</param>
@@ -19,9 +20,13 @@ public sealed record ReportCell(string Row, string? Column, IReadOnlyList<string
 /// <param name="Pending">Records whose value maps to several codes and waits for a person.</param>
 /// <param name="Unmapped">Records whose value has no code in the form's scheme version.</param>
 /// <param name="Blank">
-/// The unmapped records whose row field holds no value — never set, or cleared with no earlier value
-/// to count — so an empty field is told apart from a gap in the crosswalks. Always a subset of
-/// <paramref name="Unmapped"/>: it adds no records to the total.
+/// Records whose row field holds no value to count — never set, or cleared with no earlier value —
+/// so an empty field is told apart from a gap in the crosswalks.
+/// </param>
+/// <param name="Conflicted">
+/// Records a field the form places by (its period, row or column field) holds two or more values
+/// for that were set without seeing each other. Until a person picks one, the record is in no cell:
+/// counting any of the values would decide for them.
 /// </param>
 /// <param name="People">
 /// For every record in the period, the subjects it is about (see <see cref="Records.Entity.People"/>);
@@ -36,14 +41,16 @@ public sealed record ReportRun(
     IReadOnlyList<string> Pending,
     IReadOnlyList<string> Unmapped,
     IReadOnlyList<string> Blank,
+    IReadOnlyList<string> Conflicted,
     IReadOnlyDictionary<string, IReadOnlyList<string>>? People = null)
 {
-    /// <summary>Every record in the period: the cells, then pending, then unmapped.</summary>
+    /// <summary>Every record in the period: the cells, pending, unmapped, blank and conflicted records.</summary>
     public IReadOnlyList<string> Total { get; } =
-        Cells.SelectMany(c => c.Records).Concat(Pending).Concat(Unmapped).Order(StringComparer.Ordinal).ToArray();
+        Cells.SelectMany(c => c.Records).Concat(Pending).Concat(Unmapped).Concat(Blank).Concat(Conflicted)
+            .Order(StringComparer.Ordinal).ToArray();
 
     /// <summary>
-    /// The distinct subjects behind <paramref name="records"/> — a cell's, pending's or the total's
+    /// The distinct subjects behind <paramref name="records"/> — a cell's, a set's or the total's
     /// records — ordered; their number is the head count beside the record count. Null when the
     /// run did not record people.
     /// </summary>

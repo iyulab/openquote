@@ -8,6 +8,7 @@ namespace Openquote.Vault;
 public static partial class VaultReader
 {
     internal const string RunFormat = "openquote.run/0";
+    internal const string RunFormatSets = "openquote.run/1";
 
     // runs/<yyyy>/<change-id>.<device>.json
     [GeneratedRegex(@"^runs/[0-9]{4}/(?<id>[0-9a-f-]{36})\.(?<device>[a-z0-9]{4,16})\.json\z")]
@@ -21,7 +22,8 @@ public static partial class VaultReader
     /// </summary>
     private static Definition<KeptRun> ParseRun(VaultFile file, IReadOnlyList<ReportDefinition> reports)
     {
-        if (!TryRoot(file, RunFormat, out var root, out var error)) return new(null, error);
+        if (!TryRoot(file, new[] { RunFormat, RunFormatSets }, out var root, out var error)) return new(null, error);
+        var sets = TryString(root, "format", out var format) && format == RunFormatSets;
         var path = RunPath().Match(file.Path);
 
         if (!TryString(root, "id", out var id) || !TryString(root, "device", out var device)
@@ -68,10 +70,21 @@ public static partial class VaultReader
         if (!TrySet(root, "pending", out var pending) || !TrySet(root, "unmapped", out var unmapped) || !TrySet(root, "total", out var total))
             return Bad<KeptRun>(file, UnreadableReason.Invalid, "pending, unmapped and total each list their records");
         IReadOnlyList<string> blank = [];
-        if (root.TryGetProperty("blank", out _) && !TrySet(root, "blank", out blank))
-            return Bad<KeptRun>(file, UnreadableReason.Invalid, "blank lists its records");
-        if (!blank.ToHashSet(StringComparer.Ordinal).IsSubsetOf(unmapped))
-            return Bad<KeptRun>(file, UnreadableReason.Invalid, "every blank record is also unmapped");
+        IReadOnlyList<string> conflicted = [];
+        if (sets)
+        {
+            if (!TrySet(root, "blank", out blank) || !TrySet(root, "conflicted", out conflicted))
+                return Bad<KeptRun>(file, UnreadableReason.Invalid, "blank and conflicted each list their records");
+        }
+        else if (root.TryGetProperty("blank", out _))
+        {
+            // Format 0 may list blank records as a part of unmapped; they are read apart, as format 1 keeps them.
+            if (!TrySet(root, "blank", out blank)) return Bad<KeptRun>(file, UnreadableReason.Invalid, "blank lists its records");
+            var within = blank.ToHashSet(StringComparer.Ordinal);
+            if (!within.IsSubsetOf(unmapped))
+                return Bad<KeptRun>(file, UnreadableReason.Invalid, "in format 0, every blank record is also unmapped");
+            unmapped = [.. unmapped.Where(r => !within.Contains(r))];
+        }
 
         Dictionary<string, IReadOnlyList<string>>? people = null;
         if (root.TryGetProperty("people", out var peopleJson))
@@ -87,9 +100,11 @@ public static partial class VaultReader
             }
         }
 
-        var run = new ReportRun(report, from, to, crosswalks, cells, pending, unmapped, blank, people);
-        if (!run.Total.SequenceEqual(total.Order(StringComparer.Ordinal), StringComparer.Ordinal))
-            return Bad<KeptRun>(file, UnreadableReason.Invalid, "the total is not the cells plus pending plus unmapped");
+        var run = new ReportRun(report, from, to, crosswalks, cells, pending, unmapped, blank, conflicted, people);
+        if (run.Total.Distinct(StringComparer.Ordinal).Count() != run.Total.Count
+            || !run.Total.SequenceEqual(total.Order(StringComparer.Ordinal), StringComparer.Ordinal))
+            return Bad<KeptRun>(file, UnreadableReason.Invalid,
+                "the total is not the cells plus pending, unmapped, blank and conflicted, each record once");
         if (people is not null && !people.Keys.Order(StringComparer.Ordinal).SequenceEqual(run.Total, StringComparer.Ordinal))
             return Bad<KeptRun>(file, UnreadableReason.Invalid, "people must name exactly the records in the total");
         return new(new KeptRun(id, device, at, file.Path, run), null);

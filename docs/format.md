@@ -212,8 +212,8 @@ How values are carried across versions is described in [Concepts](concepts.md#cr
 - `schemes` records, for the row scheme, the version counted in and the crosswalks applied (as `from-to`; omitted when none were).
 - `period` gives the first and last calendar day, inclusive.
 - Each cell names its `row` code, its `column` (a string or `null`) and the `records` counted in it. Cells with no records are not written.
-- `pending` and `unmapped` list records not placed in any cell. `total` lists every record in the period and must equal the cells plus `pending` plus `unmapped`.
-- `blank` (optional) lists the records of `unmapped` whose row field holds no value. Every one of them is also in `unmapped`, so it adds nothing to `total` and a reader that does not know the key counts the same. It is written only when it is not empty.
+- `pending`, `unmapped`, `blank` and `conflicted` list records not placed in any cell: a value waiting for a person to choose among codes, a value with no code in the form's version, no value to count, and concurrent values in a field the form places by (period, row or column). `total` lists every record in the period and must equal the cells plus those sets, each record in exactly one of them.
+- `blank` and `conflicted` are written only in `openquote.run/1`, and both always are there. A run with neither stays `openquote.run/0`, which an engine that predates them reads. A format 0 record may still carry `blank` as a part of `unmapped`, as earlier engines wrote it; a reader takes those records out of `unmapped`.
 - `count` keys are written for readability; readers derive every count from `records`.
 - `people` (optional) maps each record in `total` to the subject ids it concerns. Its keys must be exactly the records in `total`. A run record without `people` has an unknown head count, not zero.
 - A period with no records still produces a run record, with empty `cells` and an empty `total`.

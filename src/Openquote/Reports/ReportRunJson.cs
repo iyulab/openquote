@@ -4,7 +4,11 @@ using System.Text.Json;
 
 namespace Openquote.Reports;
 
-/// <summary>Writes a <see cref="ReportRun"/> as a run record file (<c>openquote.run/0</c>).</summary>
+/// <summary>
+/// Writes a <see cref="ReportRun"/> as a run record file: <c>openquote.run/1</c> when it has blank or
+/// conflicted records, which only that format lists apart, and <c>openquote.run/0</c> otherwise, which
+/// an engine that predates them reads with the same total.
+/// </summary>
 public static class ReportRunJson
 {
     private static readonly JsonWriterOptions Options = new()
@@ -26,7 +30,8 @@ public static class ReportRunJson
         using (var w = new Utf8JsonWriter(buffer, Options))
         {
             w.WriteStartObject();
-            w.WriteString("format", "openquote.run/0");
+            var sets = run.Blank.Count > 0 || run.Conflicted.Count > 0;
+            w.WriteString("format", sets ? "openquote.run/1" : "openquote.run/0");
             w.WriteString("id", id);
             w.WriteString("device", device);
             w.WriteString("at", at.ToString("yyyy-MM-dd'T'HH:mm:sszzz", CultureInfo.InvariantCulture));
@@ -68,8 +73,11 @@ public static class ReportRunJson
 
             WriteSet(w, "pending", run.Pending);
             WriteSet(w, "unmapped", run.Unmapped);
-            // Blank records are also in unmapped, so a reader that does not know this set counts the same.
-            if (run.Blank.Count > 0) WriteSet(w, "blank", run.Blank);
+            if (sets)
+            {
+                WriteSet(w, "blank", run.Blank);
+                WriteSet(w, "conflicted", run.Conflicted);
+            }
             WriteSet(w, "total", run.Total);
 
             if (run.People is { } people)

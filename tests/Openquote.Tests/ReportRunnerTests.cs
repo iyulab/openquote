@@ -111,16 +111,87 @@ public class ReportRunnerTests
     }
 
     [Fact]
-    public void A_record_without_a_value_for_the_row_is_unmapped_and_listed_as_blank_not_dropped()
+    public void A_record_without_a_value_for_the_row_is_blank_apart_from_unmapped_not_dropped()
     {
         var empty = Json(904, "i1", "create", entityType: "item", fields: new JsonObject { ["day"] = "2026-03-02", ["kind"] = null });
         var absent = Json(905, "i2", "create", entityType: "item", fields: new JsonObject { ["day"] = "2026-03-03" });
 
         var run = ReportRunner.RunMonth(Form(1), 2026, 3, Entities([empty, absent]), Catalog);
 
-        Assert.Equal(["i1", "i2"], run.Unmapped);
+        Assert.Empty(run.Unmapped);
         Assert.Equal(["i1", "i2"], run.Blank);
         Assert.Equal(["i1", "i2"], run.Total);
+    }
+
+    // An item created with `created`, then edited twice by changes that did not see each other.
+    private static List<JsonObject> Concurrent(string id, int n, JsonObject created, JsonObject one, JsonObject other) =>
+    [
+        Json(n, id, "create", entityType: "item", fields: created),
+        Json(n + 1, id, "update", [n], one, entityType: "item"),
+        Json(n + 2, id, "update", [n], other, entityType: "item"),
+    ];
+
+    private static JsonObject Fields(string day, string code, string owner = "o1") =>
+        new() { ["day"] = day, ["kind"] = Coded(1, code), ["owner"] = owner };
+
+    [Fact]
+    public void A_record_whose_row_holds_concurrent_values_is_conflicted_and_in_no_cell()
+    {
+        var changes = Concurrent("i1", 910, Fields("2026-03-02", "a"),
+            new JsonObject { ["kind"] = Coded(1, "b") }, new JsonObject { ["kind"] = Coded(1, "c") });
+
+        var run = ReportRunner.RunMonth(Form(1), 2026, 3, Entities([.. changes, .. Item("i2", "2026-03-03", "a")]), Catalog);
+
+        Assert.Equal(["i1"], run.Conflicted);
+        Assert.Equal(["i2"], Assert.Single(run.Cells).Records);
+        Assert.Equal(["i1", "i2"], run.Total);
+    }
+
+    [Fact]
+    public void Concurrent_columns_conflict_the_record_too_while_a_field_the_form_does_not_place_by_does_not()
+    {
+        var owner = Concurrent("i1", 920, Fields("2026-03-02", "a"),
+            new JsonObject { ["owner"] = "o2" }, new JsonObject { ["owner"] = "o3" });
+        var note = Concurrent("i2", 930, Fields("2026-03-02", "a"),
+            new JsonObject { ["note"] = "one" }, new JsonObject { ["note"] = "two" });
+
+        var run = ReportRunner.RunMonth(Form(1), 2026, 3, Entities([.. owner, .. note]), Catalog);
+
+        Assert.Equal(["i1"], run.Conflicted);
+        Assert.Equal(["i2"], Assert.Single(run.Cells).Records);
+        Assert.Empty(ReportRunner.RunMonth(Form(1, columns: null), 2026, 3, Entities([.. owner]), Catalog).Conflicted);
+    }
+
+    [Fact]
+    public void A_disputed_date_is_conflicted_in_every_period_one_of_its_dates_falls_in()
+    {
+        var changes = Concurrent("i1", 940, Fields("2026-03-31", "a"),
+            new JsonObject { ["day"] = "2026-04-01" }, new JsonObject { ["day"] = "2026-03-30" });
+        var items = Entities(changes).ToList();
+
+        Assert.Equal(["i1"], ReportRunner.RunMonth(Form(1), 2026, 3, items, Catalog).Conflicted);
+        Assert.Equal(["i1"], ReportRunner.RunMonth(Form(1), 2026, 4, items, Catalog).Conflicted);
+        Assert.Empty(ReportRunner.RunMonth(Form(1), 2026, 5, items, Catalog).Total);
+    }
+
+    [Fact]
+    public void A_person_settling_the_conflict_puts_the_record_in_its_cell_and_the_diff_says_so()
+    {
+        var changes = Concurrent("i1", 950, Fields("2026-03-02", "a"),
+            new JsonObject { ["kind"] = Coded(1, "a") }, new JsonObject { ["kind"] = Coded(1, "b") });
+        var settle = Json(953, "i1", "update", [951, 952], new JsonObject { ["kind"] = Coded(1, "b") }, entityType: "item");
+
+        var before = ReportRunner.RunMonth(Form(1), 2026, 3, Entities(changes), Catalog);
+        var after = ReportRunner.RunMonth(Form(1), 2026, 3, Entities([.. changes, settle]), Catalog);
+        var diff = ReportDiff.Compare(before, after, Catalog);
+
+        Assert.Equal(["i1"], before.Conflicted);
+        var cell = Assert.Single(after.Cells);
+        Assert.Equal("b", cell.Row);
+        Assert.Equal(["i1"], cell.Records);
+        Assert.Equal(["i1"], diff.Settled);
+        Assert.Empty(diff.Moved);
+        Assert.Empty(diff.Revised);
     }
 
     [Fact]
@@ -178,7 +249,7 @@ public class ReportRunnerTests
 
     private static ReportRun Run(int version, ReportCell[] cells, string[]? pending = null, string[]? unmapped = null) =>
         new(Form(version), new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), version == 1 ? [] : ["1-2"],
-            cells, pending ?? [], unmapped ?? [], []);
+            cells, pending ?? [], unmapped ?? [], [], []);
 
     [Fact]
     public void A_code_with_no_link_is_revised_into_unmapped()

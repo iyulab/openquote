@@ -44,7 +44,11 @@ public static partial class VaultReader
     private static Definition<T> Bad<T>(VaultFile file, UnreadableReason reason, string detail) where T : class =>
         new(null, new UnreadableFile(file.Path, reason, detail));
 
-    private static bool TryRoot(VaultFile file, string format, out JsonElement root, out UnreadableFile? error)
+    private static bool TryRoot(VaultFile file, string format, out JsonElement root, out UnreadableFile? error) =>
+        TryRoot(file, [format], out root, out error);
+
+    // A file kind read in more than one format version: the root's format is one of `formats`.
+    private static bool TryRoot(VaultFile file, string[] formats, out JsonElement root, out UnreadableFile? error)
     {
         error = null;
         root = default;
@@ -58,9 +62,9 @@ public static partial class VaultReader
             error = new UnreadableFile(file.Path, UnreadableReason.Malformed, e.Message);
             return false;
         }
-        if (root.ValueKind != JsonValueKind.Object || !TryString(root, "format", out var f) || f != format)
+        if (root.ValueKind != JsonValueKind.Object || !TryString(root, "format", out var f) || !formats.Contains(f))
         {
-            error = new UnreadableFile(file.Path, UnreadableReason.UnknownFormat, $"expected format {format}");
+            error = new UnreadableFile(file.Path, UnreadableReason.UnknownFormat, $"expected format {string.Join(" or ", formats)}");
             return false;
         }
         return true;

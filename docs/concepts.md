@@ -63,22 +63,22 @@ A **report form** is an immutable, versioned definition: which entity type it co
 
 Running a form (`ReportRunner`) for a period does not guess:
 
-- Each record's value is carried to the form's scheme version. An assigned value lands in a cell; a pending value goes to `pending`; an unmapped or missing value goes to `unmapped`. An unmapped record whose field holds no value at all (never set, or cleared with no earlier value to count) is also listed in `blank`, so an empty field is told apart from a gap in the crosswalks; `blank` is a part of `unmapped`, not a further group.
+- Each record's value is carried to the form's scheme version. An assigned value lands in a cell; a pending value goes to `pending`; a value with no code there goes to `unmapped`; a field with no value at all (never set, or cleared with no earlier value to count) goes to `blank`, so an empty field is told apart from a gap in the crosswalks. A record whose period, row or column field holds values set without seeing each other goes to `conflicted` and in no cell — counting any one of them would decide for the person who has to pick; a disputed date puts it in every period one of its dates falls in.
 - If a record has since been reclassified to a version newer than the form's, the run uses the most recent value that is at or below the form's version. Earlier values are never lost, so an older form can be run again later.
-- The total is always the cells plus pending plus unmapped. Nothing is dropped to make numbers look complete.
+- The total is always the cells plus pending, unmapped, blank and conflicted, each record in exactly one. Nothing is dropped to make numbers look complete.
 
 Each run can be kept as a **run record**. A run record is never edited; running the form again produces a new one. It holds:
 
 - the form and version, the scheme version counted in, and the crosswalks applied;
 - the period;
-- for every cell, and for pending, unmapped, blank and the total, the ids of the records behind the number;
+- for every cell, and for pending, unmapped, blank, conflicted and the total, the ids of the records behind the number;
 - for every record, the subjects it concerns, from which a **head count** (distinct people) is computed beside every record count. A group-held record contributes its `attendees`.
 
 Because every number keeps its evidence, two runs of the same form can be compared record by record (`ReportDiff`): records entered late, records removed or destroyed since, records moved by a scheme revision, records moved for another reason, and records unchanged. Only runs that place records the same way are compared — the same form name, entity type, period field, row field and scheme, columns, and period; the form and scheme versions may differ. Any other pair is refused, since every record would read as moved by a person.
 
 ### One pass: run, settle, run again, compare
 
-A run's `Cells` hold the records behind each number, `Pending` and `Unmapped` the records in no cell (`Blank` the unmapped ones whose field is empty), and `PeopleOf` the distinct subjects behind any of them. A pending record is settled by a person choosing one of the candidates `Entity.Classify` lists; the next run counts it where it was placed, and comparing with the kept run shows it as moved rather than entered late:
+A run's `Cells` hold the records behind each number, `Pending`, `Unmapped`, `Blank` and `Conflicted` the records in no cell, and `PeopleOf` the distinct subjects behind any of them. A pending record is settled by a person choosing one of the candidates `Entity.Classify` lists; the next run counts it where it was placed, and comparing with the kept run shows it as moved rather than entered late:
 
 ```csharp
 using Openquote.Classification;
