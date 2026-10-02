@@ -151,7 +151,8 @@ public sealed class Entity
     /// <summary>
     /// Where this entity's <paramref name="field"/> lands in <paramref name="version"/> of
     /// <paramref name="scheme"/>: its most recent value entered in that scheme at that version or
-    /// an earlier one, carried forward by <paramref name="catalog"/>. A pending result lists the
+    /// an earlier one — or in a scheme that extends it, counted as the item it is anchored to —
+    /// carried forward by <paramref name="catalog"/>. A pending result lists the
     /// codes a person chooses from — the only values <see cref="VaultWriter.Reclassify"/> accepts.
     /// Unmapped when the field holds no value of that scheme or the entity is destroyed. Report
     /// runs place records by the same rule.
@@ -161,9 +162,9 @@ public sealed class Entity
         ArgumentNullException.ThrowIfNull(field);
         ArgumentNullException.ThrowIfNull(scheme);
         ArgumentNullException.ThrowIfNull(catalog);
-        var value = LatestValue(field, v => CodedValue.From(v) is { } c && c.Scheme == scheme && c.Version <= version);
+        var value = LatestValue(field, v => CodedValue.From(v) is { } c && catalog.Reaches(c, scheme, version));
         return value is { } v && CodedValue.From(v) is { } coded
-            ? catalog.Resolve(coded, version)
+            ? catalog.Resolve(coded, scheme, version)
             : new Resolution(ResolutionKind.Unmapped, null, [], []);
     }
 }

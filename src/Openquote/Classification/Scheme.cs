@@ -3,7 +3,17 @@ using System.Text.Json;
 namespace Openquote.Classification;
 
 /// <summary>One item of a classification scheme. A two-level code is a path: <c>parent/child</c>.</summary>
-public sealed record SchemeItem(string Code, string Label, string? Parent, bool Suggest);
+public sealed record SchemeItem(string Code, string Label, string? Parent, bool Suggest)
+{
+    /// <summary>
+    /// In a scheme that extends another (see <see cref="Scheme.Extends"/>), the code of the item of
+    /// the extended version this item counts as wherever that scheme is counted; null otherwise.
+    /// </summary>
+    public string? Anchor { get; init; }
+}
+
+/// <summary>A version of a scheme, named by the scheme and the version.</summary>
+public sealed record SchemeVersion(string Scheme, int Version);
 
 /// <summary>
 /// One immutable version of a classification scheme. Editing a scheme makes a new version; a
@@ -14,6 +24,13 @@ public sealed record SchemeItem(string Code, string Label, string? Parent, bool 
 /// </summary>
 public sealed record Scheme(string Name, int Version, IReadOnlyList<SchemeItem> Items, DateOnly? EffectiveFrom = null, DateOnly? EffectiveTo = null)
 {
+    /// <summary>
+    /// The scheme version this one extends, or null. Every item of an extending scheme names the item
+    /// of that version it counts as (<see cref="SchemeItem.Anchor"/>), so a list kept by one body adds
+    /// detail beside a shared scheme without changing what the shared scheme counts.
+    /// </summary>
+    public SchemeVersion? Extends { get; init; }
+
     /// <summary>True if <paramref name="code"/> is an item of this version.</summary>
     public bool Contains(string code) => Items.Any(i => i.Code == code);
 }

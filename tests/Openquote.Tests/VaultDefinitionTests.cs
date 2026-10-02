@@ -1,3 +1,4 @@
+using Openquote.Classification;
 using Openquote.Vault;
 using static Openquote.Tests.TestChanges;
 
@@ -107,5 +108,32 @@ public class VaultDefinitionTests
     {
         var json = $$"""{ "format": "openquote.scheme/0", "scheme": "kind", "version": 1, "effective": {{effective}}, "items": [] }""";
         Assert.Equal(UnreadableReason.Invalid, Assert.Single(VaultReader.Read([File("schemes/kind/v1.json", json)]).Unreadable).Reason);
+    }
+
+    private const string Local = """
+        { "format": "openquote.scheme/1", "scheme": "kind.local", "version": 1, "extends": { "scheme": "kind", "version": 1 },
+          "items": [ { "code": "a-group", "label": "A, in a group", "anchor": "a" }, { "code": "a-call", "label": "A, by phone", "anchor": "a" } ] }
+        """;
+
+    [Fact]
+    public void Reads_a_scheme_that_extends_another_with_the_item_each_of_its_items_counts_as()
+    {
+        var content = VaultReader.Read([File("schemes/kind.local/v1.json", Local)]);
+
+        var scheme = Assert.Single(content.Schemes);
+        Assert.Equal(new SchemeVersion("kind", 1), scheme.Extends);
+        Assert.Equal(["a", "a"], scheme.Items.Select(i => i.Anchor));
+        Assert.Equal(1, content.RequiredVersion);
+        Assert.Equal(0, VaultReader.Read([]).RequiredVersion);
+    }
+
+    [Theory]
+    [InlineData("""{ "format": "openquote.scheme/0", "scheme": "kind.local", "version": 1, "extends": { "scheme": "kind", "version": 1 }, "items": [ { "code": "x", "label": "X", "anchor": "a" } ] }""")]
+    [InlineData("""{ "format": "openquote.scheme/1", "scheme": "kind.local", "version": 1, "extends": { "scheme": "kind", "version": 1 }, "items": [ { "code": "x", "label": "X" } ] }""")]
+    [InlineData("""{ "format": "openquote.scheme/1", "scheme": "kind.local", "version": 1, "items": [ { "code": "x", "label": "X", "anchor": "a" } ] }""")]
+    [InlineData("""{ "format": "openquote.scheme/1", "scheme": "kind.local", "version": 1, "extends": { "scheme": "kind.local", "version": 1 }, "items": [] }""")]
+    public void An_extension_without_format_1_an_anchor_for_every_item_or_another_scheme_to_extend_is_reported(string json)
+    {
+        Assert.Equal(UnreadableReason.Invalid, Assert.Single(VaultReader.Read([File("schemes/kind.local/v1.json", json)]).Unreadable).Reason);
     }
 }

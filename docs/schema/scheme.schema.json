@@ -2,13 +2,21 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/iyulab/openquote/blob/main/docs/schema/scheme.schema.json",
   "title": "Openquote classification scheme version",
-  "description": "schemes/<scheme>/v<version>.json. Codes are unique within a version and a parent names another item of the same version; a reader checks both.",
+  "description": "schemes/<scheme>/v<version>.json. Codes are unique within a version and a parent names another item of the same version; a reader checks both. Format 1 adds extends: the scheme version this one extends, and then every item names its anchor, the item of that version it counts as.",
   "type": "object",
   "required": ["format", "scheme", "version", "items"],
   "properties": {
-    "format": { "const": "openquote.scheme/0" },
+    "format": { "enum": ["openquote.scheme/0", "openquote.scheme/1"] },
     "scheme": { "$ref": "#/$defs/name" },
     "version": { "type": "integer", "minimum": 1 },
+    "extends": {
+      "type": "object",
+      "required": ["scheme", "version"],
+      "properties": {
+        "scheme": { "$ref": "#/$defs/name" },
+        "version": { "type": "integer", "minimum": 1 }
+      }
+    },
     "effective": {
       "type": "object",
       "required": ["from"],
@@ -26,11 +34,17 @@
           "code": { "type": "string", "minLength": 1 },
           "label": { "type": "string", "minLength": 1 },
           "parent": { "type": "string", "minLength": 1 },
-          "suggest": { "type": "boolean" }
+          "suggest": { "type": "boolean" },
+          "anchor": { "type": "string", "minLength": 1 }
         }
       }
     }
   },
+  "if": { "required": ["extends"] },
+  "then": {
+    "properties": { "format": { "const": "openquote.scheme/1" }, "items": { "items": { "required": ["anchor"] } } }
+  },
+  "else": { "properties": { "items": { "items": { "not": { "required": ["anchor"] } } } } },
   "$defs": {
     "name": { "type": "string", "minLength": 1, "pattern": "^[^/]+$" },
     "date": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" }

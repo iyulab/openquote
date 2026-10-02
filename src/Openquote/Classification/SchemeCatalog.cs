@@ -60,6 +60,47 @@ public sealed class SchemeCatalog
     }
 
     /// <summary>
+    /// Whether a value of <paramref name="value"/>'s scheme and version can be counted in
+    /// <paramref name="targetVersion"/> of <paramref name="targetScheme"/>: the same scheme at that
+    /// version or an earlier one, or a scheme that extends it — directly or through others — at such
+    /// a version.
+    /// </summary>
+    public bool Reaches(CodedValue value, string targetScheme, int targetVersion)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        return Fold(value, targetScheme) is { } folded && folded.Version <= targetVersion;
+    }
+
+    /// <summary>
+    /// Carries <paramref name="value"/> to <paramref name="targetVersion"/> of
+    /// <paramref name="targetScheme"/>: a value of a scheme that extends it first becomes the item its
+    /// own item is anchored to, then is carried as a value of that scheme (see the other overload).
+    /// </summary>
+    public Resolution Resolve(CodedValue value, string targetScheme, int targetVersion)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+        ArgumentNullException.ThrowIfNull(targetScheme);
+        return Fold(value, targetScheme) is { } folded ? Resolve(folded, targetVersion) : Unmapped([]);
+    }
+
+    // A value of a scheme that extends `target`, through as many extensions as it takes, as the
+    // value of `target` its item is anchored to. Null when the value's scheme does not reach `target`
+    // or an item on the way has no anchor that its extended version holds.
+    private CodedValue? Fold(CodedValue value, string target)
+    {
+        var current = value;
+        for (var steps = 0; current.Scheme != target; steps++)
+        {
+            if (steps > _schemes.Count || Find(current.Scheme, current.Version) is not { Extends: { } extended } scheme
+                || scheme.Items.FirstOrDefault(i => i.Code == current.Code)?.Anchor is not { } anchor
+                || Find(extended.Scheme, extended.Version) is not { } next || !next.Contains(anchor))
+                return null;
+            current = new CodedValue(extended.Scheme, extended.Version, anchor);
+        }
+        return current;
+    }
+
+    /// <summary>
     /// Carries <paramref name="value"/> to <paramref name="targetVersion"/> of its scheme. A value
     /// lands on a code only when every step leaves exactly one candidate: an old code with one link
     /// is assigned, with two or more it waits for a person, and with none it is unmapped.

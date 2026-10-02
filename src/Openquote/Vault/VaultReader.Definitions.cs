@@ -76,9 +76,13 @@ public static partial class VaultReader
         return obj.TryGetProperty(name, out var e) && e.ValueKind == JsonValueKind.Number && e.TryGetInt32(out value);
     }
 
+    private static readonly string[] SchemeFormats = ["openquote.scheme/0", "openquote.scheme/1"];
+
     private static Definition<Scheme> ParseScheme(VaultFile file)
     {
-        if (!TryRoot(file, "openquote.scheme/0", out var root, out var error)) return new(null, error);
+        // Format 1 adds `extends` and, in an extending scheme, every item's `anchor`.
+        if (!TryRoot(file, SchemeFormats, out var root, out var error)) return new(null, error);
+        var extensible = TryString(root, "format", out var format) && format == "openquote.scheme/1";
         var path = SchemePath().Match(file.Path);
 
         if (!TryString(root, "scheme", out var name) || !TryInt(root, "version", out var version) || version < 1)
@@ -106,8 +110,28 @@ public static partial class VaultReader
                     return Bad<Scheme>(file, UnreadableReason.Invalid, $"{code}: suggest must be true or false");
                 suggest = s.GetBoolean();
             }
-            items.Add(new SchemeItem(code, label, parent, suggest));
+            string? anchor = null;
+            if (item.TryGetProperty("anchor", out var a))
+            {
+                if (!extensible || a.ValueKind != JsonValueKind.String || a.GetString() is not { Length: > 0 } named)
+                    return Bad<Scheme>(file, UnreadableReason.Invalid, $"{code}: anchor must be a code of the extended scheme, in a scheme that extends one");
+                anchor = named;
+            }
+            items.Add(new SchemeItem(code, label, parent, suggest) { Anchor = anchor });
         }
+
+        SchemeVersion? extends = null;
+        if (root.TryGetProperty("extends", out var extendsJson))
+        {
+            if (!extensible || extendsJson.ValueKind != JsonValueKind.Object || !TryString(extendsJson, "scheme", out var baseName)
+                || !TryInt(extendsJson, "version", out var baseVersion) || baseVersion < 1 || baseName == name)
+                return Bad<Scheme>(file, UnreadableReason.Invalid, "extends names another scheme and its version (format 1)");
+            extends = new SchemeVersion(baseName, baseVersion);
+        }
+        if (extends is not null && items.FirstOrDefault(i => i.Anchor is null) is { } loose)
+            return Bad<Scheme>(file, UnreadableReason.Invalid, $"{loose.Code}: every item of an extending scheme names its anchor");
+        if (extends is null && items.FirstOrDefault(i => i.Anchor is not null) is { } anchored)
+            return Bad<Scheme>(file, UnreadableReason.Invalid, $"{anchored.Code}: anchor must be a code of the extended scheme, in a scheme that extends one");
 
         var codes = new HashSet<string>(StringComparer.Ordinal);
         foreach (var item in items)
@@ -130,7 +154,7 @@ public static partial class VaultReader
             }
         }
 
-        return new(new Scheme(name, version, items, from, to), null);
+        return new(new Scheme(name, version, items, from, to) { Extends = extends }, null);
     }
 
     private static DateOnly? Day(string text) =>

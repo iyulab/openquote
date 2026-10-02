@@ -32,6 +32,14 @@ public sealed record VaultContent(
     /// </summary>
     public int? DeclaredVersion { get; init; }
 
+    /// <summary>
+    /// The earliest vault format that says what this vault holds: 1 when it holds a scheme that
+    /// extends another, which an engine that reads only format 0 would leave uncounted; 0 otherwise.
+    /// A host raises a vault's declaration to this before writing what needs it, so that earlier
+    /// engines refuse the vault instead of counting it differently.
+    /// </summary>
+    public int RequiredVersion => Schemes.Any(s => s.Extends is not null) ? 1 : 0;
+
     /// <summary>The schemes and crosswalks, ready to carry values between versions.</summary>
     public SchemeCatalog Catalog() => new(Schemes, Crosswalks);
 

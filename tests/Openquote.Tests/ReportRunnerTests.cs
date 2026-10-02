@@ -291,6 +291,52 @@ public class ReportRunnerTests
         Assert.Contains("in force on 2026-04-10", error.Message, StringComparison.Ordinal);
     }
 
+    // A local list beside `kind` v1: two items counted as a, one anchored to an item v1 does not have.
+    private static readonly SchemeCatalog Extended = new(
+        [
+            .. new[] { Catalog.Find("kind", 1)!, Catalog.Find("kind", 2)! },
+            new Scheme("kind.local", 1, [new("a-group", "A in a group", null, false) { Anchor = "a" },
+                new("a-call", "A by phone", null, false) { Anchor = "a" }, new("z", "Z", null, false) { Anchor = "zz" }])
+            { Extends = new SchemeVersion("kind", 1) },
+        ],
+        [new Crosswalk("kind", 1, 2, [("a", "x"), ("b", "x"), ("c", "p"), ("c", "q")])]);
+
+    private static List<JsonObject> Local(string id, string day, string code) =>
+        [Json(Interlocked.Increment(ref _n), id, "create", entityType: "item", fields: new JsonObject
+        {
+            ["day"] = day,
+            ["kind"] = new JsonObject { ["scheme"] = "kind.local", ["version"] = 1, ["code"] = code },
+            ["owner"] = "o1",
+        })];
+
+    [Fact]
+    public void A_value_of_a_scheme_extending_the_rows_counts_as_its_anchor_carried_like_any_value()
+    {
+        var items = Entities([.. Local("i1", "2026-03-02", "a-group"), .. Local("i2", "2026-03-03", "a-call"),
+            .. Item("i3", "2026-03-04", "a"), .. Local("i4", "2026-03-05", "z")]).ToList();
+
+        var v1 = ReportRunner.RunMonth(Form(1), 2026, 3, items, Extended);
+        var v2 = ReportRunner.RunMonth(Form(2), 2026, 3, items, Extended);
+
+        Assert.Equal("a", Assert.Single(v1.Cells).Row);
+        Assert.Equal(["i1", "i2", "i3"], Assert.Single(v1.Cells).Records);
+        Assert.Equal(["i4"], v1.Unmapped);
+        Assert.Equal("x", Assert.Single(v2.Cells).Row);
+        Assert.Equal(["i1", "i2", "i3"], Assert.Single(v2.Cells).Records);
+    }
+
+    [Fact]
+    public void A_form_counting_the_extending_scheme_counts_its_own_items()
+    {
+        var local = new ReportDefinition("local", 1, "Local", "item", "day", "kind", "kind.local", 1, null);
+        var items = Entities([.. Local("i1", "2026-03-02", "a-group"), .. Local("i2", "2026-03-03", "a-call"), .. Item("i3", "2026-03-04", "a")]);
+
+        var run = ReportRunner.RunMonth(local, 2026, 3, items, Extended);
+
+        Assert.Equal(["a-call", "a-group"], run.Cells.Select(c => c.Row));
+        Assert.Equal(["i3"], run.Unmapped);
+    }
+
     private static ReportRun Run(int version, ReportCell[] cells, string[]? pending = null, string[]? unmapped = null) =>
         new(Form(version), new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), version == 1 ? [] : ["1-2"],
             cells, pending ?? [], unmapped ?? [], [], []);
