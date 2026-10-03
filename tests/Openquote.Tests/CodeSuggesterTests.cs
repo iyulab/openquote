@@ -286,6 +286,26 @@ public class CodeSuggesterTests
     }
 
     [Fact]
+    public async Task Puts_the_code_of_the_nearest_settled_record_before_the_code_chosen_most_often_though_below_the_threshold()
+    {
+        VaultFile[] records =
+        [
+            .. Settled,
+            File(Json(4, "e4", "create", fields: Session("p4", "rent arrears, landlord wants them out", "housing"))),
+            File(Json(5, "e5", "create", fields: Session("p5", "moving out, looking for a flat", "housing"))),
+        ];
+        var strict = new ThresholdPolicy(TargetPrecision: 1, MinimumAnswered: int.MaxValue, NearlySameMemoryThreshold: 0.99);
+        var suggester = await CodeSuggester.BuildAsync(VaultReader.Read(Vault(records)), "session", March, strict, TestContext.Current.CancellationToken);
+
+        var suggestions = await suggester.SuggestAsync(Draft(("note", "stress at work, sleeping badly")), TestContext.Current.CancellationToken);
+
+        var first = Assert.Single(suggestions).Codes[0];
+        Assert.Equal("stress", first.Code);
+        Assert.Equal(SuggestionBasis.SimilarRecords, first.Basis);
+        Assert.Equal(["e1"], first.Similar);
+    }
+
+    [Fact]
     public async Task Puts_the_code_of_a_close_settled_record_before_the_code_chosen_most_often()
     {
         // Housing is chosen most often; the record being entered reads like the one settled under stress.

@@ -212,6 +212,10 @@ public sealed class CodeSuggester
             var codes = suggestion.Candidates.Select(c => Suggested(c, suggestion, values, target) with { Trusted = c.Trusted, Nearest = c.Value == nearest })
                 .Where(c => !c.Confirm || ((c.Trusted || c.Nearest) && c.Basis == SuggestionBasis.SimilarRecords))
                 .ToList();
+            // Answers first, in the order Gil ranks them; then, among guesses, the code of the nearest record before
+            // the codes chosen often — it says something about this record, they do not. A record's other fields can
+            // keep its nearest record below any threshold, and the code chosen most often would otherwise lead.
+            codes = [.. codes.Where(c => c.Trusted), .. codes.Where(c => !c.Trusted && c.Nearest), .. codes.Where(c => !c.Trusted && !c.Nearest)];
             if (codes.Count > 0)
             {
                 result.Add(new FieldSuggestions(suggestion.Field, target.Scheme.Name, target.Scheme.Version, codes));
