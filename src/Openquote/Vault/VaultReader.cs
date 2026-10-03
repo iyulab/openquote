@@ -47,8 +47,11 @@ public sealed record VaultContent(
     /// <summary>The schemes and crosswalks, ready to carry values between versions.</summary>
     public SchemeCatalog Catalog() => new(Schemes, Crosswalks);
 
-    /// <summary>Checks the vault's packs against each other and against the definitions the vault could read.</summary>
-    public IReadOnlyList<PackIssue> CheckPacks() => PackCheck.Check(Packs, DefinitionPaths());
+    /// <summary>
+    /// Checks the vault's packs against each other and against the definitions the vault could read, telling a
+    /// listed file the vault holds but could not read (<see cref="PackIssueKind.FileNotRead"/>) from a missing one.
+    /// </summary>
+    public IReadOnlyList<PackIssue> CheckPacks() => PackCheck.Check(Packs, DefinitionPaths(), Unreadable.Select(u => u.Path));
 
     /// <summary>The labels of the vault's packs, resolved by what each pack builds on.</summary>
     public LabelCatalog LabelCatalog() => new(Labels, Packs);

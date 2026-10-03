@@ -107,4 +107,27 @@ public class PackCheckTests
         Assert.Empty(content.Unreadable);
         Assert.Empty(content.CheckPacks());
     }
+
+    [Fact]
+    public void A_listed_file_the_vault_holds_but_could_not_read_is_told_apart_from_a_missing_one()
+    {
+        var content = Openquote.Vault.VaultReader.Read([
+            TestChanges.File("packs/care/v1.json", """
+                { "format": "openquote.pack/0", "pack": "care", "version": 1, "label": "Care",
+                  "provides": [ "schemes/care.method/v1.json", "schemes/care.method/v2.json" ] }
+                """),
+            // A format a later engine reads: held, but not read by this one.
+            TestChanges.File("schemes/care.method/v1.json", """
+                { "format": "openquote.scheme/9", "scheme": "care.method", "version": 1, "items": [] }
+                """),
+        ]);
+
+        Assert.Equal(Openquote.Vault.UnreadableReason.UnknownFormat, Assert.Single(content.Unreadable).Reason);
+        Assert.Equal(
+            [
+                (PackIssueKind.MissingFile, "v1 lists schemes/care.method/v2.json, which the vault does not hold"),
+                (PackIssueKind.FileNotRead, "v1 lists schemes/care.method/v1.json, which the vault holds but could not read"),
+            ],
+            content.CheckPacks().Select(i => (i.Kind, i.Detail)).OrderBy(i => i.Kind));
+    }
 }

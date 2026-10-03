@@ -9,8 +9,14 @@ public enum PackIssueKind
     /// <summary>A pack needs a later version of a pack than the vault holds.</summary>
     OlderDependency,
 
-    /// <summary>A manifest lists a definition file the vault does not hold in a readable form.</summary>
+    /// <summary>A manifest lists a definition file the vault does not hold.</summary>
     MissingFile,
+
+    /// <summary>
+    /// A manifest lists a definition file the vault holds but could not read — often one in a format a
+    /// later engine reads. Why is in <see cref="Vault.VaultContent.Unreadable"/>.
+    /// </summary>
+    FileNotRead,
 
     /// <summary>More than one pack claims the same definition file.</summary>
     SharedFile,
@@ -30,14 +36,16 @@ internal static class PackCheck
 {
     /// <summary>
     /// Checks <paramref name="packs"/> against <paramref name="paths"/>, the definition files the vault
-    /// holds. Issues come per pack in id order: dependencies first, then files; shared files and cycles last.
+    /// read, and <paramref name="unread"/>, the files it holds but could not read. Issues come per pack in
+    /// id order: dependencies first, then files; shared files and cycles last.
     /// </summary>
-    public static IReadOnlyList<PackIssue> Check(IEnumerable<PackManifest> packs, IEnumerable<string> paths)
+    public static IReadOnlyList<PackIssue> Check(IEnumerable<PackManifest> packs, IEnumerable<string> paths, IEnumerable<string>? unread = null)
     {
         ArgumentNullException.ThrowIfNull(packs);
         ArgumentNullException.ThrowIfNull(paths);
         var all = packs.ToList();
         var present = new HashSet<string>(paths, StringComparer.Ordinal);
+        var notRead = new HashSet<string>(unread ?? [], StringComparer.Ordinal);
         var graph = new PackGraph(all);
         var issues = new List<PackIssue>();
 
@@ -54,7 +62,9 @@ internal static class PackCheck
 
         foreach (var pack in all.OrderBy(p => p.Id, StringComparer.Ordinal).ThenBy(p => p.Version))
             foreach (var path in pack.Provides.Where(p => !present.Contains(p)))
-                issues.Add(new(PackIssueKind.MissingFile, pack.Id, $"v{pack.Version} lists {path}, which the vault does not hold in a readable form"));
+                issues.Add(notRead.Contains(path)
+                    ? new(PackIssueKind.FileNotRead, pack.Id, $"v{pack.Version} lists {path}, which the vault holds but could not read")
+                    : new(PackIssueKind.MissingFile, pack.Id, $"v{pack.Version} lists {path}, which the vault does not hold"));
 
         var claims = all.SelectMany(p => p.Provides.Select(path => (Path: path, p.Id)))
             .GroupBy(c => c.Path, StringComparer.Ordinal)

@@ -352,7 +352,8 @@ A pack is a bundle of definition files (schemes, crosswalks, forms, labels and f
 |---|---|
 | `MissingDependency` | A pack builds on a pack the vault does not hold. |
 | `OlderDependency` | A pack needs a later version of a pack than the vault holds. |
-| `MissingFile` | A manifest lists a definition file the vault does not hold in a readable form. |
+| `MissingFile` | A manifest lists a definition file the vault does not hold. |
+| `FileNotRead` | A manifest lists a definition file the vault holds but could not read — often one in a format a later engine reads; why is in `VaultContent.Unreadable`. A host can say the app needs updating rather than that a file is missing. |
 | `SharedFile` | More than one pack lists the same definition file. |
 | `DependencyCycle` | A pack builds on itself through other packs. |
 
