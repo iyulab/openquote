@@ -211,6 +211,51 @@ public class CodeSuggesterTests
         Assert.Equal(3, suggester.Remembered);
     }
 
+    [Fact]
+    public async Task Offers_a_code_to_confirm_only_on_settled_records_close_to_the_one_being_entered()
+    {
+        const string Says = """
+            { "format": "openquote.suggestions/0", "pack": "care", "version": 1, "schemes": { "topic": { "1": { "crisis": "confirm" } } } }
+            """;
+        // The code to confirm is the one chosen most often: frequency alone would put it first for any record.
+        VaultFile[] often =
+        [
+            .. Settled,
+            File(Json(4, "e4", "create", fields: Session("p4", "said they want to end their life, safety plan made", "crisis"))),
+            File(Json(5, "e5", "create", fields: Session("p5", "has thoughts of self harm, parents called", "crisis"))),
+        ];
+        var suggester = await CodeSuggester.BuildAsync(VaultReader.Read([.. Vault(often), File("suggestions/care/v1.json", Says)]), "session", March,
+            TestContext.Current.CancellationToken);
+
+        var unrelated = await suggester.SuggestAsync(Draft(("note", "needs housing support from the city office")), TestContext.Current.CancellationToken);
+        var close = await suggester.SuggestAsync(Draft(("note", "said they want to end their life")), TestContext.Current.CancellationToken);
+
+        Assert.DoesNotContain(unrelated.SelectMany(s => s.Codes), c => c.Code == "crisis");
+        var crisis = Assert.Single(Assert.Single(close).Codes, c => c.Code == "crisis");
+        Assert.True(crisis.Confirm);
+        Assert.Equal(SuggestionBasis.SimilarRecords, crisis.Basis);
+        Assert.Contains("e4", crisis.Similar);
+    }
+
+    [Fact]
+    public async Task Puts_the_code_of_a_close_settled_record_before_the_code_chosen_most_often()
+    {
+        // Housing is chosen most often; the record being entered reads like the one settled under stress.
+        VaultFile[] records =
+        [
+            .. Settled,
+            File(Json(4, "e4", "create", fields: Session("p4", "rent arrears, landlord wants them out", "housing"))),
+            File(Json(5, "e5", "create", fields: Session("p5", "moving out, looking for a flat", "housing"))),
+        ];
+        var suggester = await Build(March, records);
+
+        var suggestions = await suggester.SuggestAsync(Draft(("note", "stress at work and trouble sleeping again")), TestContext.Current.CancellationToken);
+
+        var first = Assert.Single(suggestions).Codes[0];
+        Assert.Equal("stress", first.Code);
+        Assert.Equal(SuggestionBasis.SimilarRecords, first.Basis);
+    }
+
     /// <summary>
     /// Not a check but a measurement: builds a suggester from <c>OPENQUOTE_MEASURE_RECORDS</c> settled
     /// sessions (default 2000, about a year of one counselor's work) with a few hundred characters of

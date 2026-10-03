@@ -26,7 +26,11 @@ public sealed record FieldSuggestions(string Field, string Scheme, int Version, 
 /// with those records, for <see cref="SuggestionBasis.SameValue"/> only. A code to
 /// <paramref name="Confirm"/> is set apart from the others (<see cref="Suggestion.Confirm"/>).
 /// </summary>
-public sealed record SuggestedCode(string Code, double Score, IReadOnlyList<string> Similar, bool Confirm, SuggestionBasis Basis, string? Field);
+public sealed record SuggestedCode(string Code, double Score, IReadOnlyList<string> Similar, bool Confirm, SuggestionBasis Basis, string? Field)
+{
+    /// <summary>Whether the layer that ranked it answered — its threshold was met — rather than guessed.</summary>
+    internal bool Trusted { get; init; }
+}
 
 /// <summary>Why a code is suggested: what the settled records it rests on have in common with the record being entered.</summary>
 public enum SuggestionBasis
@@ -50,6 +54,12 @@ public enum SuggestionBasis
 /// memory from the vault each time.
 /// </summary>
 /// <remarks>
+/// <para>
+/// Each field's thresholds are chosen by replaying the settled records once there are enough of them, so
+/// the codes of records close to the one being entered, or of a value settled alongside its values often enough,
+/// lead; the codes chosen most often follow as guesses. A code a person has to confirm is offered only on the
+/// evidence of settled records close enough to answer.
+/// </para>
 /// <para>
 /// A coded field is suggested for when the scheme version in force on the given date has items that may be
 /// suggested (<see cref="SuggestionCatalog"/>: as the scheme marks them, or as the vault's packs say over
@@ -102,7 +112,12 @@ public sealed class CodeSuggester
     /// Builds a suggester for records of <paramref name="type"/> entered on <paramref name="date"/>,
     /// learning from the settled records in <paramref name="content"/>.
     /// </summary>
-    public static async Task<CodeSuggester> BuildAsync(VaultContent content, string type, DateOnly date, CancellationToken cancellationToken = default)
+    public static Task<CodeSuggester> BuildAsync(VaultContent content, string type, DateOnly date, CancellationToken cancellationToken = default) =>
+        BuildAsync(content, type, date, ThresholdPolicy.Default, cancellationToken);
+
+    /// <summary>As <see cref="BuildAsync(VaultContent, string, DateOnly, CancellationToken)"/>, with the thresholds chosen by <paramref name="thresholds"/>.</summary>
+    internal static async Task<CodeSuggester> BuildAsync(VaultContent content, string type, DateOnly date, ThresholdPolicy thresholds,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(content);
         ArgumentNullException.ThrowIfNull(type);
@@ -131,14 +146,38 @@ public sealed class CodeSuggester
             // Nothing to suggest for: no settled record is read.
             return new CodeSuggester(null, null, targets, fields, catalog, date, []);
         }
-        var form = new FormDefinition(type, formFields, PromptLanguage.English);
-        var resolver = new FormResolver(new FieldMemory(), new LexicalMemory(), similarDocumentCount: SimilarCount);
         var settled = EntityMerger.Merge(content.Changes).Values
             .Where(e => e.Reference.Type == type && !e.Destroyed && e.Heads.Count == 1)
             .Select(e => new SettledDocument(e.Reference.Id, Values(e.Fields, fields, catalog, date, e), e.Changes.Max(c => c.At)))
             .ToList();
+        var form = await WithThresholdsAsync(type, formFields, settled, thresholds, cancellationToken).ConfigureAwait(false);
+        var resolver = new FormResolver(new FieldMemory(), new LexicalMemory(), similarDocumentCount: SimilarCount);
         await resolver.RebuildAsync(form, settled, cancellationToken).ConfigureAwait(false);
         return new CodeSuggester(form, resolver, targets, fields, catalog, date, settled);
+    }
+
+    /// <summary>
+    /// The form with each judged field's thresholds: chosen by replaying the settled records once there are
+    /// enough of them (<see cref="ThresholdPolicy"/>), so that a similar record or a value settled alongside
+    /// the draft's values answers before the guesses — the field's most frequent code above all. Without
+    /// thresholds every layer only guesses, and the most frequent code leads whatever the record says.
+    /// </summary>
+    private static async Task<FormDefinition> WithThresholdsAsync(string type, List<GilField> formFields, List<SettledDocument> settled,
+        ThresholdPolicy policy, CancellationToken cancellationToken)
+    {
+        var form = new FormDefinition(type, formFields, PromptLanguage.English);
+        var fields = new List<GilField>(formFields.Count);
+        foreach (var field in formFields)
+        {
+            if (field.Role != FieldRole.Judged)
+            {
+                fields.Add(field);
+                continue;
+            }
+            var (key, memory) = await policy.ChooseAsync(form, field.Name, settled, cancellationToken).ConfigureAwait(false);
+            fields.Add(new GilField(field.Name, field.Role) { Candidates = field.Candidates, KeyThreshold = key, MemoryThreshold = memory });
+        }
+        return new FormDefinition(type, fields, PromptLanguage.English);
     }
 
     /// <summary>
@@ -162,7 +201,11 @@ public sealed class CodeSuggester
                 continue;
             }
             // The field's candidates are exactly the items that may be suggested, so every value offered is one of them.
-            var codes = suggestion.Candidates.Select(c => Suggested(c, suggestion, values, target)).ToList();
+            // A code to confirm is offered only where settled records like this one hold it and are close enough to
+            // answer: never because it is chosen often or alongside a shared value, which says nothing about this record.
+            var codes = suggestion.Candidates.Select(c => Suggested(c, suggestion, values, target) with { Trusted = c.Trusted })
+                .Where(c => !c.Confirm || (c.Trusted && c.Basis == SuggestionBasis.SimilarRecords))
+                .ToList();
             if (codes.Count > 0)
             {
                 result.Add(new FieldSuggestions(suggestion.Field, target.Scheme.Name, target.Scheme.Version, codes));
