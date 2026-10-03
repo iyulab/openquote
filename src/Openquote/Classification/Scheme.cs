@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 
 namespace Openquote.Classification;
 
-/// <summary>One item of a classification scheme. A two-level code is a path: <c>parent/child</c>.</summary>
+/// <summary>One item of a classification scheme. A child's code is by convention a path: <c>parent/child</c>.</summary>
 public sealed record SchemeItem(string Code, string Label, string? Parent, bool Suggest)
 {
     /// <summary>

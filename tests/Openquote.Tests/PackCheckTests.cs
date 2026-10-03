@@ -77,4 +77,34 @@ public class PackCheckTests
 
         Assert.Empty(content.CheckPacks());
     }
+
+    [Fact]
+    public void A_pack_that_provides_a_crosswalk_into_another_scheme_finds_it_at_the_path_named_after_both()
+    {
+        var content = Openquote.Vault.VaultReader.Read([
+            TestChanges.File("packs/care/v1.json", """
+                { "format": "openquote.pack/0", "pack": "care", "version": 1, "label": "Care",
+                  "provides": [ "schemes/kind/v1.json", "schemes/kind/v2.json", "schemes/kind/v1-v2.json",
+                                "schemes/neis/v1.json", "schemes/kind/v2-neis.v1.json" ] }
+                """),
+            TestChanges.File("schemes/kind/v1.json", """
+                { "format": "openquote.scheme/0", "scheme": "kind", "version": 1, "items": [ { "code": "a", "label": "A" } ] }
+                """),
+            TestChanges.File("schemes/kind/v2.json", """
+                { "format": "openquote.scheme/0", "scheme": "kind", "version": 2, "items": [ { "code": "a", "label": "A" } ] }
+                """),
+            TestChanges.File("schemes/kind/v1-v2.json", """
+                { "format": "openquote.crosswalk/0", "scheme": "kind", "from": 1, "to": 2, "links": [ ["a", "a"] ] }
+                """),
+            TestChanges.File("schemes/neis/v1.json", """
+                { "format": "openquote.scheme/0", "scheme": "neis", "version": 1, "items": [ { "code": "n", "label": "N" } ] }
+                """),
+            TestChanges.File("schemes/kind/v2-neis.v1.json", """
+                { "format": "openquote.crosswalk/1", "scheme": "kind", "from": 2, "into": "neis", "to": 1, "links": [ ["a", "n"] ] }
+                """),
+        ]);
+
+        Assert.Empty(content.Unreadable);
+        Assert.Empty(content.CheckPacks());
+    }
 }

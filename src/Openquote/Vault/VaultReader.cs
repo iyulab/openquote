@@ -61,7 +61,9 @@ public sealed record VaultContent(
 
     private IEnumerable<string> DefinitionPaths() =>
         Schemes.Select(s => $"schemes/{s.Name}/v{s.Version}.json")
-            .Concat(Crosswalks.Select(c => $"schemes/{c.Scheme}/v{c.From}-v{c.To}.json"))
+            .Concat(Crosswalks.Select(c => c.Into is null
+                ? $"schemes/{c.Scheme}/v{c.From}-v{c.To}.json"
+                : $"schemes/{c.Scheme}/v{c.From}-{c.Into}.v{c.To}.json"))
             .Concat(Reports.Select(r => $"reports/{r.Name}/v{r.Version}.json"))
             .Concat(Exports.Select(e => $"exports/{e.Name}/v{e.Version}.json"))
             .Concat(Labels.Select(l => $"labels/{l.Pack}/v{l.Version}.{l.Locale}.json"))
