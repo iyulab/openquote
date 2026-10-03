@@ -19,4 +19,6 @@ Everything committed here is English: code, comments, XML docs, tests, commit me
 dotnet test --solution Openquote.slnx
 ```
 
-Warnings are errors (`Directory.Build.props`).
+Warnings are errors (`Directory.Build.props`). The test build also compiles the C# examples of
+`README.md` and `docs/` (`tests/Openquote.Tests/DocExamples.targets`), so a change to an example is
+checked by running the tests again.
