@@ -24,5 +24,6 @@ jobs:
         with:
           global-json-file: global.json
 
-      # Warnings are errors (Directory.Build.props); the tests include the published schemas and format examples.
+      # Warnings are errors (Directory.Build.props); the tests include the published schemas and format examples,
+      # and compile the C# examples of README.md and docs/.
       - run: dotnet test --solution Openquote.slnx -c Release
