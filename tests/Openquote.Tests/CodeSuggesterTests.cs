@@ -81,6 +81,60 @@ public class CodeSuggesterTests
         Assert.Equal("e1", Assert.Single(topic.Codes, c => c.Code == "stress").Similar[0]);
     }
 
+    // Housing is settled most often, in records whose notes are nothing like the one being entered.
+    private static VaultFile[] MostlyHousing() =>
+    [
+        .. Enumerable.Range(0, 8).Select(i =>
+        {
+            var session = Session($"h{i}", $"rent landlord office moving {i}", "housing");
+            session["mode"] = i < 4 ? "phone" : "visit";
+            return File(Json(10 + i, $"h{i}", "create", fields: session));
+        }),
+        File(Json(30, "s1", "create", fields: Session("p1", "stress at work and trouble sleeping", "stress"))),
+    ];
+
+    private const string SessionFieldsWithMode = """
+        { "format": "openquote.fields/0", "pack": "care", "type": "session", "version": 1, "fields": [
+          { "name": "client", "kind": "reference", "type": "subject" },
+          { "name": "topic", "kind": "coded", "scheme": "topic" },
+          { "name": "mode", "kind": "text" },
+          { "name": "note", "kind": "text", "tier": "narrative" } ] }
+        """;
+
+    private static Task<CodeSuggester> BuildWithMode(params VaultFile[] records) =>
+        CodeSuggester.BuildAsync(VaultReader.Read([.. Vault(records).Where(f => f.Path != "fields/care/session/v1.json"), File("fields/care/session/v1.json", SessionFieldsWithMode)]),
+            "session", March, TestContext.Current.CancellationToken);
+
+    [Fact]
+    public async Task A_code_suggested_for_being_chosen_often_rests_on_no_record_and_says_so()
+    {
+        var suggester = await BuildWithMode(MostlyHousing());
+
+        var topic = Assert.Single(await suggester.SuggestAsync(Draft(("note", "stress at work")), TestContext.Current.CancellationToken));
+
+        // Housing is suggested for how often it is chosen, not for the housing records that happen to be
+        // among the nearest: those are no more like this record than any other.
+        var housing = Assert.Single(topic.Codes, c => c.Code == "housing");
+        Assert.Equal((SuggestionBasis.Frequent, null), (housing.Basis, housing.Field));
+        Assert.Empty(housing.Similar);
+        var stress = Assert.Single(topic.Codes, c => c.Code == "stress");
+        Assert.Equal(SuggestionBasis.SimilarRecords, stress.Basis);
+        Assert.Equal(["s1"], stress.Similar);
+    }
+
+    [Fact]
+    public async Task A_code_chosen_alongside_a_value_the_record_shares_names_that_field_and_the_records_sharing_it()
+    {
+        var suggester = await BuildWithMode(MostlyHousing());
+
+        var topic = Assert.Single(await suggester.SuggestAsync(Draft(("note", "stress at work"), ("mode", "phone")), TestContext.Current.CancellationToken));
+
+        var housing = Assert.Single(topic.Codes, c => c.Code == "housing");
+        Assert.Equal((SuggestionBasis.SameValue, "mode"), (housing.Basis, housing.Field));
+        // The settled housing records made by phone, the latest first.
+        Assert.Equal(["h3", "h2", "h1", "h0"], housing.Similar);
+    }
+
     [Fact]
     public async Task Never_suggests_an_item_its_scheme_does_not_mark_for_suggestion()
     {
@@ -106,7 +160,6 @@ public class CodeSuggesterTests
 
         var confirm = Assert.Single(Assert.Single(crisis).Codes, c => c.Code == "crisis");
         Assert.True(confirm.Confirm);
-        Assert.Equal("e3", confirm.Similar[0]);
         Assert.All(stress.SelectMany(s => s.Codes), c => Assert.NotEqual("stress", c.Code));
         Assert.All(stress.SelectMany(s => s.Codes).Where(c => c.Code != "crisis"), c => Assert.False(c.Confirm));
     }

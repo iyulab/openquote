@@ -20,11 +20,29 @@ namespace Openquote.Gil;
 public sealed record FieldSuggestions(string Field, string Scheme, int Version, IReadOnlyList<SuggestedCode> Codes);
 
 /// <summary>
-/// One suggested code, with its score and the settled records closest to the one being entered that
-/// hold it (entity ids, nearest first) — the evidence a host shows for the suggestion. A code to
+/// One suggested code, with its score, why it is suggested (<paramref name="Basis"/>) and the settled
+/// records it rests on (<paramref name="Similar"/>, entity ids) — the evidence a host shows for the
+/// suggestion. <paramref name="Field"/> names the field whose value the record being entered shares
+/// with those records, for <see cref="SuggestionBasis.SameValue"/> only. A code to
 /// <paramref name="Confirm"/> is set apart from the others (<see cref="Suggestion.Confirm"/>).
 /// </summary>
-public sealed record SuggestedCode(string Code, double Score, IReadOnlyList<string> Similar, bool Confirm);
+public sealed record SuggestedCode(string Code, double Score, IReadOnlyList<string> Similar, bool Confirm, SuggestionBasis Basis, string? Field);
+
+/// <summary>Why a code is suggested: what the settled records it rests on have in common with the record being entered.</summary>
+public enum SuggestionBasis
+{
+    /// <summary>The settled records closest to the one being entered hold it; <see cref="SuggestedCode.Similar"/> names them, nearest first.</summary>
+    SimilarRecords,
+
+    /// <summary>
+    /// It was chosen most in settled records that have the same value as the record being entered in
+    /// <see cref="SuggestedCode.Field"/>; <see cref="SuggestedCode.Similar"/> names the latest of them.
+    /// </summary>
+    SameValue,
+
+    /// <summary>It is among the codes chosen most often in the settled records; no particular record is its evidence, and <see cref="SuggestedCode.Similar"/> is empty.</summary>
+    Frequent,
+}
 
 /// <summary>
 /// Suggests codes for the coded fields of one entity type, learned from the vault's settled records with
@@ -60,9 +78,10 @@ public sealed class CodeSuggester
     private readonly IReadOnlyList<VaultField> _fields;
     private readonly SchemeCatalog _catalog;
     private readonly DateOnly _date;
+    private readonly IReadOnlyList<SettledDocument> _settled;
 
     private CodeSuggester(FormDefinition? form, FormResolver? resolver, IReadOnlyDictionary<string, Target> targets,
-        IReadOnlyList<VaultField> fields, SchemeCatalog catalog, DateOnly date, int remembered)
+        IReadOnlyList<VaultField> fields, SchemeCatalog catalog, DateOnly date, IReadOnlyList<SettledDocument> settled)
     {
         _form = form;
         _resolver = resolver;
@@ -70,11 +89,11 @@ public sealed class CodeSuggester
         _fields = fields;
         _catalog = catalog;
         _date = date;
-        Remembered = remembered;
+        _settled = settled;
     }
 
     /// <summary>How many settled records the suggestions are learned from; none when there is nothing to suggest for.</summary>
-    public int Remembered { get; }
+    public int Remembered => _settled.Count;
 
     /// <summary>The coded fields this suggester suggests codes for.</summary>
     public IReadOnlyCollection<string> Fields => [.. _targets.Keys];
@@ -110,7 +129,7 @@ public sealed class CodeSuggester
         if (targets.Count == 0)
         {
             // Nothing to suggest for: no settled record is read.
-            return new CodeSuggester(null, null, targets, fields, catalog, date, 0);
+            return new CodeSuggester(null, null, targets, fields, catalog, date, []);
         }
         var form = new FormDefinition(type, formFields, PromptLanguage.English);
         var resolver = new FormResolver(new FieldMemory(), new LexicalMemory(), similarDocumentCount: SimilarCount);
@@ -119,7 +138,7 @@ public sealed class CodeSuggester
             .Select(e => new SettledDocument(e.Reference.Id, Values(e.Fields, fields, catalog, date, e), e.Changes.Max(c => c.At)))
             .ToList();
         await resolver.RebuildAsync(form, settled, cancellationToken).ConfigureAwait(false);
-        return new CodeSuggester(form, resolver, targets, fields, catalog, date, settled.Count);
+        return new CodeSuggester(form, resolver, targets, fields, catalog, date, settled);
     }
 
     /// <summary>
@@ -143,10 +162,7 @@ public sealed class CodeSuggester
                 continue;
             }
             // The field's candidates are exactly the items that may be suggested, so every value offered is one of them.
-            var codes = suggestion.Candidates
-                .Select(c => new SuggestedCode(c.Value, c.Score, [.. suggestion.SimilarDocuments.Where(m => m.Answer == c.Value).Select(m => m.Source)],
-                    target.Codes[c.Value] == Suggestion.Confirm))
-                .ToList();
+            var codes = suggestion.Candidates.Select(c => Suggested(c, suggestion, values, target)).ToList();
             if (codes.Count > 0)
             {
                 result.Add(new FieldSuggestions(suggestion.Field, target.Scheme.Name, target.Scheme.Version, codes));
@@ -154,6 +170,41 @@ public sealed class CodeSuggester
         }
         return result;
     }
+
+    /// <summary>
+    /// A candidate as suggested, with the evidence of the layer that ranked it: the similar records holding
+    /// it, the settled records sharing the value it was chosen alongside, or none for a code chosen often.
+    /// </summary>
+    private SuggestedCode Suggested(FieldCandidate candidate, FieldSuggestion suggestion, Dictionary<string, string> values, Target target)
+    {
+        var confirm = target.Codes[candidate.Value] == Suggestion.Confirm;
+        switch (candidate.Source)
+        {
+            case FieldSource.SimilarDocument:
+                return new SuggestedCode(candidate.Value, candidate.Score,
+                    [.. suggestion.SimilarDocuments.Where(m => m.Answer == candidate.Value).Select(m => m.Source)], confirm, SuggestionBasis.SimilarRecords, null);
+            case FieldSource.SettledFieldMemory when KeyField(candidate.Evidence) is { } field && values.TryGetValue(field, out var shared):
+                var alongside = _settled
+                    .Where(d => d.Values.TryGetValue(suggestion.Field, out var code) && code == candidate.Value
+                        && d.Values.TryGetValue(field, out var value) && SameValue(value, shared))
+                    .OrderByDescending(d => d.SettledAt)
+                    .ThenBy(d => d.DocumentId, StringComparer.Ordinal)
+                    .Take(SimilarCount)
+                    .Select(d => d.DocumentId);
+                return new SuggestedCode(candidate.Value, candidate.Score, [.. alongside], confirm, SuggestionBasis.SameValue, field);
+            case FieldSource.SettledFieldMemory:
+                return new SuggestedCode(candidate.Value, candidate.Score, [], confirm, SuggestionBasis.Frequent, null);
+            default:
+                // Only the two memories are consulted here: a candidate from anywhere else would be shown with the wrong reason.
+                throw new InvalidOperationException($"A suggestion came from {candidate.Source}, which this suggester does not consult.");
+        }
+    }
+
+    /// <summary>The field of a field memory's evidence — <c>field: value</c>, the value as the memory normalised it.</summary>
+    private string? KeyField(string? evidence) =>
+        evidence?.IndexOf(": ", StringComparison.Ordinal) is > 0 and var at && _fields.Any(f => f.Name == evidence[..at]) ? evidence[..at] : null;
+
+    private static bool SameValue(string a, string b) => string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// A record's values as the form reads them: a coded value as its code in the version in force on
