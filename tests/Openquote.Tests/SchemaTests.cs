@@ -92,6 +92,12 @@ public class SchemaTests
     [InlineData("report", """{ "format": "openquote.report/0", "report": "monthly", "version": 1, "label": "Monthly", "counts": "session", "period": { "unit": "year", "field": "date" }, "rows": { "field": "kind", "scheme": "kind", "version": 1 } }""")]
     [InlineData("fields", """{ "format": "openquote.fields/0", "pack": "care", "type": "session", "version": 1, "fields": [ { "name": "m", "kind": "coded", "scheme": "k", "many": true } ] }""")]
     [InlineData("fields", """{ "format": "openquote.fields/1", "pack": "care", "type": "session", "version": 1, "fields": [ { "name": "m", "kind": "text", "many": true } ] }""")]
+    [InlineData("export", """{ "format": "openquote.export/0", "export": "list", "version": 1, "label": "List", "rows": "session", "period": { "field": "date" }, "columns": [ { "label": "Kind", "value": "Counselling" } ] }""")]
+    [InlineData("export", """{ "format": "openquote.export/0", "export": "list", "version": 1, "label": "List", "rows": "session", "period": { "field": "date" }, "columns": [ { "label": "Day", "field": "date", "date": "basic" } ] }""")]
+    [InlineData("export", """{ "format": "openquote.export/1", "export": "list", "version": 1, "label": "List", "rows": "session", "period": { "field": "date" }, "columns": [ { "label": "Area", "field": "kind", "scheme": "kind", "version": 1, "part": "top", "level": 2 } ] }""")]
+    [InlineData("export", """{ "format": "openquote.export/1", "export": "list", "version": 1, "label": "List", "rows": "session", "period": { "field": "date" }, "columns": [ { "label": "Hours", "field": "minutes", "quotient": 60, "remainder": 60 } ] }""")]
+    [InlineData("export", """{ "format": "openquote.export/1", "export": "list", "version": 1, "label": "List", "rows": "session", "period": { "field": "date" }, "columns": [ { "label": "Gender", "person": "gender", "all": true, "mixed": "Mixed" } ] }""")]
+    [InlineData("export", """{ "format": "openquote.export/1", "export": "list", "version": 1, "label": "List", "rows": "session", "period": { "field": "date" }, "columns": [ { "label": "Title", "field": "title", "level": 2 } ] }""")]
     public void A_shape_the_reader_refuses_is_refused(string schema, string json) => Assert.False(Valid(schema, json));
 
     // Every ```json block in the format document, with the schema its "format" names (openquote.<name>/0).

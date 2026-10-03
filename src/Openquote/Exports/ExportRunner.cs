@@ -102,10 +102,19 @@ public static class ExportRunner
                 : ""),
         PeopleCountColumn => record.People.Count.ToString(CultureInfo.InvariantCulture),
         PersonColumn p => p.All || record.People.Count == 1
-            ? string.Join(", ", record.People
-                .Select(s => x.ById.TryGetValue(s, out var subject) ? Guarded(x, column, record, subject, p.Field, () => Text(subject, p.Field)) : "")
-                .Where(t => t.Length > 0))
-            : "",
+            ? string.Join(", ", PersonValues(p, record, x).Where(t => t.Length > 0))
+            : p.Mixed is { } mixed && record.People.Count > 1
+                ? PersonValues(p, record, x).Distinct(StringComparer.Ordinal).ToArray() is [var shared] ? shared : mixed
+                : "",
+        DateColumn d => Guarded(x, column, record, record, d.Field, () =>
+            record.Fields.TryGetValue(d.Field, out var v) && ParseDate(v) is { } date
+                ? date.ToString(d.Style == DateStyle.Basic ? "yyyyMMdd" : "yyyy-MM-dd", CultureInfo.InvariantCulture)
+                : ""),
+        DivisionColumn n => Guarded(x, column, record, record, n.Field, () =>
+            record.Fields.TryGetValue(n.Field, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt64(out var whole)
+                ? (n.Remainder ? Remainder(whole, n.Divisor) : (whole - Remainder(whole, n.Divisor)) / n.Divisor).ToString(CultureInfo.InvariantCulture)
+                : ""),
+        ValueColumn f => f.Value,
         YearColumn y => Guarded(x, column, record, record, y.Field, () =>
             record.Fields.TryGetValue(y.Field, out var v) && ParseDate(v) is { } date
                 ? (date.Month >= y.StartMonth ? date.Year : date.Year - 1).ToString(CultureInfo.InvariantCulture)
@@ -113,6 +122,12 @@ public static class ExportRunner
         CodedColumn c => Guarded(x, column, record, record, c.Field, () => Coded(c, record, x.Catalog, x.Pending, x.Unmapped)),
         _ => throw new NotSupportedException(column.GetType().Name),
     };
+
+    private static IEnumerable<string> PersonValues(PersonColumn column, Entity record, CellContext x) =>
+        record.People.Select(s => x.ById.TryGetValue(s, out var subject) ? Guarded(x, column, record, subject, column.Field, () => Text(subject, column.Field)) : "");
+
+    // The remainder of division rounded down: never negative, so the quotient of a negative number rounds down too.
+    private static long Remainder(long value, int divisor) => (value % divisor + divisor) % divisor;
 
     // A field declared as written content never reaches a cell: the cell stays empty and the column is
     // named. A field holding concurrent values does not either, until a person picks one: the record is listed.
@@ -147,9 +162,10 @@ public static class ExportRunner
         if (catalog.Find(column.Scheme, column.Version)?.Items.FirstOrDefault(i => i.Code == resolution.Code) is not { } item)
             return "";
         var scheme = catalog.Find(column.Scheme, column.Version)!;
-        if (column.Top)
-            while (item.Parent is { } parent && scheme.Items.FirstOrDefault(i => i.Code == parent) is { } up) item = up;
-        return item.Label;
+        if (column.Level is not { } level) return item.Label;
+        var path = new List<SchemeItem> { item };
+        while (path[^1].Parent is { } parent && scheme.Items.FirstOrDefault(i => i.Code == parent) is { } up) path.Add(up);
+        return path[Math.Max(path.Count - level, 0)].Label;
     }
 
     private static string Text(Entity entity, string field) =>

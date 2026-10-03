@@ -143,6 +143,8 @@ An **export form** lays out one period's records as rows for another system or s
 - a field of those subjects: the one subject's value, or every subject's joined;
 - the year a date falls in, for a year that starts in a given month (for example an academic or fiscal year).
 
+An outside form often asks for cells in a shape of its own, and an export form of format 1 fills them: a fixed text in every row, a classified value at a given level of its hierarchy, a date in ISO 8601 basic format (`20260310`), a whole number divided (minutes as hours and minutes), and for a record about several subjects the value they share, or a text that says they differ.
+
 An export counts nothing, but it follows the same rule as reports: a classified cell that is pending or unmapped is left empty, and the record is listed apart so the gap is seen before the rows go anywhere. A field that holds no value is simply an empty cell (`Entity.HasValue` decides it for both).
 
 ## Packs and layers

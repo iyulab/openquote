@@ -60,8 +60,8 @@ public class ExportRunnerTests
         var form = Form(
             new FieldColumn("date", "date"),
             new YearColumn("year", "date", 3),
-            new CodedColumn("top", "kind", "kind", 1, Top: true),
-            new CodedColumn("item", "kind", "kind", 1, Top: false),
+            new CodedColumn("top", "kind", "kind", 1, Level: 1),
+            new CodedColumn("item", "kind", "kind", 1, Level: null),
             new PeopleCountColumn("people"),
             new PersonColumn("grade", "grade", All: false),
             new PersonColumn("names", "name", All: true),
@@ -79,10 +79,65 @@ public class ExportRunnerTests
     }
 
     [Fact]
+    public void Format_1_columns_fill_the_cells_an_outside_form_asks_for()
+    {
+        var w = new VaultWriter("dev1", new StepClock());
+        var files = new List<VaultFile>();
+        string Add(VaultFile f)
+        {
+            files.Add(f);
+            return VaultReader.Read([f]).Changes[0].Entity.Id;
+        }
+        var one = Add(w.CreateSubject(Fields(("name", "one"), ("grade", "2"))));
+        var two = Add(w.CreateSubject(Fields(("name", "two"), ("grade", "3"))));
+        var three = Add(w.CreateSubject(Fields(("name", "three"), ("grade", "3"))));
+        var mixed = Add(w.CreateGroup(Fields(("name", "mixed"))));
+        var alike = Add(w.CreateGroup(Fields(("name", "alike"))));
+        Add(w.CreateInSubject(one, "session", Fields(("date", "2026-03-05"), ("kind", Coded(1, "b/x")), ("minutes", 70))));
+        Add(w.CreateInGroup(mixed, "session", Fields(("date", "2026-03-06"), ("kind", Coded(1, "a")), ("minutes", 50), ("attendees", new JsonArray(one, two)))));
+        Add(w.CreateInGroup(alike, "session", Fields(("date", "2026-03-07"), ("kind", Coded(1, "b")), ("minutes", 12.5), ("attendees", new JsonArray(two, three)))));
+        var entities = EntityMerger.Merge(VaultReader.Read(files).Changes).Values.ToList();
+        var form = Form(
+            new ValueColumn("fixed", "Wee"),
+            new CodedColumn("top", "kind", "kind", 1, Level: 1),
+            new CodedColumn("middle", "kind", "kind", 1, Level: 2),
+            new CodedColumn("deeper", "kind", "kind", 1, Level: 3),
+            new DateColumn("day", "date", DateStyle.Basic),
+            new DivisionColumn("hours", "minutes", 60, Remainder: false),
+            new DivisionColumn("minutes", "minutes", 60, Remainder: true),
+            new PersonColumn("grade", "grade", All: false) { Mixed = "mixed" });
+
+        var table = ExportRunner.Run(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), entities, Catalog, FieldCatalog.Empty);
+
+        Assert.Collection(table.Rows,
+            r => Assert.Equal(["Wee", "B", "BX", "BX", "20260305", "1", "10", "2"], r.Cells),
+            r => Assert.Equal(["Wee", "A", "A", "A", "20260306", "0", "50", "mixed"], r.Cells), // grades 2 and 3
+            r => Assert.Equal(["Wee", "B", "B", "B", "20260307", "", "", "3"], r.Cells));      // not a whole number; both in grade 3
+    }
+
+    [Theory]
+    [InlineData(-61, "-2", "59")]
+    [InlineData(0, "0", "0")]
+    [InlineData(120, "2", "0")]
+    public void A_division_rounds_down_and_leaves_a_remainder_that_is_never_negative(int value, string quotient, string remainder)
+    {
+        var w = new VaultWriter("dev1", new StepClock());
+        var subject = w.CreateSubject(Fields(("name", "one")));
+        var id = VaultReader.Read([subject]).Changes[0].Entity.Id;
+        var session = w.CreateInSubject(id, "session", Fields(("date", "2026-03-05"), ("n", value)));
+        var entities = EntityMerger.Merge(VaultReader.Read([subject, session]).Changes).Values.ToList();
+        var form = Form(new DivisionColumn("q", "n", 60, Remainder: false), new DivisionColumn("r", "n", 60, Remainder: true));
+
+        var row = Assert.Single(ExportRunner.Run(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), entities, Catalog, FieldCatalog.Empty).Rows);
+
+        Assert.Equal([quotient, remainder], row.Cells);
+    }
+
+    [Fact]
     public void A_value_that_waits_for_a_person_leaves_its_cell_empty_and_is_listed()
     {
         var v = Build();
-        var form = Form(new FieldColumn("date", "date"), new CodedColumn("kind", "kind", "kind", 2, Top: false));
+        var form = Form(new FieldColumn("date", "date"), new CodedColumn("kind", "kind", "kind", 2, Level: null));
 
         var table = ExportRunner.Run(form, new DateOnly(2026, 2, 1), new DateOnly(2026, 3, 31), v.Entities, Catalog, FieldCatalog.Empty);
 
@@ -114,7 +169,7 @@ public class ExportRunnerTests
             w.CreateInSubject(one, "session", Fields(("date", "2026-03-04"), ("kind", new JsonArray(Coded(1, "b"), Coded(1, "a"))))),
         };
         var entities = EntityMerger.Merge(VaultReader.Read(files).Changes).Values.ToList();
-        var form = Form(new FieldColumn("date", "date"), new CodedColumn("kind", "kind", "kind", 2, Top: false));
+        var form = Form(new FieldColumn("date", "date"), new CodedColumn("kind", "kind", "kind", 2, Level: null));
 
         var table = ExportRunner.Run(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), entities, catalog, FieldCatalog.Empty);
 
@@ -177,8 +232,66 @@ public class ExportRunnerTests
         Assert.Equal(
             [typeof(FieldColumn), typeof(YearColumn), typeof(CodedColumn), typeof(PeopleCountColumn), typeof(PersonColumn), typeof(PersonColumn), typeof(ReferenceColumn)],
             form.Columns.Select(c => c.GetType()));
-        Assert.True(((CodedColumn)form.Columns[2]).Top);
+        Assert.Equal(1, ((CodedColumn)form.Columns[2]).Level);
         Assert.True(((PersonColumn)form.Columns[5]).All);
+    }
+
+    [Fact]
+    public void A_format_1_export_form_reads_its_columns_from_its_file()
+    {
+        const string json = """
+            {"format":"openquote.export/1","export":"list","version":1,"label":"List","rows":"session","period":{"field":"date"},
+             "columns":[{"label":"f","value":""},{"label":"m","field":"kind","scheme":"kind","version":1,"level":2},
+                        {"label":"t","field":"kind","scheme":"kind","version":1,"part":"top"},
+                        {"label":"d","field":"date","date":"basic"},{"label":"e","field":"date","date":"extended"},
+                        {"label":"h","field":"minutes","quotient":60},{"label":"r","field":"minutes","remainder":60},
+                        {"label":"g","person":"gender","mixed":"mixed"},{"label":"n","person":"name","all":true}]}
+            """;
+        var content = VaultReader.Read([new VaultFile("exports/list/v1.json", Encoding.UTF8.GetBytes(json))]);
+
+        Assert.Empty(content.Unreadable);
+        Assert.Equal(
+            [
+                new ValueColumn("f", ""), new CodedColumn("m", "kind", "kind", 1, 2), new CodedColumn("t", "kind", "kind", 1, 1),
+                new DateColumn("d", "date", DateStyle.Basic), new DateColumn("e", "date", DateStyle.Extended),
+                new DivisionColumn("h", "minutes", 60, false), new DivisionColumn("r", "minutes", 60, true),
+                new PersonColumn("g", "gender", false) { Mixed = "mixed" }, new PersonColumn("n", "name", true),
+            ],
+            Assert.Single(content.Exports).Columns);
+    }
+
+    [Theory]
+    [InlineData("""{"label":"x","value":"Wee"}""")]
+    [InlineData("""{"label":"x","field":"kind","scheme":"kind","version":1,"level":2}""")]
+    [InlineData("""{"label":"x","field":"date","date":"basic"}""")]
+    [InlineData("""{"label":"x","field":"minutes","quotient":60}""")]
+    [InlineData("""{"label":"x","person":"gender","mixed":"mixed"}""")]
+    public void A_format_0_form_with_a_format_1_column_is_unreadable_rather_than_read_without_it(string column)
+    {
+        var json = $$"""{"format":"openquote.export/0","export":"list","version":1,"label":"L","rows":"session","period":{"field":"date"},"columns":[{{column}}]}""";
+        var unreadable = Assert.Single(VaultReader.Read([new VaultFile("exports/list/v1.json", Encoding.UTF8.GetBytes(json))]).Unreadable);
+
+        Assert.Equal(UnreadableReason.Invalid, unreadable.Reason);
+        Assert.Contains("needs format 1", unreadable.Detail, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("""{"label":"x","value":3}""")]
+    [InlineData("""{"label":"x","field":"kind","scheme":"kind","version":1,"level":0}""")]
+    [InlineData("""{"label":"x","field":"kind","scheme":"kind","version":1,"level":2,"part":"top"}""")]
+    [InlineData("""{"label":"x","field":"date","date":"short"}""")]
+    [InlineData("""{"label":"x","field":"minutes","quotient":0}""")]
+    [InlineData("""{"label":"x","field":"minutes","quotient":60,"remainder":60}""")]
+    [InlineData("""{"label":"x","person":"gender","all":true,"mixed":"mixed"}""")]
+    [InlineData("""{"label":"x","field":"title","level":2}""")]
+    [InlineData("""{"label":"x","field":"kind","scheme":"kind","version":1,"date":"basic"}""")]
+    public void A_format_1_column_whose_keys_do_not_fit_its_source_is_unreadable(string column)
+    {
+        var json = $$"""{"format":"openquote.export/1","export":"list","version":1,"label":"L","rows":"session","period":{"field":"date"},"columns":[{{column}}]}""";
+        var content = VaultReader.Read([new VaultFile("exports/list/v1.json", Encoding.UTF8.GetBytes(json))]);
+
+        Assert.Empty(content.Exports);
+        Assert.Equal(UnreadableReason.Invalid, Assert.Single(content.Unreadable).Reason);
     }
 
     [Theory]
@@ -233,7 +346,7 @@ public class ExportRunnerTests
         var v = Build();
         var form = Form(
             new YearColumn("year", "date", 3),                       // a narrative date would show its year
-            new CodedColumn("item", "kind", "kind", 1, Top: false)); // a narrative coded field would show its label
+            new CodedColumn("item", "kind", "kind", 1, Level: null)); // a narrative coded field would show its label
 
         var table = ExportRunner.Run(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), v.Entities, Catalog,
             Narrative(("session", "date"), ("session", "kind")));
@@ -250,7 +363,7 @@ public class ExportRunnerTests
         var form = Form(
             new FieldColumn("date", "date"),
             new YearColumn("year", "date", 3),
-            new CodedColumn("item", "kind", "kind", 1, Top: false),
+            new CodedColumn("item", "kind", "kind", 1, Level: null),
             new FieldColumn("title", "title"));
 
         var table = ExportRunner.Run(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), v.Entities, Catalog, Narrative(("session", "title")));

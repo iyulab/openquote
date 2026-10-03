@@ -361,7 +361,8 @@ public static partial class VaultReader
 
     private static Definition<ExportDefinition> ParseExport(VaultFile file)
     {
-        if (!TryRoot(file, "openquote.export/0", out var root, out var error)) return new(null, error);
+        if (!TryRoot(file, ["openquote.export/0", "openquote.export/1"], out var root, out var error)) return new(null, error);
+        var extended = root.GetProperty("format").GetString() == "openquote.export/1";
         var path = ExportPath().Match(file.Path);
 
         if (!TryString(root, "export", out var name) || !TryInt(root, "version", out var version) || version < 1
@@ -379,7 +380,9 @@ public static partial class VaultReader
         {
             if (c.ValueKind != JsonValueKind.Object || !TryString(c, "label", out var heading))
                 return Bad<ExportDefinition>(file, UnreadableReason.Invalid, "every column needs a label");
-            if (ParseColumn(c, heading) is not { } column)
+            if (!extended && FormatOneKeys.FirstOrDefault(k => c.TryGetProperty(k, out _)) is { } key)
+                return Bad<ExportDefinition>(file, UnreadableReason.Invalid, $"column {heading}: {key} needs format 1");
+            if (ParseColumn(c, heading) is not { } column || FormatOneKeys.Any(k => c.TryGetProperty(k, out _) && !Takes(column, k)))
                 return Bad<ExportDefinition>(file, UnreadableReason.Invalid, $"column {heading}: say where its cells come from");
             columns.Add(column);
         }
@@ -387,14 +390,35 @@ public static partial class VaultReader
         return new(new ExportDefinition(name, version, label, rows, periodField, columns), null);
     }
 
-    // A column names one source: a field (optionally a classified one, or a reference), the people
-    // the record is about, or the year a date falls in.
+    // The keys of a column that only an export form of format 1 may use: an earlier engine would read the
+    // column without them and show a different cell, so a form that uses them is a format it does not know.
+    private static readonly string[] FormatOneKeys = ["value", "level", "date", "quotient", "remainder", "mixed"];
+
+    // Whether a column of this kind reads the format 1 key: a key the source does not take is a mistake to report.
+    private static bool Takes(ExportColumn column, string key) => column switch
+    {
+        ValueColumn => key == "value",
+        PersonColumn => key == "mixed",
+        CodedColumn => key == "level",
+        DateColumn => key == "date",
+        DivisionColumn => key is "quotient" or "remainder",
+        _ => false,
+    };
+
+    // A column names one source: a fixed text, a field (optionally a classified one, a reference, a date in
+    // a style, or a number divided), the people the record is about, or the year a date falls in.
     private static ExportColumn? ParseColumn(JsonElement c, string label)
     {
+        if (c.TryGetProperty("value", out var fixedValue))
+            return fixedValue.ValueKind == JsonValueKind.String ? new ValueColumn(label, fixedValue.GetString()!) : null;
         if (TryString(c, "people", out var people))
             return people == "count" ? new PeopleCountColumn(label) : null;
         if (TryString(c, "person", out var personField))
-            return new PersonColumn(label, personField, c.TryGetProperty("all", out var all) && all.ValueKind == JsonValueKind.True);
+        {
+            var all = c.TryGetProperty("all", out var allValue) && allValue.ValueKind == JsonValueKind.True;
+            if (!c.TryGetProperty("mixed", out var mixed)) return new PersonColumn(label, personField, all);
+            return mixed.ValueKind == JsonValueKind.String && !all ? new PersonColumn(label, personField, false) { Mixed = mixed.GetString() } : null;
+        }
         if (TryString(c, "year", out var yearField))
             return TryInt(c, "startMonth", out var start) && start is >= 1 and <= 12 ? new YearColumn(label, yearField, start) : null;
         if (!TryString(c, "field", out var field)) return null;
@@ -402,14 +426,29 @@ public static partial class VaultReader
         if (TryString(c, "scheme", out var scheme))
         {
             if (!TryInt(c, "version", out var version) || version < 1) return null;
-            var top = false;
-            if (TryString(c, "part", out var part))
+            int? level = null;
+            if (c.TryGetProperty("part", out _))
             {
-                if (part is not ("top" or "item")) return null;
-                top = part == "top";
+                if (!TryString(c, "part", out var part) || part is not ("top" or "item") || c.TryGetProperty("level", out _)) return null;
+                level = part == "top" ? 1 : null;
             }
-            return new CodedColumn(label, field, scheme, version, top);
+            else if (c.TryGetProperty("level", out _))
+            {
+                if (!TryInt(c, "level", out var n) || n < 1) return null;
+                level = n;
+            }
+            return new CodedColumn(label, field, scheme, version, level);
         }
+        if (c.TryGetProperty("date", out _))
+            return TryString(c, "date", out var style) && style is "basic" or "extended"
+                ? new DateColumn(label, field, style == "basic" ? DateStyle.Basic : DateStyle.Extended)
+                : null;
+        var quotient = c.TryGetProperty("quotient", out _);
+        var remainder = c.TryGetProperty("remainder", out _);
+        if (quotient || remainder)
+            return quotient != remainder && TryInt(c, quotient ? "quotient" : "remainder", out var divisor) && divisor >= 1
+                ? new DivisionColumn(label, field, divisor, remainder)
+                : null;
         return new FieldColumn(label, field);
     }
 }

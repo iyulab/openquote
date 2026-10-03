@@ -2,7 +2,7 @@
 
 This document specifies the plaintext layer of an Openquote vault: the folder layout, the JSON of each file kind, and the rules a reader applies. It describes what the engine in this repository reads and writes.
 
-> Status: version 0 is frozen; version 1 is in progress. Version 0 changes only by additions: a reader that predates an addition may pass over what it adds, and counts the same numbers. Version 1 makes the changes to the structure together — what a file means or what it counts: blank and conflicted records apart (run records, format 1), report forms split by up to three dimensions and counting in the version in force (format 1), coded fields that take several values and fields that start from a fixed value (field definitions format 1), schemes that extend others (format 1), and crosswalks that state relations or lead into another scheme (format 1). A vault holding an extending scheme, such a crosswalk or a field that takes several values is declared `openquote.vault/1` (`VaultContent.RequiredVersion`); the others an earlier engine skips file by file without counting differently.
+> Status: version 0 is frozen; version 1 is in progress. Version 0 changes only by additions: a reader that predates an addition may pass over what it adds, and counts the same numbers. Version 1 makes the changes to the structure together — what a file means or what it counts: blank and conflicted records apart (run records, format 1), report forms split by up to three dimensions and counting in the version in force (format 1), coded fields that take several values and fields that start from a fixed value (field definitions format 1), schemes that extend others (format 1), crosswalks that state relations or lead into another scheme (format 1), and export columns that fill an outside form's cells — a fixed text, a level of a hierarchy, a date in ISO 8601 basic format, a number divided, the value a group's subjects share (export forms format 1). A vault holding an extending scheme, such a crosswalk or a field that takes several values is declared `openquote.vault/1` (`VaultContent.RequiredVersion`); the others an earlier engine skips file by file without counting differently.
 
 Every file kind has a JSON Schema (draft 2020-12) in [schema/](schema/), named after its format (`openquote.<name>/0` and `/1` are both `schema/<name>.schema.json`). A schema checks the shape of one file. Rules that compare a file with its path, with other files, or with other values in it — a name matching its path, codes unique within a version, a run's totals adding up — are checked by the reader only.
 
@@ -291,6 +291,39 @@ In `openquote.report/1`, a form splits what it counts by one to three `dimension
 | `field` + `scheme` + `version` (+ `part`) | The label of the classified value carried to that version, as a report carries it (a value of an extending scheme by its anchor, of another scheme along its crosswalks, several values by the primary one); with `part: "top"` the label of its top-level ancestor (`part` is `top` or `item`, default `item`). |
 | `field` | The field value as written. |
 
+In `openquote.export/1`, a form fills the cells an outside form or system asks for, in the shape it asks for them:
+
+```json
+{
+  "format": "openquote.export/1",
+  "export": "upload",
+  "version": 1,
+  "label": "Upload",
+  "rows": "session",
+  "period": { "field": "date" },
+  "columns": [
+    { "label": "Kind", "value": "Counselling" },
+    { "label": "Area", "field": "topic", "scheme": "topic", "version": 2, "level": 1 },
+    { "label": "Group", "field": "topic", "scheme": "topic", "version": 2, "level": 2 },
+    { "label": "Topic", "field": "topic", "scheme": "topic", "version": 2 },
+    { "label": "Date", "field": "date", "date": "basic" },
+    { "label": "Hours", "field": "minutes", "quotient": 60 },
+    { "label": "Minutes", "field": "minutes", "remainder": 60 },
+    { "label": "Gender", "person": "gender", "mixed": "Mixed" }
+  ]
+}
+```
+
+| Keys | Cell |
+|---|---|
+| `value` | The same text in every row, as the outside form fixes it; it may be empty. Recognised before every other source. |
+| `person` + `mixed` | For a record about one subject, that subject's value. For a record about several, their value when they all have the same one, and the text `mixed` when they differ — as a report reads a field of the subjects (`"of": "subject"`). Not with `all`. |
+| `field` + `scheme` + `version` + `level` | The label of the classified value's ancestor at that level, counted from 1 at the top; a value no deeper than the level shows its own label. `level: 1` is `part: "top"`; a column has one or the other. |
+| `field` + `date` | A calendar-date field written in ISO 8601 `basic` format (`20260310`) or `extended` format (`2026-03-10`, as the vault writes dates). Empty when the field holds no date. |
+| `field` + `quotient` or `remainder` | A whole-number field divided by a whole number from 1 up: the quotient rounded down, or the remainder, from 0 up to the divisor — minutes as hours and minutes, for example. Empty when the field holds no whole number. A column has one of the two. |
+
+A format 0 form whose column uses any of these keys is unreadable rather than read without them, and so is a column with a key its source does not take (`level` without a scheme, `mixed` with `all`). An engine that reads only format 0 lists a format 1 form as a format it does not know. Export forms count nothing, so a vault that holds one keeps its declared format.
+
 ## Packs
 
 A pack is a bundle of definition files (schemes, crosswalks, forms, labels and field definitions) that one party maintains and many vaults apply. Applying a pack copies its files into the vault; from then on the vault holds them like any other definition. See [Concepts](concepts.md#packs-and-layers).
@@ -454,7 +487,7 @@ The only condition that refuses the whole read is the declaration check describe
 - A change a previous engine could ignore without producing a wrong number (a new optional key) is additive and keeps the declared version.
 - A change that would make a previous engine count wrongly without noticing (a new folder of records that reports count, a key that changes what is counted) raises the declared vault format, so that previous engines refuse the vault instead of reading it. Folders a previous engine ignores without changing any count — `packs/`, `labels/`, `fields/`, `suggestions/` — are additive.
 - A new folder of records that no report counts (for example appointments kept for scheduling) is additive too: a previous engine skips paths outside the layout above, and every count stays the same. The format version whose report forms first count records in such a folder raises the declared vault format, since a previous engine would run those reports without the records and give a smaller number.
-- Version 1 file formats are new format versions of their file kinds (`openquote.scheme/1`, `openquote.crosswalk/1`, `openquote.report/1`, `openquote.run/1`, `openquote.fields/1`), so an engine that reads only version 0 reports each such file as a format it does not know rather than misreading it. What it would then count differently — values of an extending scheme, values a crosswalk it skipped would have carried — is why a vault holding them declares version 1: an earlier engine refuses the vault before counting anything. A version 1 engine reads a version 0 vault as it is, and counts blank and conflicted records apart in it too.
+- Version 1 file formats are new format versions of their file kinds (`openquote.scheme/1`, `openquote.crosswalk/1`, `openquote.report/1`, `openquote.run/1`, `openquote.fields/1`, `openquote.export/1`), so an engine that reads only version 0 reports each such file as a format it does not know rather than misreading it. What it would then count differently — values of an extending scheme, values a crosswalk it skipped would have carried — is why a vault holding them declares version 1: an earlier engine refuses the vault before counting anything. A version 1 engine reads a version 0 vault as it is, and counts blank and conflicted records apart in it too.
 - A pack manifest may name a definition file in a folder a previous engine does not know; that engine reads the manifest without the line. Engines before `suggestions/` was added (package versions up to 0.6) read a manifest that names a suggestion file as unreadable instead, and keep using the pack's earlier version.
 
 `VaultWriter` produces indented UTF-8 JSON with `\n` line endings and a trailing newline, stamps `at` in the device's local time with its offset, and gives every file a fresh id, so its path never names an existing file.

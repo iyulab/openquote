@@ -2,24 +2,35 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/iyulab/openquote/blob/main/docs/schema/export.schema.json",
   "title": "Openquote export form",
-  "description": "exports/<export>/v<version>.json. Each column has exactly one source, recognised in the order people, person, year, field + ref, field + scheme + version, field.",
+  "description": "exports/<export>/v<version>.json. Each column has exactly one source, recognised in the order value, people, person, year, field + ref, field + scheme + version, field + date, field + quotient or remainder, field. Format 1 adds value, level, date, quotient, remainder and mixed; a format 0 form that uses any of them is refused.",
   "type": "object",
   "required": ["format", "export", "version", "label", "rows", "period", "columns"],
   "properties": {
-    "format": { "const": "openquote.export/0" },
+    "format": { "enum": ["openquote.export/0", "openquote.export/1"] },
     "export": { "type": "string", "minLength": 1, "pattern": "^[^/]+$" },
     "version": { "type": "integer", "minimum": 1 },
     "label": { "type": "string", "minLength": 1 },
     "rows": { "type": "string", "minLength": 1 },
-    "period": {
-      "type": "object",
-      "required": ["field"],
-      "properties": { "field": { "type": "string", "minLength": 1 } }
-    },
-    "columns": {
-      "type": "array",
-      "minItems": 1,
-      "items": { "$ref": "#/$defs/column" }
+    "period": { "type": "object", "required": ["field"], "properties": { "field": { "type": "string", "minLength": 1 } } },
+    "columns": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/column" } }
+  },
+  "if": { "properties": { "format": { "const": "openquote.export/0" } } },
+  "then": {
+    "properties": {
+      "columns": {
+        "items": {
+          "not": {
+            "anyOf": [
+              { "required": ["value"] },
+              { "required": ["level"] },
+              { "required": ["date"] },
+              { "required": ["quotient"] },
+              { "required": ["remainder"] },
+              { "required": ["mixed"] }
+            ]
+          }
+        }
+      }
     }
   },
   "$defs": {
@@ -30,37 +41,149 @@
       "properties": { "label": { "$ref": "#/$defs/text" } },
       "oneOf": [
         {
+          "required": ["value"],
+          "properties": { "value": { "type": "string" } },
+          "not": { "anyOf": [ { "required": ["date"] }, { "required": ["level"] }, { "required": ["mixed"] }, { "required": ["quotient"] }, { "required": ["remainder"] } ] }
+        },
+        {
           "required": ["people"],
+          "not": {
+            "anyOf": [
+              { "required": ["value"] },
+              { "required": ["date"] },
+              { "required": ["level"] },
+              { "required": ["mixed"] },
+              { "required": ["quotient"] },
+              { "required": ["remainder"] }
+            ]
+          },
           "properties": { "people": { "const": "count" } }
         },
         {
           "required": ["person"],
-          "not": { "required": ["people"] },
-          "properties": { "person": { "$ref": "#/$defs/text" }, "all": { "type": "boolean" } }
+          "not": {
+            "anyOf": [
+              { "required": ["value"] },
+              { "required": ["people"] },
+              { "required": ["all", "mixed"] },
+              { "required": ["date"] },
+              { "required": ["level"] },
+              { "required": ["quotient"] },
+              { "required": ["remainder"] }
+            ]
+          },
+          "properties": { "person": { "$ref": "#/$defs/text" }, "all": { "type": "boolean" }, "mixed": { "type": "string" } }
         },
         {
           "required": ["year", "startMonth"],
-          "not": { "anyOf": [ { "required": ["people"] }, { "required": ["person"] } ] },
+          "not": {
+            "anyOf": [
+              { "required": ["value"] },
+              { "required": ["people"] },
+              { "required": ["person"] },
+              { "required": ["date"] },
+              { "required": ["level"] },
+              { "required": ["mixed"] },
+              { "required": ["quotient"] },
+              { "required": ["remainder"] }
+            ]
+          },
           "properties": { "year": { "$ref": "#/$defs/text" }, "startMonth": { "type": "integer", "minimum": 1, "maximum": 12 } }
         },
         {
           "required": ["field", "ref"],
-          "not": { "anyOf": [ { "required": ["people"] }, { "required": ["person"] }, { "required": ["year"] } ] },
+          "not": {
+            "anyOf": [
+              { "required": ["value"] },
+              { "required": ["people"] },
+              { "required": ["person"] },
+              { "required": ["year"] },
+              { "required": ["date"] },
+              { "required": ["level"] },
+              { "required": ["mixed"] },
+              { "required": ["quotient"] },
+              { "required": ["remainder"] }
+            ]
+          },
           "properties": { "field": { "$ref": "#/$defs/text" }, "ref": { "$ref": "#/$defs/text" } }
         },
         {
           "required": ["field", "scheme", "version"],
-          "not": { "anyOf": [ { "required": ["people"] }, { "required": ["person"] }, { "required": ["year"] }, { "required": ["ref"] } ] },
+          "not": {
+            "anyOf": [
+              { "required": ["value"] },
+              { "required": ["people"] },
+              { "required": ["person"] },
+              { "required": ["year"] },
+              { "required": ["ref"] },
+              { "required": ["part", "level"] },
+              { "required": ["date"] },
+              { "required": ["mixed"] },
+              { "required": ["quotient"] },
+              { "required": ["remainder"] }
+            ]
+          },
           "properties": {
             "field": { "$ref": "#/$defs/text" },
             "scheme": { "$ref": "#/$defs/text" },
             "version": { "type": "integer", "minimum": 1 },
-            "part": { "enum": ["top", "item"] }
+            "part": { "enum": ["top", "item"] },
+            "level": { "type": "integer", "minimum": 1 }
           }
         },
         {
+          "required": ["field", "date"],
+          "not": {
+            "anyOf": [
+              { "required": ["value"] },
+              { "required": ["people"] },
+              { "required": ["person"] },
+              { "required": ["year"] },
+              { "required": ["ref"] },
+              { "required": ["scheme"] },
+              { "required": ["level"] },
+              { "required": ["mixed"] },
+              { "required": ["quotient"] },
+              { "required": ["remainder"] }
+            ]
+          },
+          "properties": { "field": { "$ref": "#/$defs/text" }, "date": { "enum": ["basic", "extended"] } }
+        },
+        {
           "required": ["field"],
-          "not": { "anyOf": [ { "required": ["people"] }, { "required": ["person"] }, { "required": ["year"] }, { "required": ["ref"] }, { "required": ["scheme"] } ] },
+          "oneOf": [ { "required": ["quotient"] }, { "required": ["remainder"] } ],
+          "not": {
+            "anyOf": [
+              { "required": ["value"] },
+              { "required": ["people"] },
+              { "required": ["person"] },
+              { "required": ["year"] },
+              { "required": ["ref"] },
+              { "required": ["scheme"] },
+              { "required": ["date"] },
+              { "required": ["level"] },
+              { "required": ["mixed"] }
+            ]
+          },
+          "properties": { "field": { "$ref": "#/$defs/text" }, "quotient": { "type": "integer", "minimum": 1 }, "remainder": { "type": "integer", "minimum": 1 } }
+        },
+        {
+          "required": ["field"],
+          "not": {
+            "anyOf": [
+              { "required": ["value"] },
+              { "required": ["people"] },
+              { "required": ["person"] },
+              { "required": ["year"] },
+              { "required": ["ref"] },
+              { "required": ["scheme"] },
+              { "required": ["date"] },
+              { "required": ["quotient"] },
+              { "required": ["remainder"] },
+              { "required": ["level"] },
+              { "required": ["mixed"] }
+            ]
+          },
           "properties": { "field": { "$ref": "#/$defs/text" } }
         }
       ]
