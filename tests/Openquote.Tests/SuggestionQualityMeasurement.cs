@@ -69,6 +69,10 @@ public class SuggestionQualityMeasurement
           { "name": "topic", "kind": "coded", "scheme": "topic" },
           { "name": "method", "kind": "coded", "scheme": "method" },
           { "name": "grade", "kind": "text" },
+          { "name": "class", "kind": "text" },
+          { "name": "minutes", "kind": "number" },
+          { "name": "held", "kind": "date" },
+          { "name": "with", "kind": "text" },
           { "name": "note", "kind": "text", "tier": "narrative" } ] }
         """;
 
@@ -84,8 +88,12 @@ public class SuggestionQualityMeasurement
         return string.Join(' ', parts);
     }
 
-    /// <summary><paramref name="settledCount"/> settled sessions in the usual words, about 3% of them on the rare topic.</summary>
-    private static List<VaultFile> Vault(int settledCount, Random random)
+    /// <summary>
+    /// <paramref name="settledCount"/> settled sessions in the usual words, about 3% of them on the rare topic. With
+    /// <paramref name="fields"/>, each also has the fields a school form records that say nothing about the topic —
+    /// class, length, date, who it was with — which make two sessions about the same thing read less alike.
+    /// </summary>
+    private static List<VaultFile> Vault(int settledCount, Random random, bool fields)
     {
         List<VaultFile> files =
         [
@@ -106,26 +114,53 @@ public class SuggestionQualityMeasurement
                 ["method"] = new JsonObject { ["scheme"] = "method", ["version"] = 1, ["code"] = Methods[random.Next(Methods.Length)] },
                 ["topic"] = new JsonObject { ["scheme"] = "topic", ["version"] = 1, ["code"] = code },
             };
+            if (fields)
+            {
+                foreach (var (name, value) in Unrelated(random))
+                {
+                    session[name] = value;
+                }
+            }
             files.Add(File(Json(i + 10, $"s{i}", "create", fields: session)));
         }
         return files;
     }
 
-    private static Dictionary<string, JsonElement> Draft(Random random, string[] sentences) => new()
-    {
-        ["note"] = JsonSerializer.SerializeToElement(Note(random, sentences, null)),
-        ["grade"] = JsonSerializer.SerializeToElement($"{1 + random.Next(3)}"),
-        ["method"] = JsonSerializer.SerializeToElement(new { scheme = "method", version = 1, code = Methods[random.Next(Methods.Length)] }),
-    };
+    /// <summary>Values of the fields that say nothing about the topic, as a school form records them.</summary>
+    private static IEnumerable<(string Name, JsonNode Value)> Unrelated(Random random) =>
+    [
+        ("class", JsonValue.Create($"{1 + random.Next(8)}")),
+        ("minutes", JsonValue.Create(30 + (10 * random.Next(3)))),
+        ("held", JsonValue.Create($"2026-{3 + random.Next(6):00}-{1 + random.Next(28):00}")),
+        ("with", JsonValue.Create(random.Next(5) == 0 ? "parent" : "student")),
+    ];
 
-    public static TheoryData<int> Sizes => [20, 60, 240, 1000];
+    private static Dictionary<string, JsonElement> Draft(Random random, string[] sentences, bool fields)
+    {
+        var draft = new Dictionary<string, JsonElement>
+        {
+            ["note"] = JsonSerializer.SerializeToElement(Note(random, sentences, null)),
+            ["grade"] = JsonSerializer.SerializeToElement($"{1 + random.Next(3)}"),
+            ["method"] = JsonSerializer.SerializeToElement(new { scheme = "method", version = 1, code = Methods[random.Next(Methods.Length)] }),
+        };
+        if (fields)
+        {
+            foreach (var (name, value) in Unrelated(random))
+            {
+                draft[name] = JsonSerializer.SerializeToElement(value);
+            }
+        }
+        return draft;
+    }
+
+    public static TheoryData<int, bool> Sizes => new() { { 20, false }, { 60, false }, { 240, false }, { 1000, false }, { 60, true }, { 240, true }, { 1000, true } };
 
     [Theory(Explicit = true)]
     [MemberData(nameof(Sizes))]
-    public async Task Measure_the_first_suggestion_against_the_notes(int settledCount)
+    public async Task Measure_the_first_suggestion_against_the_notes(int settledCount, bool fields)
     {
         var cancel = TestContext.Current.CancellationToken;
-        var content = VaultReader.Read(Vault(settledCount, new Random(1)));
+        var content = VaultReader.Read(Vault(settledCount, new Random(1), fields));
         (string Name, ThresholdPolicy Policy)[] policies =
         [
             ("none", ThresholdPolicy.None),
@@ -137,7 +172,7 @@ public class SuggestionQualityMeasurement
             ("replay 0.8", new(0.8, 30, 0.5)),
         ];
         var output = TestContext.Current.TestOutputHelper!;
-        output.WriteLine($"measure: {settledCount} settled · 8 topics + rare (chance 1/8 = 12.5%)");
+        output.WriteLine($"measure: {settledCount} settled{(fields ? " with unrelated fields" : "")} · 8 topics + rare (chance 1/8 = 12.5%)");
         foreach (var (name, policy) in policies)
         {
             var started = System.Diagnostics.Stopwatch.StartNew();
@@ -152,7 +187,7 @@ public class SuggestionQualityMeasurement
                 {
                     for (var i = 0; i < 15; i++)
                     {
-                        var codes = await First(suggester, Draft(random, voice == "same" ? same : other), cancel);
+                        var codes = await First(suggester, Draft(random, voice == "same" ? same : other, fields), cancel);
                         asked++;
                         first += codes.Count > 0 && codes[0].Code == code ? 1 : 0;
                         trustedFirst += codes.Count > 0 && codes[0].Code == code && codes[0].Trusted ? 1 : 0;
@@ -169,7 +204,7 @@ public class SuggestionQualityMeasurement
             {
                 for (var i = 0; i < 20; i++)
                 {
-                    var crisis = (await First(suggester, Draft(rare, voice), cancel)).FirstOrDefault(c => c.Confirm);
+                    var crisis = (await First(suggester, Draft(rare, voice, fields), cancel)).FirstOrDefault(c => c.Confirm);
                     about++;
                     aboutShown += crisis is null ? 0 : 1;
                     aboutEvidence += crisis is { Basis: SuggestionBasis.SimilarRecords } ? 1 : 0;
@@ -183,7 +218,7 @@ public class SuggestionQualityMeasurement
                 {
                     for (var i = 0; i < 5; i++)
                     {
-                        var crisis = (await First(suggester, Draft(rare, voice), cancel)).FirstOrDefault(c => c.Confirm);
+                        var crisis = (await First(suggester, Draft(rare, voice, fields), cancel)).FirstOrDefault(c => c.Confirm);
                         notAbout++;
                         notShown += crisis is null ? 0 : 1;
                         notEvidence += crisis is { Basis: SuggestionBasis.SimilarRecords } ? 1 : 0;
