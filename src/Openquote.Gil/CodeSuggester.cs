@@ -30,6 +30,9 @@ public sealed record SuggestedCode(string Code, double Score, IReadOnlyList<stri
 {
     /// <summary>Whether the layer that ranked it answered — its threshold was met — rather than guessed.</summary>
     internal bool Trusted { get; init; }
+
+    /// <summary>Whether the settled record nearest to the one being entered holds it.</summary>
+    internal bool Nearest { get; init; }
 }
 
 /// <summary>Why a code is suggested: what the settled records it rests on have in common with the record being entered.</summary>
@@ -58,7 +61,7 @@ public enum SuggestionBasis
 /// Each field's thresholds are chosen by replaying the settled records once there are enough of them, so
 /// the codes of records close to the one being entered, or of a value settled alongside its values often enough,
 /// lead; the codes chosen most often follow as guesses. A code a person has to confirm is offered only on the
-/// evidence of settled records close enough to answer.
+/// evidence of settled records like the one being entered: the nearest holds it, or they are close enough to answer.
 /// </para>
 /// <para>
 /// A coded field is suggested for when the scheme version in force on the given date has items that may be
@@ -201,10 +204,13 @@ public sealed class CodeSuggester
                 continue;
             }
             // The field's candidates are exactly the items that may be suggested, so every value offered is one of them.
-            // A code to confirm is offered only where settled records like this one hold it and are close enough to
-            // answer: never because it is chosen often or alongside a shared value, which says nothing about this record.
-            var codes = suggestion.Candidates.Select(c => Suggested(c, suggestion, values, target) with { Trusted = c.Trusted })
-                .Where(c => !c.Confirm || (c.Trusted && c.Basis == SuggestionBasis.SimilarRecords))
+            // A code to confirm is offered only on settled records like this one: the nearest of them holds it, or they
+            // are close enough to answer — never because it is chosen often or alongside a shared value, which says
+            // nothing about this record. The nearest counts below the threshold: a record's other fields dilute how
+            // alike two records read, and a code to confirm is the one a person must not miss.
+            var nearest = suggestion.SimilarDocuments.Count > 0 ? suggestion.SimilarDocuments[0].Answer : null;
+            var codes = suggestion.Candidates.Select(c => Suggested(c, suggestion, values, target) with { Trusted = c.Trusted, Nearest = c.Value == nearest })
+                .Where(c => !c.Confirm || ((c.Trusted || c.Nearest) && c.Basis == SuggestionBasis.SimilarRecords))
                 .ToList();
             if (codes.Count > 0)
             {
@@ -221,9 +227,13 @@ public sealed class CodeSuggester
     private SuggestedCode Suggested(FieldCandidate candidate, FieldSuggestion suggestion, Dictionary<string, string> values, Target target)
     {
         var confirm = target.Codes[candidate.Value] == Suggestion.Confirm;
+        // A guess the nearest similar record holds is offered on that record, whichever guess put it in the list:
+        // that is truer evidence than being chosen often.
+        var nearest = suggestion.SimilarDocuments.Count > 0 && suggestion.SimilarDocuments[0].Answer == candidate.Value;
         switch (candidate.Source)
         {
             case FieldSource.SimilarDocument:
+            case FieldSource.SettledFieldMemory when !candidate.Trusted && nearest:
                 return new SuggestedCode(candidate.Value, candidate.Score,
                     [.. suggestion.SimilarDocuments.Where(m => m.Answer == candidate.Value).Select(m => m.Source)], confirm, SuggestionBasis.SimilarRecords, null);
             case FieldSource.SettledFieldMemory when KeyField(candidate.Evidence) is { } field && values.TryGetValue(field, out var shared):

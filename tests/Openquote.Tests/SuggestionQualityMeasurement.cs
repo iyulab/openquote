@@ -164,7 +164,7 @@ public class SuggestionQualityMeasurement
             // The rare topic to confirm: offered at all, offered with records as evidence, offered as a layer's answer —
             // for sessions that are about it, and for sessions that are not (where it would only alarm).
             var rare = new Random(3);
-            int about = 0, aboutShown = 0, aboutEvidence = 0, aboutTrusted = 0, notAbout = 0, notShown = 0, notEvidence = 0, notTrusted = 0;
+            int about = 0, aboutShown = 0, aboutEvidence = 0, aboutTrusted = 0, notAbout = 0, notShown = 0, notEvidence = 0, notTrusted = 0, aboutNearest = 0, notNearest = 0;
             foreach (var voice in new[] { Rare.Same, Rare.Other })
             {
                 for (var i = 0; i < 20; i++)
@@ -174,6 +174,7 @@ public class SuggestionQualityMeasurement
                     aboutShown += crisis is null ? 0 : 1;
                     aboutEvidence += crisis is { Basis: SuggestionBasis.SimilarRecords } ? 1 : 0;
                     aboutTrusted += crisis is { Trusted: true } ? 1 : 0;
+                    aboutNearest += crisis is { Nearest: true } ? 1 : 0;
                 }
             }
             foreach (var (_, same, other) in Topics)
@@ -187,10 +188,11 @@ public class SuggestionQualityMeasurement
                         notShown += crisis is null ? 0 : 1;
                         notEvidence += crisis is { Basis: SuggestionBasis.SimilarRecords } ? 1 : 0;
                         notTrusted += crisis is { Trusted: true } ? 1 : 0;
+                        notNearest += crisis is { Nearest: true } ? 1 : 0;
                     }
                 }
             }
-            line += $" · rare shown {aboutShown}/{about} vs {notShown}/{notAbout}, with records {aboutEvidence}/{about} vs {notEvidence}/{notAbout}, answered {aboutTrusted}/{about} vs {notTrusted}/{notAbout}";
+            line += $" · rare shown {aboutShown}/{about} vs {notShown}/{notAbout}, with records {aboutEvidence}/{about} vs {notEvidence}/{notAbout}, answered {aboutTrusted}/{about} vs {notTrusted}/{notAbout}, nearest {aboutNearest}/{about} vs {notNearest}/{notAbout}";
             output.WriteLine(line);
         }
     }

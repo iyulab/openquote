@@ -266,6 +266,26 @@ public class CodeSuggesterTests
     }
 
     [Fact]
+    public async Task Offers_a_code_to_confirm_when_the_nearest_settled_record_holds_it_though_below_the_threshold()
+    {
+        const string Says = """
+            { "format": "openquote.suggestions/0", "pack": "care", "version": 1, "schemes": { "topic": { "1": { "crisis": "confirm" } } } }
+            """;
+        // Other fields of a record dilute how alike two records read: the nearest can sit below any threshold and still be the nearest.
+        var content = VaultReader.Read([.. Vault(Settled), File("suggestions/care/v1.json", Says)]);
+        var strict = new ThresholdPolicy(TargetPrecision: 1, MinimumAnswered: int.MaxValue, NearlySameMemoryThreshold: 0.99);
+        var cancel = TestContext.Current.CancellationToken;
+
+        var suggester = await CodeSuggester.BuildAsync(content, "session", March, strict, cancel);
+        var close = await suggester.SuggestAsync(Draft(("note", "talked again about wanting to end their life")), cancel);
+        var unrelated = await suggester.SuggestAsync(Draft(("note", "stress at work, cannot sleep well")), cancel);
+
+        var crisis = Assert.Single(Assert.Single(close).Codes, c => c.Code == "crisis");
+        Assert.Equal(SuggestionBasis.SimilarRecords, crisis.Basis);
+        Assert.DoesNotContain(unrelated.SelectMany(s => s.Codes), c => c.Code == "crisis");
+    }
+
+    [Fact]
     public async Task Puts_the_code_of_a_close_settled_record_before_the_code_chosen_most_often()
     {
         // Housing is chosen most often; the record being entered reads like the one settled under stress.
