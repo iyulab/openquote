@@ -98,7 +98,7 @@ public class ExportRunnerTests
         Add(w.CreateInGroup(alike, "session", Fields(("date", "2026-03-07"), ("kind", Coded(1, "b")), ("minutes", 12.5), ("attendees", new JsonArray(two, three)))));
         var entities = EntityMerger.Merge(VaultReader.Read(files).Changes).Values.ToList();
         var form = Form(
-            new ValueColumn("fixed", "Wee"),
+            new ValueColumn("fixed", "Fixed"),
             new CodedColumn("top", "kind", "kind", 1, Level: 1),
             new CodedColumn("middle", "kind", "kind", 1, Level: 2),
             new CodedColumn("deeper", "kind", "kind", 1, Level: 3),
@@ -110,9 +110,9 @@ public class ExportRunnerTests
         var table = ExportRunner.Run(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), entities, Catalog, FieldCatalog.Empty);
 
         Assert.Collection(table.Rows,
-            r => Assert.Equal(["Wee", "B", "BX", "BX", "20260305", "1", "10", "2"], r.Cells),
-            r => Assert.Equal(["Wee", "A", "A", "A", "20260306", "0", "50", "mixed"], r.Cells), // grades 2 and 3
-            r => Assert.Equal(["Wee", "B", "B", "B", "20260307", "", "", "3"], r.Cells));      // not a whole number; both in grade 3
+            r => Assert.Equal(["Fixed", "B", "BX", "BX", "20260305", "1", "10", "2"], r.Cells),
+            r => Assert.Equal(["Fixed", "A", "A", "A", "20260306", "0", "50", "mixed"], r.Cells), // grades 2 and 3
+            r => Assert.Equal(["Fixed", "B", "B", "B", "20260307", "", "", "3"], r.Cells));      // not a whole number; both in grade 3
     }
 
     [Theory]
@@ -261,7 +261,7 @@ public class ExportRunnerTests
     }
 
     [Theory]
-    [InlineData("""{"label":"x","value":"Wee"}""")]
+    [InlineData("""{"label":"x","value":"Fixed"}""")]
     [InlineData("""{"label":"x","field":"kind","scheme":"kind","version":1,"level":2}""")]
     [InlineData("""{"label":"x","field":"date","date":"basic"}""")]
     [InlineData("""{"label":"x","field":"minutes","quotient":60}""")]
