@@ -18,7 +18,7 @@
     "properties": {
       "fields": {
         "items": {
-          "not": { "anyOf": [ { "required": ["many"] }, { "required": ["default"], "properties": { "default": { "required": ["value"] } } } ] }
+          "not": { "anyOf": [ { "required": ["many"] }, { "required": ["default"], "properties": { "default": { "anyOf": [ { "required": ["value"] }, { "required": ["year"] } ] } } } ] }
         }
       }
     }
@@ -40,11 +40,12 @@
           "type": "object",
           "oneOf": [
             { "required": ["subject"], "not": { "required": ["value"] } },
-            { "required": ["value"], "not": { "required": ["subject"] } }
+            { "required": ["value"], "not": { "anyOf": [ { "required": ["subject"] }, { "required": ["year"] } ] } }
           ],
           "properties": {
             "subject": { "$ref": "#/$defs/text" },
-            "value": { "anyOf": [ { "$ref": "#/$defs/text" }, { "type": "number" } ] }
+            "value": { "anyOf": [ { "$ref": "#/$defs/text" }, { "type": "number" } ] },
+            "year": { "$ref": "#/$defs/year" }
           }
         },
         "label": { "$ref": "#/$defs/text" }
@@ -74,6 +75,29 @@
           }
         }
       ]
+    },
+    "year": {
+      "type": "object",
+      "required": ["then"],
+      "properties": {
+        "startMonth": { "type": "integer", "minimum": 1, "maximum": 12 },
+        "then": { "enum": ["advance", "drop"] },
+        "max": {
+          "anyOf": [
+            { "type": "integer", "minimum": 1 },
+            {
+              "type": "object",
+              "required": ["subject", "by"],
+              "properties": {
+                "subject": { "$ref": "#/$defs/text" },
+                "by": { "type": "object", "minProperties": 1, "additionalProperties": { "type": "integer", "minimum": 1 } }
+              }
+            }
+          ]
+        }
+      },
+      "if": { "required": ["max"] },
+      "then": { "properties": { "then": { "const": "advance" } } }
     },
     "constraint": {
       "type": "object",

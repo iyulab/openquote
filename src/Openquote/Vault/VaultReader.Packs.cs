@@ -362,6 +362,7 @@ public static partial class VaultReader
 
         string? fromSubject = null;
         string? fixedValue = null;
+        YearRule? yearRule = null;
         if (f.TryGetProperty("default", out var d))
         {
             // One source: a field of the record's subject, or (format 1) a fixed value of the field's kind.
@@ -373,6 +374,12 @@ public static partial class VaultReader
             }
             else if (TryString(d, "subject", out var subjectField)) fromSubject = subjectField;
             else return null;
+            // Format 1: how a value taken from the subject ages, only beside a subject source.
+            if (d.TryGetProperty("year", out var year))
+            {
+                if (!v1 || fromSubject is null || ParseYearRule(year) is not { } rule) return null;
+                yearRule = rule;
+            }
         }
 
         string? label = null;
@@ -386,7 +393,44 @@ public static partial class VaultReader
         {
             Many = many,
             DefaultValue = fixedValue,
+            DefaultYear = yearRule,
         };
+    }
+
+    // `{ "startMonth": 1-12 (default 1), "then": "advance" | "drop", "max": n | { "subject": field, "by": { code: n } } }`;
+    // a cap only for an advancing value, every number a whole number from 1.
+    private static YearRule? ParseYearRule(JsonElement year)
+    {
+        if (year.ValueKind != JsonValueKind.Object) return null;
+        var startMonth = 1;
+        if (year.TryGetProperty("startMonth", out _) && (!TryInt(year, "startMonth", out startMonth) || startMonth is < 1 or > 12)) return null;
+        if (!TryString(year, "then", out var thenText)) return null;
+        YearStep? then = thenText switch { "advance" => YearStep.Advance, "drop" => YearStep.Drop, _ => null };
+        if (then is not { } step) return null;
+        YearCap? max = null;
+        if (year.TryGetProperty("max", out var m))
+        {
+            if (step != YearStep.Advance) return null;
+            if (m.ValueKind == JsonValueKind.Number)
+            {
+                if (!m.TryGetInt32(out var n) || n < 1) return null;
+                max = new YearCap(n, null, new Dictionary<string, int>());
+            }
+            else if (m.ValueKind == JsonValueKind.Object && TryString(m, "subject", out var levelField)
+                && m.TryGetProperty("by", out var by) && by.ValueKind == JsonValueKind.Object)
+            {
+                var byCode = new Dictionary<string, int>(StringComparer.Ordinal);
+                foreach (var entry in by.EnumerateObject())
+                {
+                    if (entry.Name.Length == 0 || entry.Value.ValueKind != JsonValueKind.Number || !entry.Value.TryGetInt32(out var n) || n < 1) return null;
+                    byCode[entry.Name] = n;
+                }
+                if (byCode.Count == 0) return null;
+                max = new YearCap(null, levelField, byCode);
+            }
+            else return null;
+        }
+        return new YearRule(startMonth, step, max);
     }
 
     // A fixed first value as text: a non-empty string for a text field or a code for a coded one, a number

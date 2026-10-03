@@ -448,6 +448,25 @@ Format 1 (`openquote.fields/1`) also lets a field start from a fixed value — m
 }
 ```
 
+Format 1 also says how a value taken from the subject ages — a school grade counts up each school year, up to the last grade of the subject's school level, and a class does not carry over:
+
+```json
+{
+  "format": "openquote.fields/1",
+  "pack": "care.school",
+  "type": "session",
+  "version": 3,
+  "fields": [
+    {
+      "name": "grade", "kind": "text",
+      "default": { "subject": "grade",
+        "year": { "startMonth": 3, "then": "advance", "max": { "subject": "level", "by": { "elementary": 6, "middle": 3, "high": 3 } } } }
+    },
+    { "name": "class", "kind": "text", "default": { "subject": "class", "year": { "startMonth": 3, "then": "drop" } } }
+  ]
+}
+```
+
 - Path: `fields/<pack>/<type>/v<version>.json`; `pack`, `type` and `version` must match it. `pack` is a pack id as for a manifest (and not `local` or `oq`), and `type` is the entity type the fields belong to.
 - `fields` (optional) declares fields. A field has a `name`, unique within the file, and a `kind`, one of `text`, `date`, `number`, `coded`, `reference` and `references`.
 - A `coded` field names the `scheme` its values are classified in, and no other kind has one. A `reference` or `references` field names the entity `type` it refers to, and no other kind has one.
@@ -455,6 +474,7 @@ Format 1 (`openquote.fields/1`) also lets a field start from a fixed value — m
 - `required` (default `false`) says a value must be entered.
 - `many` (format 1, `openquote.fields/1`, coded fields only; default `false`) says the field takes several values, one of them primary (see [Change files](#change-files)). A host asks for the primary value whenever more than one is entered.
 - `default` (optional) is the value a host offers when the record is written, from one source: `{ "subject": "<field>" }`, the value of that field of the record's subject; or, in format 1, `{ "value": … }`, a fixed value — a non-empty string for a `text` field, a number for a `number` field, a code for a `coded` field (offered only when the version of its scheme in force that day holds the code). A `date` or reference field has no fixed value. Either way the record keeps the value as entered, and a host offers nothing for a hidden field.
+- `year` (format 1, beside `subject` only) says how long a value taken from the subject holds. A year starts on the first day of `startMonth` (1–12, default 1). Once a year start has passed since the subject's value was written (by the clock of the device that wrote it), the value is *stale* for the record: with `then: "advance"` a whole number counts up by one for each year passed, and with `then: "drop"` nothing is offered. `max` (advance only) bounds the count — a number, or `{ "subject": "<field>", "by": { "<code>": n } }`, the bound for each code of another field of the subject; a value that would pass its bound is not offered. When that field has no value the bound is not known, and a count is offered only if it stays within every bound the current value is within. `SubjectDefaults.Carry` gives the value, when it was written, the years passed and what to offer; a host shows a stale value to a person, who corrects the subject, rather than writing a value nobody entered. An engine that predates `year` ignores it and offers the subject's value as it stands.
 - `label` (optional) is what people read for the field; [Labels](#labels) can give it per locale.
 - `constrain` (optional) narrows fields other packs declared, by `name`: `required` and `hidden` may each be set to `true`, and at least one must be. A key set to `false` is invalid, because a constraint only narrows. A pack does not constrain its own fields; it declares them as they should be.
 

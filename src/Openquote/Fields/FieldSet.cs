@@ -63,7 +63,38 @@ public sealed record FieldDefinition(
     /// scheme — offered only when the version in force that day holds it. Null when the field gives none.
     /// </summary>
     public string? DefaultValue { get; init; }
+
+    /// <summary>
+    /// How the value taken from the subject (<see cref="DefaultFromSubject"/>) ages (field definitions format 1):
+    /// a value written in one year no longer describes a later one. Null when the value holds whatever the year.
+    /// See <see cref="SubjectDefaults.Carry"/>.
+    /// </summary>
+    public YearRule? DefaultYear { get; init; }
 }
+
+/// <summary>What a value taken from the subject becomes once the year it was written in is over.</summary>
+public enum YearStep
+{
+    /// <summary>A whole number counts up by one for each year passed — a school grade, say.</summary>
+    Advance,
+
+    /// <summary>The value no longer holds, and nothing is offered in its place — a class, say.</summary>
+    Drop,
+}
+
+/// <summary>
+/// The years a value taken from the subject is good for. A year starts on the first day of
+/// <paramref name="StartMonth"/> (1–12; 3 for a school year from March). <paramref name="Max"/> bounds an
+/// advancing value: a value that would pass it is not offered.
+/// </summary>
+public sealed record YearRule(int StartMonth, YearStep Then, YearCap? Max);
+
+/// <summary>
+/// The highest value an advancing value may reach: a fixed number, or a number per code of another field of the
+/// subject (<paramref name="SubjectField"/>, read through <paramref name="ByCode"/>) — a school level, say, whose
+/// last grade differs. Exactly one of <paramref name="Fixed"/> and <paramref name="SubjectField"/> is set.
+/// </summary>
+public sealed record YearCap(int? Fixed, string? SubjectField, IReadOnlyDictionary<string, int> ByCode);
 
 /// <summary>A narrowing of a field another pack declared: it may make the field required or hide it, nothing else.</summary>
 public sealed record FieldConstraint(string Name, bool Required, bool Hidden);

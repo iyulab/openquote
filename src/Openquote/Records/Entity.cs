@@ -138,6 +138,17 @@ public sealed class Entity
     }
 
     /// <summary>
+    /// The change that wrote <paramref name="field"/>'s current value — the latest of the changes that set it,
+    /// ties going to the highest id as in <see cref="Fields"/>. Null when no change set it or the entity is destroyed.
+    /// </summary>
+    internal Change? LastWriteOf(string field)
+    {
+        if (Destroyed) return null;
+        var setters = Changes.Where(c => c.Fields.ContainsKey(field)).ToList();
+        return setters.Count == 0 ? null : _graph.Heads(setters)[^1];
+    }
+
+    /// <summary>
     /// Whether <paramref name="field"/> holds a value now: it has been set and not cleared. A record
     /// without one is <em>blank</em> in that field — a report run lists it in
     /// <see cref="Reports.ReportRun.Blank"/> and an export leaves its cell empty.
