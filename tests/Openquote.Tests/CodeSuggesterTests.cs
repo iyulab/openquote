@@ -238,6 +238,34 @@ public class CodeSuggesterTests
     }
 
     [Fact]
+    public async Task Offers_a_code_to_confirm_on_a_nearly_same_record_even_where_replay_chooses_no_threshold()
+    {
+        const string Says = """
+            { "format": "openquote.suggestions/0", "pack": "care", "version": 1, "schemes": { "topic": { "1": { "crisis": "confirm" } } } }
+            """;
+        // Notes that share their words across topics: no band of similar records reaches the precision asked for.
+        string[] stress = ["stress at school and home", "stress about school work", "home stress keeps them awake"];
+        string[] housing = ["housing problem at home", "school says housing is a problem", "needs a new home, housing office"];
+        var records = new List<VaultFile>();
+        for (var i = 0; i < 36; i++)
+        {
+            var (note, code) = i % 2 == 0 ? (stress[i % 3], "stress") : (housing[i % 3], "housing");
+            records.Add(File(Json(10 + i, $"m{i}", "create", fields: Session($"p{i}", note, code))));
+        }
+        records.Add(File(Json(60, "c1", "create", fields: Session("p60", "said they want to end their life, safety plan made", "crisis"))));
+        var content = VaultReader.Read([.. Vault([.. records]), File("suggestions/care/v1.json", Says)]);
+        var asking = new ThresholdPolicy(TargetPrecision: 1, MinimumAnswered: 30, NearlySameMemoryThreshold: 0.5);
+        var cancel = TestContext.Current.CancellationToken;
+
+        var suggester = await CodeSuggester.BuildAsync(content, "session", March, asking, cancel);
+        var suggestions = await suggester.SuggestAsync(Draft(("note", "said again they want to end their life")), cancel);
+
+        var crisis = Assert.Single(Assert.Single(suggestions).Codes, c => c.Code == "crisis");
+        Assert.Equal(SuggestionBasis.SimilarRecords, crisis.Basis);
+        Assert.Equal(["c1"], crisis.Similar);
+    }
+
+    [Fact]
     public async Task Puts_the_code_of_a_close_settled_record_before_the_code_chosen_most_often()
     {
         // Housing is chosen most often; the record being entered reads like the one settled under stress.
