@@ -133,7 +133,27 @@ public static partial class VaultReader
             }
         }
 
-        var run = new ReportRun(report, from, to, counted, cells, pending, unmapped, blank, conflicted, people);
+        Dictionary<string, IReadOnlyDictionary<string, decimal>>? values = null;
+        if (root.TryGetProperty("values", out var valuesJson))
+        {
+            const string shape = "values maps each field added up to the number each record holds there";
+            if (valuesJson.ValueKind != JsonValueKind.Object) return Bad<KeptRun>(file, UnreadableReason.Invalid, shape);
+            values = new(StringComparer.Ordinal);
+            foreach (var field in valuesJson.EnumerateObject())
+            {
+                if (field.Value.ValueKind != JsonValueKind.Object) return Bad<KeptRun>(file, UnreadableReason.Invalid, shape);
+                var held = new Dictionary<string, decimal>(StringComparer.Ordinal);
+                foreach (var entry in field.Value.EnumerateObject())
+                {
+                    if (entry.Value.ValueKind != JsonValueKind.Number || !entry.Value.TryGetDecimal(out var number))
+                        return Bad<KeptRun>(file, UnreadableReason.Invalid, shape);
+                    held[entry.Name] = number;
+                }
+                values[field.Name] = held;
+            }
+        }
+
+        var run = new ReportRun(report, from, to, counted, cells, pending, unmapped, blank, conflicted, people) { Values = values };
         // Each record once in all of them — or, counting every value, once in each cell and in at most one set.
         IEnumerable<IReadOnlyList<string>> lists = [.. cells.Select(c => c.Records), pending, unmapped, blank, conflicted];
         IReadOnlyList<string>[] apart = [pending, unmapped, blank, conflicted];

@@ -69,7 +69,11 @@
     "blank": { "$ref": "#/$defs/set", "description": "Records whose row field holds no value to count. Required in format 1, where they are in no other set; optional in format 0, where each is also in unmapped." },
     "conflicted": { "$ref": "#/$defs/set", "description": "Format 1 only, and required there. Records a field the form places by holds concurrent values for." },
     "total": { "$ref": "#/$defs/set" },
-    "people": { "type": "object", "additionalProperties": { "$ref": "#/$defs/ids" } }
+    "people": { "type": "object", "additionalProperties": { "$ref": "#/$defs/ids" } },
+    "values": {
+      "type": "object",
+      "additionalProperties": { "type": "object", "additionalProperties": { "type": "number" } }
+    }
   },
   "if": { "properties": { "format": { "const": "openquote.run/1" } } },
   "then": {
@@ -77,7 +81,7 @@
     "properties": { "cells": { "items": { "required": ["key"], "not": { "anyOf": [{ "required": ["row"] }, { "required": ["column"] }] } } } }
   },
   "else": {
-    "not": { "anyOf": [{ "required": ["conflicted"] }, { "required": ["multiple"] }] },
+    "not": { "anyOf": [{ "required": ["conflicted"] }, { "required": ["multiple"] }, { "required": ["values"] }] },
     "properties": { "cells": { "items": { "required": ["row", "column"], "not": { "required": ["key"] } } } }
   },
   "$defs": {

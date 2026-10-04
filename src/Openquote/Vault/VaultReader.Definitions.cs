@@ -246,6 +246,7 @@ public static partial class VaultReader
         var dimensions = new List<ReportDimension>();
         var filters = new List<ReportFilter>();
         IReadOnlyList<ReportMeasure>? measures = null;
+        var sums = new List<string>();
         if (v1)
         {
             if (root.TryGetProperty("rows", out _) || root.TryGetProperty("columns", out _))
@@ -260,9 +261,18 @@ public static partial class VaultReader
             }
             if (root.TryGetProperty("measures", out var measuresJson))
             {
-                if (!TryIds(measuresJson, out var named) || named.Count == 0 || named.Any(m => Measure(m) is null))
-                    return Bad<ReportDefinition>(file, UnreadableReason.Invalid, "measures lists records, people or visits");
-                measures = [.. named.Select(m => Measure(m)!.Value)];
+                // Each a count by name, or {"sum": "<field>"}: a number field of the counted records, added up.
+                const string shape = "measures lists records, people, visits or {\"sum\": \"<number field>\"}";
+                if (measuresJson.ValueKind != JsonValueKind.Array || measuresJson.GetArrayLength() == 0)
+                    return Bad<ReportDefinition>(file, UnreadableReason.Invalid, shape);
+                var counted = new List<ReportMeasure>();
+                foreach (var m in measuresJson.EnumerateArray())
+                {
+                    if (m.ValueKind == JsonValueKind.String && Measure(m.GetString()!) is { } count) counted.Add(count);
+                    else if (m.ValueKind == JsonValueKind.Object && m.EnumerateObject().Count() == 1 && TryString(m, "sum", out var field)) sums.Add(field);
+                    else return Bad<ReportDefinition>(file, UnreadableReason.Invalid, shape);
+                }
+                measures = counted;
             }
             if (root.TryGetProperty("filters", out var filtersJson))
             {
@@ -292,7 +302,7 @@ public static partial class VaultReader
         }
 
         var report = new ReportDefinition(name, version, label, counts, reportPeriod, dimensions) { Filters = filters };
-        if (measures is not null) report = report with { Measures = measures };
+        if (measures is not null) report = report with { Measures = measures, Sums = sums };
         return report.Problem() is { } problem ? Bad<ReportDefinition>(file, UnreadableReason.Invalid, problem) : new(report, null);
     }
 

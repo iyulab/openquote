@@ -203,7 +203,7 @@ In `openquote.report/1`, a form splits what it counts by one to three `dimension
   "filters": [
     { "field": "gender", "of": "subject", "in": ["f"] }
   ],
-  "measures": ["records", "people", "visits"]
+  "measures": ["records", "people", "visits", { "sum": "minutes" }]
 }
 ```
 
@@ -214,7 +214,7 @@ In `openquote.report/1`, a form splits what it counts by one to three `dimension
 - `filters` (optional): each is read as a dimension is, with `in` listing the codes or string values it lets through. A record whose value there is not listed — or is `null` — is not in the run at all. A record a filter cannot place yet (pending, unmapped, blank or conflicted there) is kept and listed with those records, so a filter never drops a record silently.
 - A form counts each scheme in one version: two dimensions or filters of the same scheme name the same version.
 - `period.unit` may also be `day`, `year` or `range`. A `year` starts on the first day of `startMonth` (1–12, default 1) — 3 for a school year from March; only a year has a `startMonth`. A `range` is any stretch of days a person picks. The unit is how people ask for the form (`ReportPeriod.Containing`, `ReportRunner.RunContaining`); a run still records its first and last day, and any form may be run over any days.
-- `measures` (optional, default `["records", "people"]`): the numbers the form shows, each once — `records` (each record once), `people` (distinct subjects, a head count) and `visits` (for each record, the number of subjects it is about, added up). All three come from a run's records and `people`; a run record is the same whichever the form shows.
+- `measures` (optional, default `["records", "people"]`): the numbers the form shows, each once — `records` (each record once), `people` (distinct subjects, a head count) and `visits` (for each record, the number of subjects it is about, added up). All three come from a run's records and `people`; a run record is the same whichever of them the form shows. A measure may also be `{ "sum": "<field>" }`: the numbers the counted records hold in that field, added up for each cell, set and total — the length of a session in minutes, say. A record holding no number there (an empty field, a value that is not a number, or two devices' different values) adds nothing, and the run says how many such records each number leaves out rather than counting them as zero (`ReportRun.SumOf`). Each record's number comes from the run record's `values`, so the sum goes back to its records as a count does.
 - `counts` may name any entity type, `subject` included: a form counting subjects by a date of their own (such as when they registered) counts each subject once, about itself.
 - A format 1 form never has `rows` or `columns`; a form that rows and a column describe is the same form either way, and its runs are the same.
 
@@ -254,6 +254,7 @@ In `openquote.report/1`, a form splits what it counts by one to three `dimension
 - `multiple` (`openquote.run/1`, present and `true` exactly when the form counts every value of a field): a record may be in several cells, once in each, and in at most one of `pending`, `unmapped`, `blank` and `conflicted` besides; `total` lists every record once. Without it, each record is in exactly one place. A format 0 record may still carry `blank` as a part of `unmapped`, as earlier engines wrote it; a reader takes those records out of `unmapped`.
 - `count` keys are written for readability; readers derive every count from `records`.
 - `people` (optional) maps each record in `total` to the subject ids it concerns. Its keys must be exactly the records in `total`. A run record without `people` has an unknown head count, not zero.
+- `values` (`openquote.run/1`, present exactly when the form adds a field up): for each field the form adds up, the number each record in `total` holds there — `{ "minutes": { "<record>": 50 } }`. A record holding no number there is not listed. A run whose form adds a field up is written in format 1, since an earlier engine would drop the numbers.
 - A period with no records still produces a run record, with empty `cells` and an empty `total`.
 
 ## Export forms

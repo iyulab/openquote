@@ -88,11 +88,17 @@ public sealed record ReportDefinition(
     /// <summary>The numbers the form shows, in order; records and people by default.</summary>
     public IReadOnlyList<ReportMeasure> Measures { get; init; } = [ReportMeasure.Records, ReportMeasure.People];
 
+    /// <summary>
+    /// The number fields of the counted records the form adds up for each cell, set and total, in
+    /// order after <see cref="Measures"/> (see <see cref="ReportRun.SumOf"/>); none by default.
+    /// </summary>
+    public IReadOnlyList<string> Sums { get; init; } = [];
+
     /// <summary>Two forms are equal when every part is, dimensions and filters compared in order.</summary>
     public bool Equals(ReportDefinition? other) =>
         other is not null && Name == other.Name && Version == other.Version && Label == other.Label
         && Counts == other.Counts && Period == other.Period && Dimensions.SequenceEqual(other.Dimensions)
-        && Filters.SequenceEqual(other.Filters) && Measures.SequenceEqual(other.Measures);
+        && Filters.SequenceEqual(other.Filters) && Measures.SequenceEqual(other.Measures) && Sums.SequenceEqual(other.Sums);
 
     /// <inheritdoc/>
     public override int GetHashCode()
@@ -121,12 +127,13 @@ public sealed record ReportDefinition(
     /// <summary>
     /// Why the form cannot be run as it stands — a period it cannot use, no dimension or too many, a
     /// string dimension naming a version, a filter that lets nothing through, one scheme counted in two
-    /// versions, or no measure or one twice — or null when it can.
+    /// versions, or no measure or one twice (a field added up counting as a measure) — or null when it can.
     /// </summary>
     public string? Problem()
     {
         if (Period.Problem() is { } period) return period;
-        if (Measures.Count == 0 || Measures.Distinct().Count() != Measures.Count) return "a report shows each of its measures once, and at least one";
+        if (Measures.Count + Sums.Count == 0 || Measures.Distinct().Count() != Measures.Count || Sums.Distinct(StringComparer.Ordinal).Count() != Sums.Count)
+            return "a report shows each of its measures once, and at least one";
         if (Dimensions.Count is 0 or > MaxDimensions) return $"a report has one to {MaxDimensions} dimensions";
         if (Placers.Any(d => !d.Classified && d.Version is not null)) return "only a classified dimension or filter names a scheme version";
         if (Filters.Any(f => f.In.Count == 0)) return "a filter names the values it lets through";

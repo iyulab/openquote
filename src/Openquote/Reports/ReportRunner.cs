@@ -54,6 +54,7 @@ public static class ReportRunner
         var blank = new List<string>();
         var conflicted = new List<string>();
         var people = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
+        var values = report.Sums.ToDictionary(f => f, _ => new Dictionary<string, decimal>(StringComparer.Ordinal), StringComparer.Ordinal);
 
         foreach (var entity in entities)
         {
@@ -84,6 +85,8 @@ public static class ReportRunner
             if (excluded) continue;
 
             people[id] = entity.People;
+            foreach (var (field, held) in values)
+                if (Number(entity, field) is { } number) held[id] = number;
             // Each dimension gives the places it puts the record in — one, or for a dimension counting
             // every value, one per value — and what it could not place. A record a single-valued
             // dimension cannot place is in no cell; one a value of an every-value dimension cannot
@@ -124,8 +127,17 @@ public static class ReportRunner
             Sorted(unmapped),
             Sorted(blank),
             Sorted(conflicted),
-            people);
+            people)
+        {
+            Values = values.Count == 0 ? null : values.ToDictionary(v => v.Key, v => (IReadOnlyDictionary<string, decimal>)v.Value, StringComparer.Ordinal),
+        };
     }
+
+    // The number a record holds in a field it is added up by: none when the field is empty, not a
+    // number, or changed to different values on two devices — the run says so rather than guessing.
+    private static decimal? Number(Entity entity, string field) =>
+        !entity.Conflicts.ContainsKey(field) && entity.Fields.TryGetValue(field, out var value)
+        && value.ValueKind == JsonValueKind.Number && value.TryGetDecimal(out var number) ? number : null;
 
     /// <summary>Runs <paramref name="report"/> over one calendar month.</summary>
     public static ReportRun RunMonth(ReportDefinition report, int year, int month, IEnumerable<Entity> entities, SchemeCatalog catalog)

@@ -579,6 +579,26 @@ public class VaultWriterTests
     }
 
     [Fact]
+    public void A_form_adding_up_a_field_keeps_each_record_s_number_in_its_run_record()
+    {
+        var formFile = FormFile(""" "format":"openquote.report/1","dimensions":[{"field":"kind","scheme":"kind","version":1}],"measures":["records",{"sum":"minutes"}]}""");
+        var form = Assert.Single(VaultReader.Read([formFile]).Reports);
+        var run = new ReportRun(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31),
+            [new ReportScheme("kind", 1, [], [])], [new ReportCell(["a"], ["r1", "r2"])], [], [], [], [])
+        {
+            Values = new Dictionary<string, IReadOnlyDictionary<string, decimal>> { ["minutes"] = new Dictionary<string, decimal> { ["r1"] = 50, ["r2"] = 12.5m } },
+        };
+        var file = Writer().RunRecord(run);
+
+        var kept = Assert.Single(VaultReader.Read([file, formFile]).Runs).Run;
+
+        Assert.Equal([ReportMeasure.Records], form.Measures);
+        Assert.Equal(["minutes"], form.Sums);
+        Assert.Contains("openquote.run/1", System.Text.Encoding.UTF8.GetString(file.Content.Span)); // an earlier engine would drop the numbers
+        Assert.Equal((62.5m, 0), kept.SumOf("minutes", kept.Total));
+    }
+
+    [Fact]
     public void A_format_1_form_reads_its_period_unit_and_measures()
     {
         var file = new VaultFile("reports/monthly/v1.json", System.Text.Encoding.UTF8.GetBytes(
@@ -599,6 +619,9 @@ public class VaultWriterTests
     [InlineData("openquote.report/1", """{"unit":"month","field":"day"}""", """["records","hours"]""")]
     [InlineData("openquote.report/1", """{"unit":"month","field":"day"}""", """["people","people"]""")]
     [InlineData("openquote.report/1", """{"unit":"month","field":"day"}""", "[]")]
+    [InlineData("openquote.report/1", """{"unit":"month","field":"day"}""", """[{"sum":3}]""")]
+    [InlineData("openquote.report/1", """{"unit":"month","field":"day"}""", """[{"sum":"minutes","of":"subject"}]""")]
+    [InlineData("openquote.report/1", """{"unit":"month","field":"day"}""", """[{"sum":"minutes"},{"sum":"minutes"}]""")]
     public void A_period_or_measures_the_engine_cannot_use_are_unreadable(string format, string period, string? measures)
     {
         var shape = format.EndsWith("/0", StringComparison.Ordinal)
