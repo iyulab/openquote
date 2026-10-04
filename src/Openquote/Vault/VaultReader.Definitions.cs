@@ -402,14 +402,14 @@ public static partial class VaultReader
 
     // The keys of a column that only an export form of format 1 may use: an earlier engine would read the
     // column without them and show a different cell, so a form that uses them is a format it does not know.
-    private static readonly string[] FormatOneKeys = ["value", "level", "date", "quotient", "remainder", "mixed"];
+    private static readonly string[] FormatOneKeys = ["value", "level", "date", "quotient", "remainder", "mixed", "values"];
 
     // Whether a column of this kind reads the format 1 key: a key the source does not take is a mistake to report.
     private static bool Takes(ExportColumn column, string key) => column switch
     {
         ValueColumn => key == "value",
         PersonColumn => key == "mixed",
-        CodedColumn => key == "level",
+        CodedColumn => key is "level" or "values",
         DateColumn => key == "date",
         DivisionColumn => key is "quotient" or "remainder",
         _ => false,
@@ -447,7 +447,13 @@ public static partial class VaultReader
                 if (!TryInt(c, "level", out var n) || n < 1) return null;
                 level = n;
             }
-            return new CodedColumn(label, field, scheme, version, level);
+            var all = false;
+            if (c.TryGetProperty("values", out _))
+            {
+                if (!TryString(c, "values", out var values) || values is not ("primary" or "all")) return null;
+                all = values == "all";
+            }
+            return new CodedColumn(label, field, scheme, version, level) { All = all };
         }
         if (c.TryGetProperty("date", out _))
             return TryString(c, "date", out var style) && style is "basic" or "extended"
