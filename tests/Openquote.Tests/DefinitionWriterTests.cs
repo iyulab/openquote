@@ -82,6 +82,62 @@ public class DefinitionWriterTests
     }
 
     [Fact]
+    public void A_form_a_format_0_report_holds_is_written_in_format_0_and_reads_back_as_it_was()
+    {
+        var report = new ReportDefinition("monthly", 2, "Monthly", "session", new ReportPeriod("date"),
+            [new ReportDimension("kind", "kind", 1), new ReportDimension("place")]);
+
+        var file = DefinitionWriter.Report(report);
+        var read = Assert.Single(Read(file).Reports);
+
+        Assert.Equal("reports/monthly/v2.json", file.Path);
+        Assert.Equal("openquote.report/0", JsonDocument.Parse(file.Content).RootElement.GetProperty("format").GetString());
+        Assert.Equal(report, read);
+    }
+
+    [Fact]
+    public void A_form_counting_in_the_version_in_force_is_written_in_format_1_and_reads_back_as_it_was()
+    {
+        var report = new ReportDefinition("by-local", 1, "By local item", "session", new ReportPeriod("date", PeriodUnit.Year, 3),
+            [new ReportDimension("kind", "kind.local", All: true), new ReportDimension("grade", OfSubject: true)])
+        {
+            Filters = [new ReportFilter(new ReportDimension("kind", "kind.local"), ["wisc", "mmpi"])],
+            Measures = [ReportMeasure.Visits],
+            Sums = ["minutes"],
+        };
+
+        var file = DefinitionWriter.Report(report);
+        var read = Assert.Single(Read(file).Reports);
+
+        var root = JsonDocument.Parse(file.Content).RootElement;
+        Assert.Equal("openquote.report/1", root.GetProperty("format").GetString());
+        Assert.Equal("in-force", root.GetProperty("dimensions")[0].GetProperty("version").GetString());
+        Assert.Equal(report, read);
+        Assert.Equal(3, read.Period.StartMonth);
+    }
+
+    [Fact]
+    public void A_form_with_the_default_measures_leaves_them_out()
+    {
+        var report = new ReportDefinition("daily", 1, "Daily", "session", new ReportPeriod("date", PeriodUnit.Day),
+            [new ReportDimension("kind", "kind", 1)]);
+
+        var root = JsonDocument.Parse(DefinitionWriter.Report(report).Content).RootElement;
+
+        Assert.Equal("openquote.report/1", root.GetProperty("format").GetString());
+        Assert.False(root.TryGetProperty("measures", out _));
+        Assert.Equal(report, Assert.Single(Read(DefinitionWriter.Report(report)).Reports));
+    }
+
+    [Fact]
+    public void A_form_that_cannot_be_run_is_not_written()
+    {
+        var report = new ReportDefinition("none", 1, "None", "session", new ReportPeriod("date"), []);
+
+        Assert.Throws<ArgumentException>(() => DefinitionWriter.Report(report));
+    }
+
+    [Fact]
     public void The_extensions_of_a_scheme_are_the_newest_version_of_each_list_that_extends_it()
     {
         var other = new Scheme("kind.other", 1, [new("c", "C", null, false) { Anchor = "b" }]) { Extends = new SchemeVersion("kind", 1) };
