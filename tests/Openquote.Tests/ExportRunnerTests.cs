@@ -54,6 +54,29 @@ public class ExportRunnerTests
         new("list", 1, "List", "session", "date", columns);
 
     [Fact]
+    public void Every_subject_s_value_is_joined_in_the_order_of_the_values_not_of_when_the_subjects_were_made()
+    {
+        // Subjects made in the reverse of their names' order (ids are in creation order), as two
+        // made within the same millisecond may be in any order.
+        var w = new VaultWriter("dev1", new StepClock());
+        var files = new List<VaultFile>();
+        string Add(VaultFile f)
+        {
+            files.Add(f);
+            return VaultReader.Read([f]).Changes[0].Entity.Id;
+        }
+        var nah = Add(w.CreateSubject(Fields(("name", "나"))));
+        var ga = Add(w.CreateSubject(Fields(("name", "가"))));
+        var group = Add(w.CreateGroup(Fields(("name", "friends"))));
+        Add(w.CreateInGroup(group, "session", Fields(("date", "2026-03-02"), ("attendees", new JsonArray(nah, ga)))));
+        var entities = EntityMerger.Merge(VaultReader.Read(files).Changes).Values.ToList();
+
+        var table = ExportRunner.Run(Form(new PersonColumn("names", "name", All: true)), new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), entities, Catalog, FieldCatalog.Empty);
+
+        Assert.Equal(["가, 나"], Assert.Single(table.Rows).Cells);
+    }
+
+    [Fact]
     public void Lists_the_records_of_the_period_in_date_order_with_every_column()
     {
         var v = Build();

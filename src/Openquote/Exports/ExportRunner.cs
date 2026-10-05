@@ -101,8 +101,10 @@ public static class ExportRunner
                 ? Guarded(x, column, record, referred, r.ReferencedField, () => Text(referred, r.ReferencedField))
                 : ""),
         PeopleCountColumn => record.People.Count.ToString(CultureInfo.InvariantCulture),
+        // Every subject's value in the order of the values: the order of the subjects is that of their
+        // ids, which is when each was made — and two made within the same millisecond are in either order.
         PersonColumn p => p.All || record.People.Count == 1
-            ? string.Join(", ", PersonValues(p, record, x).Where(t => t.Length > 0))
+            ? string.Join(", ", PersonValues(p, record, x).Where(t => t.Length > 0).Order(StringComparer.Ordinal))
             : p.Mixed is { } mixed && record.People.Count > 1
                 ? PersonValues(p, record, x).Distinct(StringComparer.Ordinal).ToArray() is [var shared] ? shared : mixed
                 : "",
