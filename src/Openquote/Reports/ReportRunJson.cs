@@ -31,7 +31,7 @@ public static class ReportRunJson
         using (var w = new Utf8JsonWriter(buffer, Options))
         {
             w.WriteStartObject();
-            var v1 = run.Blank.Count > 0 || run.Conflicted.Count > 0 || !run.Report.RowsAndColumn;
+            var v1 = run.Blank.Count > 0 || run.Conflicted.Count > 0 || !run.Report.RowsAndColumn || run.Values is not null;
             w.WriteString("format", v1 ? "openquote.run/1" : "openquote.run/0");
             w.WriteString("id", id);
             w.WriteString("device", device);
@@ -116,6 +116,19 @@ public static class ReportRunJson
                 w.WriteStartObject("people");
                 foreach (var record in run.Total)
                     WriteIds(w, record, people.TryGetValue(record, out var subjects) ? subjects : []);
+                w.WriteEndObject();
+            }
+
+            if (run.Values is { } values)
+            {
+                w.WriteStartObject("values");
+                foreach (var (field, held) in values)
+                {
+                    w.WriteStartObject(field);
+                    foreach (var record in run.Total)
+                        if (held.TryGetValue(record, out var number)) w.WriteNumber(record, number);
+                    w.WriteEndObject();
+                }
                 w.WriteEndObject();
             }
             w.WriteEndObject();

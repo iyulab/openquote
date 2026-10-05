@@ -203,7 +203,7 @@ In `openquote.report/1`, a form splits what it counts by one to three `dimension
   "filters": [
     { "field": "gender", "of": "subject", "in": ["f"] }
   ],
-  "measures": ["records", "people", "visits"]
+  "measures": ["records", "people", "visits", { "sum": "minutes" }]
 }
 ```
 
@@ -214,7 +214,7 @@ In `openquote.report/1`, a form splits what it counts by one to three `dimension
 - `filters` (optional): each is read as a dimension is, with `in` listing the codes or string values it lets through. A record whose value there is not listed — or is `null` — is not in the run at all. A record a filter cannot place yet (pending, unmapped, blank or conflicted there) is kept and listed with those records, so a filter never drops a record silently.
 - A form counts each scheme in one version: two dimensions or filters of the same scheme name the same version.
 - `period.unit` may also be `day`, `year` or `range`. A `year` starts on the first day of `startMonth` (1–12, default 1) — 3 for a school year from March; only a year has a `startMonth`. A `range` is any stretch of days a person picks. The unit is how people ask for the form (`ReportPeriod.Containing`, `ReportRunner.RunContaining`); a run still records its first and last day, and any form may be run over any days.
-- `measures` (optional, default `["records", "people"]`): the numbers the form shows, each once — `records` (each record once), `people` (distinct subjects, a head count) and `visits` (for each record, the number of subjects it is about, added up). All three come from a run's records and `people`; a run record is the same whichever the form shows.
+- `measures` (optional, default `["records", "people"]`): the numbers the form shows, each once — `records` (each record once), `people` (distinct subjects, a head count) and `visits` (for each record, the number of subjects it is about, added up). All three come from a run's records and `people`; a run record is the same whichever of them the form shows. A measure may also be `{ "sum": "<field>" }`: the numbers the counted records hold in that field, added up for each cell, set and total — the length of a session in minutes, say. A record holding no number there (an empty field, a value that is not a number, or two devices' different values) adds nothing, and the run says how many such records each number leaves out rather than counting them as zero (`ReportRun.SumOf`). Each record's number comes from the run record's `values`, so the sum goes back to its records as a count does.
 - `counts` may name any entity type, `subject` included: a form counting subjects by a date of their own (such as when they registered) counts each subject once, about itself.
 - A format 1 form never has `rows` or `columns`; a form that rows and a column describe is the same form either way, and its runs are the same.
 
@@ -254,6 +254,7 @@ In `openquote.report/1`, a form splits what it counts by one to three `dimension
 - `multiple` (`openquote.run/1`, present and `true` exactly when the form counts every value of a field): a record may be in several cells, once in each, and in at most one of `pending`, `unmapped`, `blank` and `conflicted` besides; `total` lists every record once. Without it, each record is in exactly one place. A format 0 record may still carry `blank` as a part of `unmapped`, as earlier engines wrote it; a reader takes those records out of `unmapped`.
 - `count` keys are written for readability; readers derive every count from `records`.
 - `people` (optional) maps each record in `total` to the subject ids it concerns. Its keys must be exactly the records in `total`. A run record without `people` has an unknown head count, not zero.
+- `values` (`openquote.run/1`, present exactly when the form adds a field up): for each field the form adds up, the number each record in `total` holds there — `{ "minutes": { "<record>": 50 } }`. A record holding no number there is not listed. A run whose form adds a field up is written in format 1, since an earlier engine would drop the numbers.
 - A period with no records still produces a run record, with empty `cells` and an empty `total`.
 
 ## Export forms
@@ -319,6 +320,7 @@ In `openquote.export/1`, a form fills the cells an outside form or system asks f
 | `value` | The same text in every row, as the outside form fixes it; it may be empty. Recognised before every other source. |
 | `person` + `mixed` | For a record about one subject, that subject's value. For a record about several, their value when they all have the same one, and the text `mixed` when they differ — as a report reads a field of the subjects (`"of": "subject"`). Not with `all`. |
 | `field` + `scheme` + `version` + `level` | The label of the classified value's ancestor at that level, counted from 1 at the top; a value no deeper than the level shows its own label. `level: 1` is `part: "top"`; a column has one or the other. |
+| `field` + `scheme` + `version` + `values: "all"` | For a field holding several values, every one of them rather than the primary one (`values: "primary"`, the default): their labels in the order the record holds them, the primary one first, each once, joined by `, `. A value that waits for a person or has no code in the version is left out of the cell and the record is listed apart, as a single value would be; the others still show. With `level` or `part`, each value's label at that level. |
 | `field` + `date` | A calendar-date field written in ISO 8601 `basic` format (`20260310`) or `extended` format (`2026-03-10`, as the vault writes dates). Empty when the field holds no date. |
 | `field` + `quotient` or `remainder` | A whole-number field divided by a whole number from 1 up: the quotient rounded down, or the remainder, from 0 up to the divisor — minutes as hours and minutes, for example. Empty when the field holds no whole number. A column has one of the two. |
 

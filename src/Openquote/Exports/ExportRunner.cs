@@ -149,6 +149,7 @@ public static class ExportRunner
     private static string Coded(CodedColumn column, Entity record, SchemeCatalog catalog, SortedSet<string> pending, SortedSet<string> unmapped)
     {
         if (!record.HasValue(column.Field)) return "";
+        if (column.All) return EveryCoded(column, record, catalog, pending, unmapped);
         var resolution = record.Classify(column.Field, column.Scheme, column.Version, catalog);
         switch (resolution.Kind)
         {
@@ -159,9 +160,35 @@ public static class ExportRunner
                 unmapped.Add(record.Reference.Id);
                 return "";
         }
-        if (catalog.Find(column.Scheme, column.Version)?.Items.FirstOrDefault(i => i.Code == resolution.Code) is not { } item)
+        return LabelOf(column, resolution.Code!, catalog);
+    }
+
+    // Each value of the field carried to the column's version, the primary one first: their labels,
+    // each once. A value that cannot be carried leaves the record listed apart; the others still show.
+    private static string EveryCoded(CodedColumn column, Entity record, SchemeCatalog catalog, SortedSet<string> pending, SortedSet<string> unmapped)
+    {
+        if (record.ClassifiedValues(column.Field, column.Scheme, column.Version, catalog) is not { } values)
+        {
+            unmapped.Add(record.Reference.Id);
             return "";
-        var scheme = catalog.Find(column.Scheme, column.Version)!;
+        }
+        var ordered = values.Primary is { } primary ? [primary, .. values.Values.Where(v => v != primary)] : values.Values;
+        var labels = new List<string>();
+        foreach (var value in ordered)
+        {
+            var resolution = catalog.Reaches(value, column.Scheme, column.Version)
+                ? catalog.Resolve(value, column.Scheme, column.Version)
+                : new Resolution(ResolutionKind.Unmapped, null, [], []);
+            if (resolution.Kind == ResolutionKind.Assigned) labels.Add(LabelOf(column, resolution.Code!, catalog));
+            else (resolution.Kind == ResolutionKind.Pending ? pending : unmapped).Add(record.Reference.Id);
+        }
+        return string.Join(", ", labels.Where(l => l != "").Distinct(StringComparer.Ordinal));
+    }
+
+    private static string LabelOf(CodedColumn column, string code, SchemeCatalog catalog)
+    {
+        if (catalog.Find(column.Scheme, column.Version) is not { } scheme || scheme.Items.FirstOrDefault(i => i.Code == code) is not { } item)
+            return "";
         if (column.Level is not { } level) return item.Label;
         var path = new List<SchemeItem> { item };
         while (path[^1].Parent is { } parent && scheme.Items.FirstOrDefault(i => i.Code == parent) is { } up) path.Add(up);

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/iyulab/openquote/blob/main/docs/schema/export.schema.json",
   "title": "Openquote export form",
-  "description": "exports/<export>/v<version>.json. Each column has exactly one source, recognised in the order value, people, person, year, field + ref, field + scheme + version, field + date, field + quotient or remainder, field. Format 1 adds value, level, date, quotient, remainder and mixed; a format 0 form that uses any of them is refused.",
+  "description": "exports/<export>/v<version>.json. Each column has exactly one source, recognised in the order value, people, person, year, field + ref, field + scheme + version, field + date, field + quotient or remainder, field. Format 1 adds value, level, values, date, quotient, remainder and mixed; a format 0 form that uses any of them is refused.",
   "type": "object",
   "required": ["format", "export", "version", "label", "rows", "period", "columns"],
   "properties": {
@@ -23,6 +23,7 @@
             "anyOf": [
               { "required": ["value"] },
               { "required": ["level"] },
+              { "required": ["values"] },
               { "required": ["date"] },
               { "required": ["quotient"] },
               { "required": ["remainder"] },
@@ -128,7 +129,8 @@
             "scheme": { "$ref": "#/$defs/text" },
             "version": { "type": "integer", "minimum": 1 },
             "part": { "enum": ["top", "item"] },
-            "level": { "type": "integer", "minimum": 1 }
+            "level": { "type": "integer", "minimum": 1 },
+            "values": { "enum": ["primary", "all"] }
           }
         },
         {

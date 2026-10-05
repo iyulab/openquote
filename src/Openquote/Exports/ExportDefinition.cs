@@ -30,7 +30,16 @@ public sealed record FieldColumn(string Label, string Field) : ExportColumn(Labe
 /// counted from 1 at the top (a value no deeper than the level shows its own). A value that waits for a
 /// person or has no code there leaves the cell empty and is listed apart.
 /// </summary>
-public sealed record CodedColumn(string Label, string Field, string Scheme, int Version, int? Level) : ExportColumn(Label);
+public sealed record CodedColumn(string Label, string Field, string Scheme, int Version, int? Level) : ExportColumn(Label)
+{
+    /// <summary>
+    /// Every value of a field holding several, rather than the primary one: their labels in the
+    /// order the record holds them (the primary one first), each once, joined by a comma and a space
+    /// (format 1). A value that waits for a person or has no code there is left out and the record
+    /// listed apart, as for a single value.
+    /// </summary>
+    public bool All { get; init; }
+}
 
 /// <summary>
 /// A field (<paramref name="ReferencedField"/>) of the entity the record's <paramref name="Field"/>

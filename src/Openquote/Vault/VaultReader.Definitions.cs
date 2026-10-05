@@ -246,6 +246,7 @@ public static partial class VaultReader
         var dimensions = new List<ReportDimension>();
         var filters = new List<ReportFilter>();
         IReadOnlyList<ReportMeasure>? measures = null;
+        var sums = new List<string>();
         if (v1)
         {
             if (root.TryGetProperty("rows", out _) || root.TryGetProperty("columns", out _))
@@ -260,9 +261,18 @@ public static partial class VaultReader
             }
             if (root.TryGetProperty("measures", out var measuresJson))
             {
-                if (!TryIds(measuresJson, out var named) || named.Count == 0 || named.Any(m => Measure(m) is null))
-                    return Bad<ReportDefinition>(file, UnreadableReason.Invalid, "measures lists records, people or visits");
-                measures = [.. named.Select(m => Measure(m)!.Value)];
+                // Each a count by name, or {"sum": "<field>"}: a number field of the counted records, added up.
+                const string shape = "measures lists records, people, visits or {\"sum\": \"<number field>\"}";
+                if (measuresJson.ValueKind != JsonValueKind.Array || measuresJson.GetArrayLength() == 0)
+                    return Bad<ReportDefinition>(file, UnreadableReason.Invalid, shape);
+                var counted = new List<ReportMeasure>();
+                foreach (var m in measuresJson.EnumerateArray())
+                {
+                    if (m.ValueKind == JsonValueKind.String && Measure(m.GetString()!) is { } count) counted.Add(count);
+                    else if (m.ValueKind == JsonValueKind.Object && m.EnumerateObject().Count() == 1 && TryString(m, "sum", out var field)) sums.Add(field);
+                    else return Bad<ReportDefinition>(file, UnreadableReason.Invalid, shape);
+                }
+                measures = counted;
             }
             if (root.TryGetProperty("filters", out var filtersJson))
             {
@@ -292,7 +302,7 @@ public static partial class VaultReader
         }
 
         var report = new ReportDefinition(name, version, label, counts, reportPeriod, dimensions) { Filters = filters };
-        if (measures is not null) report = report with { Measures = measures };
+        if (measures is not null) report = report with { Measures = measures, Sums = sums };
         return report.Problem() is { } problem ? Bad<ReportDefinition>(file, UnreadableReason.Invalid, problem) : new(report, null);
     }
 
@@ -392,14 +402,14 @@ public static partial class VaultReader
 
     // The keys of a column that only an export form of format 1 may use: an earlier engine would read the
     // column without them and show a different cell, so a form that uses them is a format it does not know.
-    private static readonly string[] FormatOneKeys = ["value", "level", "date", "quotient", "remainder", "mixed"];
+    private static readonly string[] FormatOneKeys = ["value", "level", "date", "quotient", "remainder", "mixed", "values"];
 
     // Whether a column of this kind reads the format 1 key: a key the source does not take is a mistake to report.
     private static bool Takes(ExportColumn column, string key) => column switch
     {
         ValueColumn => key == "value",
         PersonColumn => key == "mixed",
-        CodedColumn => key == "level",
+        CodedColumn => key is "level" or "values",
         DateColumn => key == "date",
         DivisionColumn => key is "quotient" or "remainder",
         _ => false,
@@ -437,7 +447,13 @@ public static partial class VaultReader
                 if (!TryInt(c, "level", out var n) || n < 1) return null;
                 level = n;
             }
-            return new CodedColumn(label, field, scheme, version, level);
+            var all = false;
+            if (c.TryGetProperty("values", out _))
+            {
+                if (!TryString(c, "values", out var values) || values is not ("primary" or "all")) return null;
+                all = values == "all";
+            }
+            return new CodedColumn(label, field, scheme, version, level) { All = all };
         }
         if (c.TryGetProperty("date", out _))
             return TryString(c, "date", out var style) && style is "basic" or "extended"

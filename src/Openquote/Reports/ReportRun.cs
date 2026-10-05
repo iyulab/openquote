@@ -74,6 +74,33 @@ public sealed record ReportRun(
     /// </summary>
     public bool Multiple => Report.Dimensions.Any(d => d.All);
 
+    /// <summary>
+    /// For each field the form adds up (see <see cref="ReportDefinition.Sums"/>), the number each record
+    /// in the run holds there — a record holding no number (none, not a number, or two devices'
+    /// different values) is not listed. Null when the form adds nothing up.
+    /// </summary>
+    public IReadOnlyDictionary<string, IReadOnlyDictionary<string, decimal>>? Values { get; init; }
+
+    /// <summary>
+    /// The numbers <paramref name="records"/> hold in <paramref name="field"/>, added up, and how many of
+    /// them hold none — a sum is only as whole as its records, so the run says what it could not add.
+    /// Null when the run did not record that field.
+    /// </summary>
+    public (decimal Sum, int Missing)? SumOf(string field, IEnumerable<string> records)
+    {
+        ArgumentNullException.ThrowIfNull(field);
+        ArgumentNullException.ThrowIfNull(records);
+        if (Values is null || !Values.TryGetValue(field, out var values)) return null;
+        decimal sum = 0;
+        var missing = 0;
+        foreach (var record in records)
+        {
+            if (values.TryGetValue(record, out var value)) sum += value;
+            else missing++;
+        }
+        return (sum, missing);
+    }
+
     /// <summary>Every record in the period, once: the cells, pending, unmapped, blank and conflicted records.</summary>
     public IReadOnlyList<string> Total { get; } =
         Cells.SelectMany(c => c.Records).Concat(Pending).Concat(Unmapped).Concat(Blank).Concat(Conflicted)

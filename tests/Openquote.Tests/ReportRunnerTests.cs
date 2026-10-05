@@ -746,6 +746,38 @@ public class ReportRunnerTests
         Assert.NotNull((Form(1) with { Measures = [] }).Problem());
         Assert.NotNull((Form(1) with { Measures = [ReportMeasure.Visits, ReportMeasure.Visits] }).Problem());
         Assert.Null((Form(1) with { Measures = [ReportMeasure.Visits] }).Problem());
+        Assert.Null((Form(1) with { Measures = [], Sums = ["minutes"] }).Problem()); // a field added up is a measure too
+        Assert.NotNull((Form(1) with { Sums = ["minutes", "minutes"] }).Problem());
+    }
+
+    [Fact]
+    public void A_form_adds_up_a_number_field_and_says_how_many_records_hold_none()
+    {
+        var w = new VaultWriter("dev1", new StepClock());
+        var files = new List<VaultFile>();
+        string Add(VaultFile f)
+        {
+            files.Add(f);
+            return VaultReader.Read([f]).Changes[0].Entity.Id;
+        }
+        var one = Add(w.CreateSubject(Fields(("grade", "2"))));
+        var fifty = Add(w.CreateInSubject(one, "session", Fields(("day", "2026-03-02"), ("kind", Coded(1, "a")), ("minutes", 50))));
+        var thirty = Add(w.CreateInSubject(one, "session", Fields(("day", "2026-03-09"), ("kind", Coded(1, "a")), ("minutes", 30.5m))));
+        var none = Add(w.CreateInSubject(one, "session", Fields(("day", "2026-03-16"), ("kind", Coded(1, "b")))));
+        var words = Add(w.CreateInSubject(one, "session", Fields(("day", "2026-03-23"), ("kind", Coded(1, "b")), ("minutes", "an hour"))));
+        var entities = EntityMerger.Merge(VaultReader.Read(files).Changes).Values;
+        var form = Sessions() with { Sums = ["minutes"] };
+
+        var run = ReportRunner.RunMonth(form, 2026, 3, entities, Levels);
+
+        Assert.Equal((80.5m, 2), run.SumOf("minutes", run.Total)); // two records hold no number: said, not counted as 0
+        Assert.Equal((80.5m, 0), run.SumOf("minutes", run.Cells.Single(c => c.Key[0] == "a").Records));
+        Assert.Equal((0m, 2), run.SumOf("minutes", run.Cells.Single(c => c.Key[0] == "b").Records));
+        Assert.Null(run.SumOf("hours", run.Total));
+        Assert.Null(ReportRunner.RunMonth(Sessions(), 2026, 3, entities, Levels).SumOf("minutes", run.Total));
+        Assert.Equal([fifty, thirty], run.Values!["minutes"].Keys.Order(StringComparer.Ordinal));
+        Assert.DoesNotContain(none, run.Values["minutes"].Keys);
+        Assert.DoesNotContain(words, run.Values["minutes"].Keys);
     }
 
     private static List<JsonObject> Mentions(string id, params string[] codes)

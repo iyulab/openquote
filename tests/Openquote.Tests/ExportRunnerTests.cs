@@ -179,6 +179,39 @@ public class ExportRunnerTests
     }
 
     [Fact]
+    public void A_column_over_every_value_lists_each_label_once_the_primary_first()
+    {
+        var w = new VaultWriter("dev1", new StepClock());
+        var subject = w.CreateSubject(Fields(("name", "one")));
+        var one = VaultReader.Read([subject]).Changes[0].Entity.Id;
+        JsonObject Primary(JsonObject o) { o["primary"] = true; return o; }
+        var files = new[]
+        {
+            subject,
+            w.CreateInSubject(one, "session", Fields(("date", "2026-03-02"), ("kind", Coded(1, "a")))),
+            w.CreateInSubject(one, "session", Fields(("date", "2026-03-03"), ("kind", new JsonArray(Coded(1, "b/x"), Primary(Coded(1, "a")))))),
+            // No primary: every value still shows, as none needs choosing to be listed.
+            w.CreateInSubject(one, "session", Fields(("date", "2026-03-04"), ("kind", new JsonArray(Coded(1, "a"), Coded(1, "b/x"))))),
+            w.CreateInSubject(one, "session", Fields(("date", "2026-03-05"))),
+        };
+        var entities = EntityMerger.Merge(VaultReader.Read(files).Changes).Values.ToList();
+        var form = Form(new FieldColumn("date", "date"), new CodedColumn("kind", "kind", "kind", 1, Level: null) { All = true },
+            new CodedColumn("top", "kind", "kind", 1, Level: 1) { All = true });
+
+        var table = ExportRunner.Run(form, new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31), entities, Catalog, FieldCatalog.Empty);
+
+        Assert.Equal(["A", "A, BX", "A, BX", ""], table.Rows.Select(r => r.Cells[1]));
+        Assert.Equal(["A", "A, B", "A, B", ""], table.Rows.Select(r => r.Cells[2]));
+        Assert.Empty(table.Pending.Concat(table.Unmapped));
+
+        // Carried to version 2, `b/x` has no code there: that value is left out and the record listed, the other still shows.
+        var later = ExportRunner.Run(Form(new FieldColumn("date", "date"), new CodedColumn("kind", "kind", "kind", 2, Level: null) { All = true }),
+            new DateOnly(2026, 3, 3), new DateOnly(2026, 3, 3), entities, Catalog, FieldCatalog.Empty);
+        Assert.Equal("A2", later.Rows.Single().Cells[1]);
+        Assert.Equal([later.Rows.Single().Record], later.Unmapped);
+    }
+
+    [Fact]
     public void A_cell_over_concurrent_values_stays_empty_and_its_record_is_listed()
     {
         var w = new VaultWriter("dev1", new StepClock());

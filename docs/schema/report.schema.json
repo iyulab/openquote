@@ -26,7 +26,17 @@
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
-      "items": { "enum": ["records", "people", "visits"] }
+      "items": {
+        "oneOf": [
+          { "enum": ["records", "people", "visits"] },
+          {
+            "type": "object",
+            "required": ["sum"],
+            "additionalProperties": false,
+            "properties": { "sum": { "type": "string", "minLength": 1 } }
+          }
+        ]
+      }
     },
     "rows": {
       "type": "object",
