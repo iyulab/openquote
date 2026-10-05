@@ -187,6 +187,88 @@ public class FieldCatalogTests
         Assert.Equal((FieldIssueKind.HiddenRequired, "date"), (issue.Kind, issue.Field));
     }
 
+    private const string CareReferral = """
+        { "format": "openquote.fields/1", "pack": "care", "type": "referral", "version": 1,
+          "label": "Referral", "under": [ "subject" ],
+          "fields": [ { "name": "date", "kind": "date", "required": true } ] }
+        """;
+
+    [Fact]
+    public void A_field_file_may_name_its_entity_type_and_where_entities_of_it_are_kept()
+    {
+        var content = VaultReader.Read([File("fields/care/referral/v1.json", CareReferral)]);
+
+        Assert.Empty(content.Unreadable);
+        var set = Assert.Single(content.Fields);
+        Assert.Equal("Referral", set.Label);
+        Assert.Equal(["subject"], set.Under);
+    }
+
+    [Theory]
+    [InlineData("referral", "\"label\": \"\"")]
+    [InlineData("referral", "\"label\": 3")]
+    [InlineData("referral", "\"under\": []")]
+    [InlineData("referral", "\"under\": \"subject\"")]
+    [InlineData("referral", "\"under\": [ \"case\" ]")]
+    [InlineData("referral", "\"under\": [ \"subject\", \"subject\" ]")]
+    [InlineData("subject", "\"under\": [ \"group\" ]")]
+    [InlineData("practitioner", "\"under\": [ \"subject\" ]")]
+    public void An_invalid_type_label_or_place_is_reported(string type, string key)
+    {
+        var json = $$"""{ "format": "openquote.fields/1", "pack": "care", "type": "{{type}}", "version": 1, {{key}} }""";
+
+        Assert.Equal(UnreadableReason.Invalid, Assert.Single(VaultReader.Read([File($"fields/care/{type}/v1.json", json)]).Unreadable).Reason);
+    }
+
+    [Fact]
+    public void Lists_the_entity_types_packs_declare_with_their_labels_and_where_they_are_kept()
+    {
+        var content = VaultReader.Read(
+        [
+            File("fields/care/session/v1.json", CareSession),
+            File("fields/care/referral/v1.json", CareReferral),
+            File("fields/care.school/session/v1.json", SchoolSession),
+            File("fields/care.school/subject/v1.json", """{ "format": "openquote.fields/0", "pack": "care.school", "type": "subject", "version": 1, "label": "Student" }"""),
+        ]);
+        var catalog = new FieldCatalog(content.Fields, [Pack("care.school", "care"), Pack("care")]);
+
+        Assert.Equal(["referral", "session", "subject"], catalog.Types);
+        Assert.Equal("Referral", catalog.TypeLabel("referral"));
+        Assert.Equal("Student", catalog.TypeLabel("subject"));
+        Assert.Null(catalog.TypeLabel("session")); // the host names it
+        Assert.Equal(["subject"], catalog.KeptUnder("referral"));
+        Assert.Equal(["subject", "group"], catalog.KeptUnder("session")); // no pack says: either
+        Assert.Equal(["subject", "group"], catalog.KeptUnder("note"));    // a type no pack declares, as the engine writes it
+        Assert.Empty(catalog.KeptUnder("subject"));
+        Assert.Empty(catalog.KeptUnder("practitioner"));
+        Assert.Empty(catalog.Issues);
+    }
+
+    [Fact]
+    public void A_pack_that_builds_on_another_may_narrow_where_a_type_is_kept_but_not_to_nowhere()
+    {
+        string Under(string pack, string under) =>
+            $$"""{ "format": "openquote.fields/1", "pack": "{{pack}}", "type": "visit", "version": 1, "under": {{under}} }""";
+        var narrowed = VaultReader.Read(
+        [
+            File("fields/care/visit/v1.json", Under("care", """[ "subject", "group" ]""")),
+            File("fields/care.school/visit/v1.json", Under("care.school", """[ "group" ]""")),
+        ]);
+        var apart = VaultReader.Read(
+        [
+            File("fields/care/visit/v1.json", Under("care", """[ "subject" ]""")),
+            File("fields/care.school/visit/v1.json", Under("care.school", """[ "group" ]""")),
+        ]);
+        var packs = new[] { Pack("care"), Pack("care.school", "care") };
+
+        Assert.Equal(["group"], new FieldCatalog(narrowed.Fields, packs).KeptUnder("visit"));
+        var catalog = new FieldCatalog(apart.Fields, packs);
+        Assert.Equal(["subject"], catalog.KeptUnder("visit")); // the earlier pack's stands
+        var issue = Assert.Single(catalog.Issues);
+        Assert.Equal((FieldIssueKind.KeptNowhere, "visit", ""), (issue.Kind, issue.Type, issue.Field));
+        Assert.Contains("care.school", issue.Detail, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void Pack_label_and_field_files_leave_what_is_counted_unchanged()
     {

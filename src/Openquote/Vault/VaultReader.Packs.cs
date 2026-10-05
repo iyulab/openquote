@@ -184,6 +184,19 @@ public static partial class VaultReader
             }
         }
 
+        var types = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (root.TryGetProperty("types", out var typesObject))
+        {
+            if (typesObject.ValueKind != JsonValueKind.Object)
+                return Bad<LabelSet>(file, UnreadableReason.Invalid, "types maps entity types to labels");
+            foreach (var type in typesObject.EnumerateObject())
+            {
+                if (type.Value.ValueKind != JsonValueKind.String || type.Value.GetString() is not { Length: > 0 } text)
+                    return Bad<LabelSet>(file, UnreadableReason.Invalid, $"{type.Name}: a label is non-empty text");
+                types[type.Name] = text;
+            }
+        }
+
         var aliases = new Dictionary<FieldLabelKey, IReadOnlyList<string>>();
         if (root.TryGetProperty("aliases", out var aliasesObject))
         {
@@ -265,7 +278,7 @@ public static partial class VaultReader
             }
         }
 
-        return new(new LabelSet(pack, version, locale, schemes, fields) { Aliases = aliases, Reports = reports, Exports = exports }, null);
+        return new(new LabelSet(pack, version, locale, schemes, fields) { Types = types, Aliases = aliases, Reports = reports, Exports = exports }, null);
     }
 
     // A whole number written plainly (no sign, no leading zero) that is at least min, or null.
@@ -290,6 +303,27 @@ public static partial class VaultReader
         if (pack != path.Groups["pack"].Value || type != path.Groups["type"].Value
             || version.ToString(CultureInfo.InvariantCulture) != path.Groups["version"].Value)
             return Bad<FieldSet>(file, UnreadableReason.NameMismatch, $"the path should be fields/{pack}/{type}/v{version}.json");
+
+        string? typeLabel = null;
+        if (root.TryGetProperty("label", out var labelValue))
+        {
+            if (labelValue.ValueKind != JsonValueKind.String || labelValue.GetString() is not { Length: > 0 } text)
+                return Bad<FieldSet>(file, UnreadableReason.Invalid, "the label of an entity type is non-empty text");
+            typeLabel = text;
+        }
+
+        List<string>? under = null;
+        if (root.TryGetProperty("under", out var underValue))
+        {
+            if (FieldCatalog.IsKeptOnItsOwn(type))
+                return Bad<FieldSet>(file, UnreadableReason.Invalid, $"a {type} is not kept under anything");
+            if (underValue.ValueKind != JsonValueKind.Array || underValue.GetArrayLength() == 0
+                || underValue.EnumerateArray().Any(h => h.ValueKind != JsonValueKind.String || !FieldCatalog.Holders.Contains(h.GetString()!)))
+                return Bad<FieldSet>(file, UnreadableReason.Invalid, "under lists where an entity of the type is kept: subject, group or both");
+            under = [.. underValue.EnumerateArray().Select(h => h.GetString()!)];
+            if (under.Distinct(StringComparer.Ordinal).Count() != under.Count)
+                return Bad<FieldSet>(file, UnreadableReason.Invalid, "under names each folder once");
+        }
 
         var fields = new List<FieldDefinition>();
         if (root.TryGetProperty("fields", out var fieldsArray))
@@ -324,7 +358,7 @@ public static partial class VaultReader
             }
         }
 
-        return new(new FieldSet(pack, type, version, fields, constraints), null);
+        return new(new FieldSet(pack, type, version, fields, constraints) { Label = typeLabel, Under = under }, null);
     }
 
     private static readonly string[] FieldsFormats = ["openquote.fields/0", "openquote.fields/1"];

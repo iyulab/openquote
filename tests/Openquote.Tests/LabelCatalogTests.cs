@@ -50,6 +50,34 @@ public class LabelCatalogTests
     }
 
     [Fact]
+    public void Labels_an_entity_type()
+    {
+        var content = VaultReader.Read(
+        [
+            File("labels/region-a/v1.fr.json", """{ "format": "openquote.labels/0", "pack": "region-a", "version": 1, "locale": "fr", "types": { "referral": "Orientation" } }"""),
+            File("labels/region-b/v1.fr.json", """{ "format": "openquote.labels/0", "pack": "region-b", "version": 1, "locale": "fr", "types": { "referral": "Envoi" } }"""),
+        ]);
+        Assert.Empty(content.Unreadable);
+        Assert.Equal("Orientation", content.Labels.Single(l => l.Pack == "region-a").Types["referral"]);
+
+        var built = new LabelCatalog(content.Labels, [Pack("region-a"), Pack("region-b", "region-a")]);
+        Assert.Equal("Envoi", built.TypeLabel("referral", ["fr-CA"]));
+        Assert.Null(built.TypeLabel("session", ["fr"]));
+
+        var unrelated = new LabelCatalog(content.Labels, [Pack("region-a"), Pack("region-b")]);
+        Assert.Null(unrelated.TypeLabel("referral", ["fr"]));
+        Assert.Equal("type referral", Assert.Single(unrelated.Conflicts).Target);
+    }
+
+    [Theory]
+    [InlineData("""{ "format": "openquote.labels/0", "pack": "region-a", "version": 1, "locale": "fr", "types": { "referral": "" } }""")]
+    [InlineData("""{ "format": "openquote.labels/0", "pack": "region-a", "version": 1, "locale": "fr", "types": [ "referral" ] }""")]
+    public void An_invalid_type_label_is_reported(string json)
+    {
+        Assert.Equal(UnreadableReason.Invalid, Assert.Single(VaultReader.Read([File("labels/region-a/v1.fr.json", json)]).Unreadable).Reason);
+    }
+
+    [Fact]
     public void Falls_back_from_a_region_to_its_language_then_to_the_next_locale_asked_for()
     {
         var catalog = new LabelCatalog([Set("region-a", "fr", "sleep", "sommeil"), Set("region-b", "en", "school", "School")], [Pack("region-a"), Pack("region-b")]);

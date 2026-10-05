@@ -1,4 +1,5 @@
 using Openquote.Packs;
+using Openquote.Records;
 
 namespace Openquote.Fields;
 
@@ -16,6 +17,12 @@ public enum FieldIssueKind
 
     /// <summary>A field ends up both required and hidden.</summary>
     HiddenRequired,
+
+    /// <summary>
+    /// Packs say an entity type is kept in folders that have none in common; the earlier packs' answer stands.
+    /// <see cref="FieldIssue.Field"/> is empty.
+    /// </summary>
+    KeptNowhere,
 }
 
 /// <summary>One problem with a vault's field definitions.</summary>
@@ -29,6 +36,15 @@ public sealed record FieldIssue(FieldIssueKind Kind, string Type, string Field, 
 public sealed class FieldCatalog
 {
     private readonly Dictionary<string, List<FieldDefinition>> _byType = new(StringComparer.Ordinal);
+    private readonly List<string> _types = [];
+    private readonly Dictionary<string, string> _typeLabels = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, IReadOnlyList<string>> _under = new(StringComparer.Ordinal);
+
+    /// <summary>The folders an entity can be kept under, in the order <see cref="KeptUnder"/> lists them.</summary>
+    public static IReadOnlyList<string> Holders { get; } = ["subject", "group"];
+
+    /// <summary>True for the entity types that are kept on their own rather than under a subject or a group.</summary>
+    public static bool IsKeptOnItsOwn(string type) => type is "subject" or "group" or "practitioner" or DeviceNames.EntityType;
 
     /// <summary>A catalog with no field definitions and no packs, for a vault that declares none.</summary>
     public static FieldCatalog Empty { get; } = new([], []);
@@ -47,12 +63,27 @@ public sealed class FieldCatalog
             .Select(g => g.MaxBy(s => s.Version)!)
             .OrderBy(s => Rank(s.Pack))
             .ThenBy(s => s.Pack, StringComparer.Ordinal)
+            .ThenBy(s => s.Type, StringComparer.Ordinal)
             .ToList();
         var issues = new List<FieldIssue>();
 
         foreach (var set in latest)
         {
-            if (!_byType.TryGetValue(set.Type, out var list)) _byType[set.Type] = list = [];
+            if (!_byType.TryGetValue(set.Type, out var list))
+            {
+                _byType[set.Type] = list = [];
+                _types.Add(set.Type);
+            }
+            if (set.Label is { } typeLabel) _typeLabels.TryAdd(set.Type, typeLabel);
+            if (set.Under is { } under)
+            {
+                var kept = _under.GetValueOrDefault(set.Type) ?? Holders;
+                var narrowed = kept.Where(under.Contains).ToList();
+                if (narrowed.Count == 0)
+                    issues.Add(new(FieldIssueKind.KeptNowhere, set.Type, "", $"{set.Pack} keeps it under {string.Join(" and ", under)}, earlier packs under {string.Join(" and ", kept)}"));
+                else
+                    _under[set.Type] = narrowed;
+            }
             foreach (var field in set.Fields)
             {
                 if (list.FirstOrDefault(f => f.Name == field.Name) is { } earlier)
@@ -92,6 +123,22 @@ public sealed class FieldCatalog
 
     /// <summary>The problems in the merged definitions.</summary>
     public IReadOnlyList<FieldIssue> Issues { get; }
+
+    /// <summary>
+    /// The entity types the packs declare fields for, in the order of the first pack that declares each (packs in
+    /// the order they build on each other, a pack's types by name).
+    /// </summary>
+    public IReadOnlyList<string> Types => _types;
+
+    /// <summary>What people read for <paramref name="type"/>, from the first pack that names it; null when none does.</summary>
+    public string? TypeLabel(string type) => _typeLabels.GetValueOrDefault(type);
+
+    /// <summary>
+    /// The folders an entity of <paramref name="type"/> is kept in: every folder the packs that say allow, or both a
+    /// subject's and a group's when none says. Empty for the types kept on their own (<see cref="IsKeptOnItsOwn"/>).
+    /// </summary>
+    public IReadOnlyList<string> KeptUnder(string type) =>
+        IsKeptOnItsOwn(type) ? [] : _under.GetValueOrDefault(type) ?? Holders;
 
     /// <summary>The fields of <paramref name="type"/>, in pack order and then declaration order.</summary>
     public IReadOnlyList<FieldDefinition> For(string type) => _byType.GetValueOrDefault(type) ?? [];

@@ -10,9 +10,17 @@
     "pack": { "type": "string", "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$", "not": { "enum": ["local", "oq"] } },
     "type": { "type": "string", "minLength": 1, "pattern": "^[^/]+$" },
     "version": { "type": "integer", "minimum": 1 },
+    "label": { "$ref": "#/$defs/text" },
+    "under": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "enum": ["subject", "group"] } },
     "fields": { "type": "array", "items": { "$ref": "#/$defs/field" } },
     "constrain": { "type": "array", "items": { "$ref": "#/$defs/constraint" } }
   },
+  "allOf": [
+    {
+      "if": { "properties": { "type": { "enum": ["subject", "group", "practitioner", "device"] } } },
+      "then": { "not": { "required": ["under"] } }
+    }
+  ],
   "if": { "properties": { "format": { "const": "openquote.fields/0" } } },
   "then": {
     "properties": {

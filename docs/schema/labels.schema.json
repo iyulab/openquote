@@ -18,6 +18,10 @@
         "additionalProperties": { "type": "object", "additionalProperties": { "$ref": "#/$defs/label" } }
       }
     },
+    "types": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/label" }
+    },
     "fields": {
       "type": "object",
       "additionalProperties": { "type": "object", "additionalProperties": { "$ref": "#/$defs/label" } }

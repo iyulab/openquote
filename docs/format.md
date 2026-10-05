@@ -368,6 +368,7 @@ Reading never stops on these; a host decides what to do with the list.
   "version": 1,
   "locale": "fr",
   "schemes": { "care.topic": { "1": { "sleep": "Sommeil", "school": "École" } } },
+  "types": { "referral": "Orientation" },
   "fields": { "session": { "date": "Date" }, "subject": { "name": "Nom" } },
   "aliases": { "subject": { "name": [ "Nom de famille", "Élève" ] } },
   "reports": { "monthly": { "1": "Séances par thème" } },
@@ -376,12 +377,12 @@ Reading never stops on these; a host decides what to do with the list.
 ```
 
 - Path: `labels/<pack>/v<version>.<locale>.json`; `pack`, `version` and `locale` must match it. `pack` is a pack id as for a manifest (and not `local` or `oq`), and `locale` is a language tag such as `fr` or `en-US`; a file whose pack or locale cannot be valid is reported as unreadable.
-- `schemes` (optional) maps a scheme name to a scheme version to item codes to labels. `fields` (optional) maps an entity type to field names to labels. Every label is non-empty text.
+- `schemes` (optional) maps a scheme name to a scheme version to item codes to labels. `types` (optional) maps an entity type to its label. `fields` (optional) maps an entity type to field names to labels. Every label is non-empty text.
 - `reports` (optional) maps a report form's name to a form version to its label. `exports` (optional) maps an export form's name to a form version to an object with a `label`, `columns`, or both; `columns` maps a column's position in the form, counted from 0, to its heading. A form version never changes, so neither do its column positions. Columns not listed keep the form's own heading.
 - `aliases` (optional) maps an entity type to field names to a non-empty list of other names the field goes by — headings a person's own table may use for it. They do not label the field; a host matches them when it takes data in (`LabelCatalog.FieldAliases`). Aliases never conflict: for the first locale asked for where any pack gives some, every pack's aliases are combined.
 - Labels change what people read, never a code or what is counted, so a renamed item needs no new scheme version.
 - When several packs label the same thing in one locale, a pack that another of them builds on is set aside, so the pack that builds on the others wins. If several packs are left, none building on another, they agree when they give the same text (for example two packs that each build on a third and relabel alike); when they give different labels it is a conflict (`LabelCatalog.Conflicts`), and none of their labels is used for that locale.
-- A host asks for labels by a list of locales in order of preference (`LabelCatalog.SchemeLabel`, `FieldLabel`, `ReportLabel`, `ExportLabel`, `ExportColumnLabel`). Each locale falls back to its language alone (`fr-CA`, then `fr`), and tags are compared without regard to case; if no locale gives a label, the answer is `null` and the host shows the definition's own `label` (the scheme item's, the field's, the form's or the column's). Of several versions of a pack's labels in one locale, the highest counts.
+- A host asks for labels by a list of locales in order of preference (`LabelCatalog.SchemeLabel`, `TypeLabel`, `FieldLabel`, `ReportLabel`, `ExportLabel`, `ExportColumnLabel`). Each locale falls back to its language alone (`fr-CA`, then `fr`), and tags are compared without regard to case; if no locale gives a label, the answer is `null` and the host shows the definition's own `label` (the scheme item's, the entity type's, the field's, the form's or the column's). Of several versions of a pack's labels in one locale, the highest counts.
 
 ## Suggestions
 
@@ -467,6 +468,24 @@ Format 1 also says how a value taken from the subject ages — a school grade co
 }
 ```
 
+A file may also name its entity type and say where entities of it are kept — a referral concerns one subject, so it is kept in that subject's folder and never in a group's:
+
+```json
+{
+  "format": "openquote.fields/1",
+  "pack": "care",
+  "type": "referral",
+  "version": 1,
+  "label": "Referral",
+  "under": [ "subject" ],
+  "fields": [
+    { "name": "date", "kind": "date", "required": true, "label": "Date" },
+    { "name": "to", "kind": "coded", "scheme": "care.service" },
+    { "name": "declined", "kind": "text", "label": "Reason it was not taken up" }
+  ]
+}
+```
+
 - Path: `fields/<pack>/<type>/v<version>.json`; `pack`, `type` and `version` must match it. `pack` is a pack id as for a manifest (and not `local` or `oq`), and `type` is the entity type the fields belong to.
 - `fields` (optional) declares fields. A field has a `name`, unique within the file, and a `kind`, one of `text`, `date`, `number`, `coded`, `reference` and `references`.
 - A `coded` field names the `scheme` its values are classified in, and no other kind has one. A `reference` or `references` field names the entity `type` it refers to, and no other kind has one.
@@ -476,7 +495,11 @@ Format 1 also says how a value taken from the subject ages — a school grade co
 - `default` (optional) is the value a host offers when the record is written, from one source: `{ "subject": "<field>" }`, the value of that field of the record's subject; or, in format 1, `{ "value": … }`, a fixed value — a non-empty string for a `text` field, a number for a `number` field, a code for a `coded` field (offered only when the version of its scheme in force that day holds the code). A `date` or reference field has no fixed value. Either way the record keeps the value as entered, and a host offers nothing for a hidden field.
 - `year` (format 1, beside `subject` only) says how long a value taken from the subject holds. A year starts on the first day of `startMonth` (1–12, default 1). Once a year start has passed since the subject's value was written (by the clock of the device that wrote it), the value is *stale* for the record: with `then: "advance"` a whole number counts up by one for each year passed, and with `then: "drop"` nothing is offered. `max` (advance only) bounds the count — a number, or `{ "subject": "<field>", "by": { "<code>": n } }`, the bound for each code of another field of the subject; a value that would pass its bound is not offered. When that field has no value the bound is not known, and a count is offered only if it stays within every bound the current value is within. `SubjectDefaults.Carry` gives the value, when it was written, the years passed and what to offer; a host shows a stale value to a person, who corrects the subject, rather than writing a value nobody entered. An engine that predates `year` ignores it and offers the subject's value as it stands.
 - `label` (optional) is what people read for the field; [Labels](#labels) can give it per locale.
+- `label` at the top of the file (optional, non-empty text) is what people read for the entity type itself; `types` in [Labels](#labels) gives it per locale.
+- `under` (optional) lists the folders an entity of the type is kept in: `subject`, `group` or both, each once. A file for `subject`, `group`, `practitioner` or `device` has none — those are kept on their own. Without it nothing is said, and an entity may be kept in either folder, as the engine always allows. It tells a host where to offer the record; the engine still reads an entity wherever its first change is. An engine that predates the two keys ignores them, and every count stays the same.
 - `constrain` (optional) narrows fields other packs declared, by `name`: `required` and `hidden` may each be set to `true`, and at least one must be. A key set to `false` is invalid, because a constraint only narrows. A pack does not constrain its own fields; it declares them as they should be.
+
+`FieldCatalog.Types` lists the entity types the packs declare fields for, in the order of the first pack that declares each (a pack's types by name). `FieldCatalog.TypeLabel` gives a type's own label from the first pack that names it, and `FieldCatalog.KeptUnder` the folders an entity of the type is kept in — those every pack that says allows (a pack may narrow what an earlier one said), both when none says, and none for the types kept on their own (`FieldCatalog.IsKeptOnItsOwn`).
 
 `VaultContent.FieldCatalog` merges the field files of the vault's packs, each pack at its highest version, packs in the order they build on each other (a pack is placed as soon as the packs it builds on are placed, taking ids in order; packs without a manifest come last). A field is kept from the first pack that declares it; then each constraint is applied. `FieldCatalog.Issues` lists what does not fit (`FieldIssue`):
 
@@ -486,6 +509,7 @@ Format 1 also says how a value taken from the subject ages — a school grade co
 | `ConstraintWithoutField` | A constraint names a field no pack declares. |
 | `ConstraintFromUnrelatedPack` | A constraint narrows a field of a pack it does not build on; it is not applied. |
 | `HiddenRequired` | A field ends up both required and hidden. |
+| `KeptNowhere` | The packs that say where an entity type is kept leave no folder in common; the earlier packs' answer stands. |
 
 ## Reading rules
 

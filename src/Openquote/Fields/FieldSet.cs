@@ -105,4 +105,14 @@ public sealed record FieldSet(
     string Type,
     int Version,
     IReadOnlyList<FieldDefinition> Fields,
-    IReadOnlyList<FieldConstraint> Constraints);
+    IReadOnlyList<FieldConstraint> Constraints)
+{
+    /// <summary>What people read for the entity type itself, or null when the file gives none.</summary>
+    public string? Label { get; init; }
+
+    /// <summary>
+    /// The folders an entity of the type is kept in — <c>subject</c>, <c>group</c> or both — or null when the
+    /// file does not say. Subjects, groups, practitioners and devices are not kept under anything and never say.
+    /// </summary>
+    public IReadOnlyList<string>? Under { get; init; }
+}

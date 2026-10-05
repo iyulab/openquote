@@ -16,8 +16,8 @@ public readonly record struct FormLabelKey(string Name, int Version);
 public sealed record ExportLabels(string? Label, IReadOnlyDictionary<int, string> Columns);
 
 /// <summary>
-/// What one version of a pack calls things in one locale: items of scheme versions, fields of entity
-/// types, report and export forms, and the other names people give a field. Labels change what people
+/// What one version of a pack calls things in one locale: items of scheme versions, entity types and their
+/// fields, report and export forms, and the other names people give a field. Labels change what people
 /// read, never a code or what is counted, so a renamed item needs no new scheme version.
 /// </summary>
 public sealed record LabelSet(
@@ -27,6 +27,9 @@ public sealed record LabelSet(
     IReadOnlyDictionary<SchemeLabelKey, string> Schemes,
     IReadOnlyDictionary<FieldLabelKey, string> Fields)
 {
+    /// <summary>What entity types are called, by type.</summary>
+    public IReadOnlyDictionary<string, string> Types { get; init; } = new Dictionary<string, string>();
+
     /// <summary>What report forms are called, by name and version.</summary>
     public IReadOnlyDictionary<FormLabelKey, string> Reports { get; init; } = new Dictionary<FormLabelKey, string>();
 

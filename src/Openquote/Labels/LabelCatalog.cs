@@ -39,6 +39,10 @@ public sealed class LabelCatalog
     public string? SchemeLabel(string scheme, int version, string code, IReadOnlyList<string> locales) =>
         Pick(locales, s => s.Schemes.GetValueOrDefault(new SchemeLabelKey(scheme, version, code)));
 
+    /// <summary>What entity type <paramref name="type"/> is called, resolved like <see cref="SchemeLabel"/>; null leaves the type's own label.</summary>
+    public string? TypeLabel(string type, IReadOnlyList<string> locales) =>
+        Pick(locales, s => s.Types.GetValueOrDefault(type));
+
     /// <summary>The label of <paramref name="field"/> of <paramref name="type"/>, resolved like <see cref="SchemeLabel"/>.</summary>
     public string? FieldLabel(string type, string field, IReadOnlyList<string> locales) =>
         Pick(locales, s => s.Fields.GetValueOrDefault(new FieldLabelKey(type, field)));
@@ -120,6 +124,7 @@ public sealed class LabelCatalog
 
     private static IEnumerable<(LabelTarget Target, string Text)> Targets(LabelSet set) =>
         set.Schemes.Select(p => (LabelTarget.Of(p.Key), p.Value))
+            .Concat(set.Types.Select(p => (LabelTarget.OfType(p.Key), p.Value)))
             .Concat(set.Fields.Select(p => (LabelTarget.Of(p.Key), p.Value)))
             .Concat(set.Reports.Select(p => (LabelTarget.Of("report", p.Key), p.Value)))
             .Concat(set.Exports.Where(p => p.Value.Label is not null).Select(p => (LabelTarget.Of("export", p.Key), p.Value.Label!)))
@@ -145,18 +150,20 @@ public sealed class LabelCatalog
     }
 }
 
-// What a label names — a scheme item, a field, a form or a column of an export form — compared by its parts and
-// written out only for a report. Aliases are not targets: they add up and never conflict.
-internal readonly record struct LabelTarget(SchemeLabelKey? Scheme, FieldLabelKey? Field, string? FormKind, FormLabelKey Form, int? Column)
+// What a label names — a scheme item, an entity type, a field, a form or a column of an export form — compared by its
+// parts and written out only for a report. Aliases are not targets: they add up and never conflict.
+internal readonly record struct LabelTarget(SchemeLabelKey? Scheme, FieldLabelKey? Field, string? FormKind, FormLabelKey Form, int? Column, string? Type = null)
 {
     public static LabelTarget Of(SchemeLabelKey scheme) => new(scheme, null, null, default, null);
+    public static LabelTarget OfType(string type) => new(null, null, null, default, null, type);
     public static LabelTarget Of(FieldLabelKey field) => new(null, field, null, default, null);
     public static LabelTarget Of(string formKind, FormLabelKey form, int? column = null) => new(null, null, formKind, form, column);
 
-    public string Render() => (Scheme, Field) switch
+    public string Render() => (Scheme, Field, Type) switch
     {
-        ({ } s, _) => $"{s.Scheme} v{s.Version} {s.Code}",
-        (_, { } f) => $"{f.Type}.{f.Field}",
+        ({ } s, _, _) => $"{s.Scheme} v{s.Version} {s.Code}",
+        (_, { } f, _) => $"{f.Type}.{f.Field}",
+        (_, _, { } t) => $"type {t}",
         _ => $"{FormKind} {Form.Name} v{Form.Version}" + (Column is { } c ? $" column {c}" : ""),
     };
 }
