@@ -38,6 +38,23 @@ public sealed class SchemeCatalog
             .MaxBy(s => s.Version);
 
     /// <summary>
+    /// The schemes that extend a version of <paramref name="name"/> (see <see cref="Scheme.Extends"/>) —
+    /// lists a body keeps beside a shared one — each at its highest version that does, ordered by name.
+    /// A host offers their items beside the shared scheme's wherever a field takes it: a value of an
+    /// extending scheme counts as its anchor wherever the shared scheme is counted.
+    /// </summary>
+    public IReadOnlyList<Scheme> ExtensionsOf(string name)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        return _schemes.Values
+            .Where(s => s.Extends?.Scheme == name)
+            .GroupBy(s => s.Name)
+            .Select(g => g.MaxBy(s => s.Version)!)
+            .OrderBy(s => s.Name, StringComparer.Ordinal)
+            .ToList();
+    }
+
+    /// <summary>
     /// The days after <paramref name="from"/> up to <paramref name="to"/> on which the version of
     /// <paramref name="name"/> in force (see <see cref="InForce"/>) changes, in date order.
     /// </summary>
