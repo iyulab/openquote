@@ -24,15 +24,24 @@ internal sealed record ThresholdPolicy(double TargetPrecision, int MinimumAnswer
     /// <summary>No thresholds at all: every layer only guesses, the field's most frequent code first.</summary>
     public static ThresholdPolicy None { get; } = new(TargetPrecision: 1, MinimumAnswered: int.MaxValue, NearlySameMemoryThreshold: null);
 
-    /// <summary>The key and memory thresholds of <paramref name="field"/>.</summary>
-    public async Task<(double? Key, double? Memory)> ChooseAsync(FormDefinition form, string field, IReadOnlyList<SettledDocument> settled,
+    /// <summary>
+    /// The key and memory thresholds of <paramref name="field"/>. A field that takes several values has a key
+    /// threshold only: the similar record layer does not answer it.
+    /// </summary>
+    public async Task<(double? Key, double? Memory)> ChooseAsync(FormDefinition form, FieldDefinition field, IReadOnlyList<SettledDocument> settled,
         CancellationToken cancellationToken)
     {
-        if (settled.Count(d => d.Values.ContainsKey(field)) < MinimumAnswered)
+        if (field.Multiple)
+        {
+            return settled.Count(d => d.Sets.TryGetValue(field.Name, out var set) && set.Count > 0) < MinimumAnswered
+                ? (null, null)
+                : (ThresholdSelection.SelectKeyThreshold(new FieldMemory(), form, field.Name, settled, TargetPrecision, MinimumAnswered).Chosen?.Threshold, null);
+        }
+        if (settled.Count(d => d.Values.ContainsKey(field.Name)) < MinimumAnswered)
         {
             return (null, NearlySameMemoryThreshold);
         }
-        var replay = await ThresholdSelection.SelectLayersAsync(new FieldMemory(), new LexicalMemory(), form, field, settled, TargetPrecision, MinimumAnswered,
+        var replay = await ThresholdSelection.SelectLayersAsync(new FieldMemory(), new LexicalMemory(), form, field.Name, settled, TargetPrecision, MinimumAnswered,
             cancellationToken).ConfigureAwait(false);
         return (replay.Key.Chosen?.Threshold, replay.Memory.Chosen?.Threshold ?? NearlySameMemoryThreshold);
     }

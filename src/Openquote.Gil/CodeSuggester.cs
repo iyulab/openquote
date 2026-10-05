@@ -72,6 +72,13 @@ public enum SuggestionBasis
 /// exactly one code there is left out.
 /// </para>
 /// <para>
+/// A coded field that takes several values (<see cref="VaultField.Many"/>) keeps every value, each carried on
+/// its own: suggested for, its values are a set — each settled on its own, those a person has already chosen
+/// evidence for the rest, and the field suggested for while it holds some (the settled field memory answers it;
+/// a code to confirm is never offered there, since no similar record vouches for one value of a set). As
+/// evidence for another field, its values are read together.
+/// </para>
+/// <para>
 /// Settled records are the entities of the type that are not destroyed and have a single head: a record
 /// changed on two devices at once has values no one has settled yet. Reference fields — who the record
 /// is about or who wrote it — are never used as evidence, so a person's identity does not decide a
@@ -135,8 +142,8 @@ public sealed class CodeSuggester
                 && scheme.Items.Select(i => (i.Code, Suggestion: suggestible.For(name, scheme.Version, i))).Where(i => i.Suggestion != Suggestion.Off)
                     .ToDictionary(i => i.Code, i => i.Suggestion, StringComparer.Ordinal) is { Count: > 0 } codes)
             {
-                targets[field.Name] = new Target(scheme, codes);
-                formFields.Add(new GilField(field.Name, FieldRole.Judged) { Candidates = [.. codes.Keys] });
+                targets[field.Name] = new Target(scheme, codes, field.Many);
+                formFields.Add(new GilField(field.Name, FieldRole.Judged) { Candidates = [.. codes.Keys], Multiple = field.Many });
             }
             else
             {
@@ -149,9 +156,14 @@ public sealed class CodeSuggester
             // Nothing to suggest for: no settled record is read.
             return new CodeSuggester(null, null, targets, fields, catalog, date, []);
         }
+        var sets = SetFields(targets);
         var settled = EntityMerger.Merge(content.Changes).Values
             .Where(e => e.Reference.Type == type && !e.Destroyed && e.Heads.Count == 1)
-            .Select(e => new SettledDocument(e.Reference.Id, Values(e.Fields, fields, catalog, date, e), e.Changes.Max(c => c.At)))
+            .Select(e =>
+            {
+                var (values, chosen) = Values(e.Fields, fields, sets, catalog, date, e);
+                return new SettledDocument(e.Reference.Id, values, e.Changes.Max(c => c.At)) { Sets = chosen };
+            })
             .ToList();
         var form = await WithThresholdsAsync(type, formFields, settled, thresholds, cancellationToken).ConfigureAwait(false);
         var resolver = new FormResolver(new FieldMemory(), new LexicalMemory(), similarDocumentCount: SimilarCount);
@@ -177,8 +189,8 @@ public sealed class CodeSuggester
                 fields.Add(field);
                 continue;
             }
-            var (key, memory) = await policy.ChooseAsync(form, field.Name, settled, cancellationToken).ConfigureAwait(false);
-            fields.Add(new GilField(field.Name, field.Role) { Candidates = field.Candidates, KeyThreshold = key, MemoryThreshold = memory });
+            var (key, memory) = await policy.ChooseAsync(form, field, settled, cancellationToken).ConfigureAwait(false);
+            fields.Add(new GilField(field.Name, field.Role) { Candidates = field.Candidates, Multiple = field.Multiple, KeyThreshold = key, MemoryThreshold = memory });
         }
         return new FormDefinition(type, fields, PromptLanguage.English);
     }
@@ -194,8 +206,8 @@ public sealed class CodeSuggester
         {
             return [];
         }
-        var values = Values(draft, _fields, _catalog, _date, entity: null);
-        var suggestions = await _resolver.SuggestAsync(_form, Draft, values, cancellationToken).ConfigureAwait(false);
+        var (values, chosen) = Values(draft, _fields, SetFields(_targets), _catalog, _date, entity: null);
+        var suggestions = await _resolver.SuggestAsync(_form, Draft, values, chosen, cancellationToken).ConfigureAwait(false);
         var result = new List<FieldSuggestions>();
         foreach (var suggestion in suggestions)
         {
@@ -242,7 +254,7 @@ public sealed class CodeSuggester
                     [.. suggestion.SimilarDocuments.Where(m => m.Answer == candidate.Value).Select(m => m.Source)], confirm, SuggestionBasis.SimilarRecords, null);
             case FieldSource.SettledFieldMemory when KeyField(candidate.Evidence) is { } field && values.TryGetValue(field, out var shared):
                 var alongside = _settled
-                    .Where(d => d.Values.TryGetValue(suggestion.Field, out var code) && code == candidate.Value
+                    .Where(d => Holds(d, suggestion.Field, candidate.Value)
                         && d.Values.TryGetValue(field, out var value) && SameValue(value, shared))
                     .OrderByDescending(d => d.SettledAt)
                     .ThenBy(d => d.DocumentId, StringComparer.Ordinal)
@@ -263,18 +275,48 @@ public sealed class CodeSuggester
 
     private static bool SameValue(string a, string b) => string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>Whether a settled record holds <paramref name="code"/> in <paramref name="field"/>, as its value or one of its set.</summary>
+    private static bool Holds(SettledDocument document, string field, string code) =>
+        document.Values.TryGetValue(field, out var value) ? value == code
+        : document.Sets.TryGetValue(field, out var set) && set.Contains(code);
+
+    /// <summary>The fields suggested for as sets: those taking several values.</summary>
+    private static HashSet<string> SetFields(IReadOnlyDictionary<string, Target> targets) =>
+        targets.Where(t => t.Value.Many).Select(t => t.Key).ToHashSet(StringComparer.Ordinal);
+
     /// <summary>
     /// A record's values as the form reads them: a coded value as its code in the version in force on
-    /// <paramref name="date"/>, a reference as its id, anything else as written.
+    /// <paramref name="date"/>, a reference as its id, anything else as written. A coded field taking several
+    /// values keeps them all: as a set when it is among <paramref name="sets"/> (suggested for as one),
+    /// otherwise read together as one value.
     /// </summary>
-    private static Dictionary<string, string> Values(IReadOnlyDictionary<string, JsonElement> fields, IReadOnlyList<VaultField> declared,
+    private static (Dictionary<string, string> Values, Dictionary<string, IReadOnlyList<string>> Sets) Values(
+        IReadOnlyDictionary<string, JsonElement> fields, IReadOnlyList<VaultField> declared, HashSet<string> sets,
         SchemeCatalog catalog, DateOnly date, Entity? entity)
     {
         var values = new Dictionary<string, string>(StringComparer.Ordinal);
+        var chosen = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
         foreach (var field in declared)
         {
             if (!fields.TryGetValue(field.Name, out var value) || value.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
             {
+                continue;
+            }
+            if (field.Kind == FieldKind.Coded && field.Many)
+            {
+                var codes = Codes(field, value, catalog, date);
+                if (codes.Count == 0)
+                {
+                    continue;
+                }
+                if (sets.Contains(field.Name))
+                {
+                    chosen[field.Name] = codes;
+                }
+                else
+                {
+                    values[field.Name] = string.Join(' ', codes);
+                }
                 continue;
             }
             var text = field.Kind == FieldKind.Coded ? Code(field, value, catalog, date, entity) : Text(value);
@@ -283,7 +325,7 @@ public sealed class CodeSuggester
                 values[field.Name] = text;
             }
         }
-        return values;
+        return (values, chosen);
     }
 
     private static string? Code(VaultField field, JsonElement value, SchemeCatalog catalog, DateOnly date, Entity? entity)
@@ -297,8 +339,30 @@ public sealed class CodeSuggester
             var resolution = entity.Classify(field.Name, name, scheme.Version, catalog);
             return resolution.Kind == ResolutionKind.Assigned ? resolution.Code : null;
         }
-        return CodedValue.From(value) is { } coded && coded.Scheme == name && coded.Version == scheme.Version ? coded.Code : null;
+        return CodedValue.From(value) is { } coded ? Carried(coded, name, scheme.Version, catalog) : null;
     }
+
+    /// <summary>
+    /// Every value of a field that takes several, each carried on its own to the version in force on
+    /// <paramref name="date"/> — the primary one or not, and whether or not one is — without repeats; a value
+    /// that does not land on exactly one code there is left out.
+    /// </summary>
+    private static List<string> Codes(VaultField field, JsonElement value, SchemeCatalog catalog, DateOnly date)
+    {
+        if (field.Scheme is not { } name || catalog.InForce(name, date) is not { } scheme || CodedValues.From(value) is not { } held)
+        {
+            return [];
+        }
+        return [.. held.Values.Select(v => Carried(v, name, scheme.Version, catalog)).OfType<string>().Distinct(StringComparer.Ordinal)];
+    }
+
+    /// <summary>
+    /// A value's code in <paramref name="version"/> of <paramref name="scheme"/>, as a report would place it there —
+    /// a value of a list kept beside the scheme as the item it counts as; null when it lands on no single code.
+    /// </summary>
+    private static string? Carried(CodedValue value, string scheme, int version, SchemeCatalog catalog) =>
+        value.Scheme == scheme && value.Version == version ? value.Code
+        : catalog.Resolve(value, scheme, version) is { Kind: ResolutionKind.Assigned, Code: { } code } ? code : null;
 
     private static string? Text(JsonElement value) => value.ValueKind switch
     {
@@ -310,5 +374,5 @@ public sealed class CodeSuggester
         _ => null,
     };
 
-    private sealed record Target(Scheme Scheme, Dictionary<string, Suggestion> Codes);
+    private sealed record Target(Scheme Scheme, Dictionary<string, Suggestion> Codes, bool Many);
 }

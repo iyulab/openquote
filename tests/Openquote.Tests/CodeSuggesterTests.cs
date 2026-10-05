@@ -383,4 +383,91 @@ public class CodeSuggesterTests
 
         Assert.Empty(await suggester.SuggestAsync(draft, TestContext.Current.CancellationToken));
     }
+
+    // Fields taking several values: the tools a session used (never suggested) and its tags (suggested).
+    private const string Tool = """
+        { "format": "openquote.scheme/0", "scheme": "tool", "version": 1, "items": [
+          { "code": "x", "label": "X" }, { "code": "y", "label": "Y" }, { "code": "z", "label": "Z" } ] }
+        """;
+
+    private const string Tag = """
+        { "format": "openquote.scheme/0", "scheme": "tag", "version": 1, "items": [
+          { "code": "a", "label": "A", "suggest": true }, { "code": "b", "label": "B", "suggest": true }, { "code": "c", "label": "C", "suggest": true } ] }
+        """;
+
+    private const string SessionFieldsWithSets = """
+        { "format": "openquote.fields/1", "pack": "care", "type": "session", "version": 1, "fields": [
+          { "name": "client", "kind": "reference", "type": "subject" },
+          { "name": "topic", "kind": "coded", "scheme": "topic" },
+          { "name": "tools", "kind": "coded", "scheme": "tool", "many": true },
+          { "name": "tags", "kind": "coded", "scheme": "tag", "many": true },
+          { "name": "note", "kind": "text", "tier": "narrative" } ] }
+        """;
+
+    private static JsonArray Several(string scheme, params string[] codes) =>
+        [.. codes.Select(c => (JsonNode)new JsonObject { ["scheme"] = scheme, ["version"] = 1, ["code"] = c })];
+
+    private static JsonObject WithTools(JsonObject session, params string[] tools)
+    {
+        session["tools"] = Several("tool", tools);
+        return session;
+    }
+
+    private static Task<CodeSuggester> BuildWithSets(params VaultFile[] records) =>
+        CodeSuggester.BuildAsync(
+            VaultReader.Read([.. Vault(records).Where(f => f.Path != "fields/care/session/v1.json"), File("schemes/tool/v1.json", Tool),
+                File("schemes/tag/v1.json", Tag), File("fields/care/session/v1.json", SessionFieldsWithSets)]),
+            "session", March, TestContext.Current.CancellationToken);
+
+    [Fact]
+    public async Task Every_value_of_a_field_taking_several_is_evidence_whether_or_not_one_is_primary()
+    {
+        // Every note reads the same: only the tools tell housing records — x and y, with x marked primary in
+        // some and none marked in others — from stress records, made with z.
+        var records = Enumerable.Range(0, 12).Select(i =>
+        {
+            var housing = i < 6;
+            var session = Session($"p{i}", "the same few words", housing ? "housing" : "stress");
+            var tools = housing ? Several("tool", "x", "y") : Several("tool", "z");
+            if (housing && i % 2 == 0) tools[0]!["primary"] = true;
+            session["tools"] = tools;
+            return File(Json(10 + i, $"{(housing ? "h" : "s")}{i}", "create", fields: session));
+        });
+        var suggester = await BuildWithSets([.. records]);
+        async Task<SuggestedCode> First(params string[] tools)
+        {
+            var draft = Draft(("note", "the same few words"));
+            draft["tools"] = JsonSerializer.SerializeToElement(Several("tool", tools));
+            return Assert.Single(await suggester.SuggestAsync(draft, TestContext.Current.CancellationToken), s => s.Field == "topic").Codes[0];
+        }
+
+        var withXY = await First("x", "y");
+        var withZ = await First("z");
+
+        Assert.Equal("housing", withXY.Code);
+        Assert.All(withXY.Similar, id => Assert.StartsWith("h", id, StringComparison.Ordinal));
+        Assert.Equal("stress", withZ.Code);
+        Assert.All(withZ.Similar, id => Assert.StartsWith("s", id, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_field_taking_several_is_suggested_for_while_it_holds_some_the_rest_with_those_as_evidence()
+    {
+        var records = Enumerable.Range(0, 6).Select(i =>
+        {
+            var session = Session($"t{i}", $"note {i}", "stress");
+            session["tags"] = Several("tag", "a", "b");
+            return File(Json(10 + i, $"t{i}", "create", fields: session));
+        });
+        var suggester = await BuildWithSets([.. records]);
+        var draft = Draft(("note", "something else"));
+        draft["topic"] = JsonSerializer.SerializeToElement(new { scheme = "topic", version = 1, code = "stress" });
+        draft["tags"] = JsonSerializer.SerializeToElement(new { scheme = "tag", version = 1, code = "a" });
+
+        var tags = Assert.Single(await suggester.SuggestAsync(draft, TestContext.Current.CancellationToken), s => s.Field == "tags");
+
+        Assert.Equal(("tag", 1), (tags.Scheme, tags.Version));
+        Assert.DoesNotContain(tags.Codes, c => c.Code == "a");
+        Assert.Equal("b", tags.Codes[0].Code);
+    }
 }
