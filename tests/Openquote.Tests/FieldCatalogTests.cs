@@ -340,6 +340,32 @@ public class FieldCatalogTests
     }
 
     [Fact]
+    public void A_follow_up_expected_after_a_type_that_closes_no_case_is_an_issue_and_not_applied()
+    {
+        var content = VaultReader.Read([
+            File("fields/care/session/v1.json", """{ "format": "openquote.fields/1", "pack": "care", "type": "session", "version": 1, "followUpDays": 14, "fields": [] }"""),
+            File("fields/care/closing/v1.json", """{ "format": "openquote.fields/1", "pack": "care", "type": "closing", "version": 1, "role": "closes", "followUpDays": 28, "fields": [] }"""),
+        ]);
+        var catalog = new FieldCatalog(content.Fields, [Pack("care")]);
+
+        var issue = Assert.Single(catalog.Issues);
+        Assert.Equal((FieldIssueKind.FollowUpWithoutClosing, "session"), (issue.Kind, issue.Type));
+        Assert.Null(catalog.FollowUpDays("session"));
+        Assert.Equal(28, catalog.FollowUpDays("closing"));
+    }
+
+    [Theory]
+    [InlineData("\"followUpDays\": 0")]
+    [InlineData("\"followUpDays\": 2.5")]
+    [InlineData("\"followUpDays\": \"28\"")]
+    public void An_invalid_follow_up_is_reported(string key)
+    {
+        var json = $$"""{ "format": "openquote.fields/1", "pack": "care", "type": "closing", "version": 1, "role": "closes", {{key}} }""";
+
+        Assert.Equal(UnreadableReason.Invalid, Assert.Single(VaultReader.Read([File("fields/care/closing/v1.json", json)]).Unreadable).Reason);
+    }
+
+    [Fact]
     public void A_dating_field_that_is_not_a_date_field_of_the_type_is_an_issue_and_the_field_called_date_dates_it()
     {
         var content = VaultReader.Read([File("fields/care/closing/v1.json", """

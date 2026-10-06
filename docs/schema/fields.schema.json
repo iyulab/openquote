@@ -15,6 +15,7 @@
     "order": { "type": "integer", "minimum": 0 },
     "dated": { "type": "string", "minLength": 1 },
     "role": { "enum": ["opens", "closes"] },
+    "followUpDays": { "type": "integer", "minimum": 1 },
     "fields": { "type": "array", "items": { "$ref": "#/$defs/field" } },
     "constrain": { "type": "array", "items": { "$ref": "#/$defs/constraint" } }
   },

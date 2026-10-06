@@ -193,4 +193,68 @@ public class CaseReaderTests
         Assert.Null(only.Opening);
         Assert.True(only.IsOpen);
     }
+
+    // The same, with a follow-up expected within 28 days of a closing.
+    private static readonly FieldCatalog Following = Catalog(
+        ("intake", """ "role": "opens", """, "date"),
+        ("closing", """ "role": "closes", "dated": "closed", "followUpDays": 28, """, "closed"),
+        ("session", "", "date"));
+
+    private static readonly DateOnly Closed = new(2026, 4, 20);
+
+    [Fact]
+    public void A_closing_that_expects_a_follow_up_is_due_its_days_later_and_waits_until_then()
+    {
+        var only = Assert.Single(CaseReader.Read("s1", Entities(Record("intake", "2026-03-02"), Record("closing", "2026-04-20")), Following).Cases);
+
+        Assert.Equal(Closed.AddDays(28), only.FollowUpDue);
+        Assert.Null(only.FirstAfterClosing);
+        Assert.Equal(FollowUp.Waiting, only.FollowUpOn(Closed.AddDays(28)));
+        Assert.Equal(FollowUp.Overdue, only.FollowUpOn(Closed.AddDays(29)));
+    }
+
+    [Theory]
+    [InlineData("2026-05-04", FollowUp.Done)]
+    [InlineData("2026-05-18", FollowUp.Done)] // on the day it is due
+    [InlineData("2026-05-25", FollowUp.Late)]
+    public void Any_record_of_the_subject_after_the_closing_is_its_follow_up(string day, FollowUp expected)
+    {
+        var only = Assert.Single(CaseReader.Read("s1", Entities(
+            Record("intake", "2026-03-02"), Record("closing", "2026-04-20"), Record("session", day)), Following).Cases);
+
+        Assert.Equal("session", only.FirstAfterClosing!.Reference.Type);
+        Assert.Equal(DateOnly.Parse(day, System.Globalization.CultureInfo.InvariantCulture), only.FirstAfterClosingDay);
+        Assert.Equal(expected, only.FollowUpOn(new DateOnly(2026, 6, 30)));
+    }
+
+    [Fact]
+    public void A_late_record_still_to_come_leaves_the_follow_up_overdue_on_a_day_before_it()
+    {
+        var only = Assert.Single(CaseReader.Read("s1", Entities(
+            Record("intake", "2026-03-02"), Record("closing", "2026-04-20"), Record("session", "2026-06-01")), Following).Cases);
+
+        Assert.Equal(FollowUp.Overdue, only.FollowUpOn(new DateOnly(2026, 5, 25)));
+        Assert.Equal(FollowUp.Late, only.FollowUpOn(new DateOnly(2026, 6, 1)));
+    }
+
+    [Fact]
+    public void A_new_intake_after_the_closing_is_the_follow_up_of_the_case_before()
+    {
+        var cases = CaseReader.Read("s1", Entities(
+            Record("intake", "2026-03-02"), Record("closing", "2026-04-20"), Record("intake", "2026-05-01")), Following).Cases;
+
+        Assert.Equal(2, cases.Count);
+        Assert.Equal("intake", cases[0].FirstAfterClosing!.Reference.Type);
+        Assert.Equal(FollowUp.Done, cases[0].FollowUpOn(new DateOnly(2026, 6, 30)));
+        Assert.Equal(FollowUp.NotExpected, cases[1].FollowUpOn(new DateOnly(2026, 6, 30))); // still open
+    }
+
+    [Fact]
+    public void A_closing_that_expects_nothing_leaves_no_follow_up()
+    {
+        var only = Assert.Single(CaseReader.Read("s1", Entities(Record("intake", "2026-03-02"), Record("closing", "2026-04-20")), Fields).Cases);
+
+        Assert.Null(only.FollowUpDue);
+        Assert.Equal(FollowUp.NotExpected, only.FollowUpOn(new DateOnly(2027, 1, 1)));
+    }
 }

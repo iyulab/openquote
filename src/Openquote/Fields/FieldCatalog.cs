@@ -35,6 +35,12 @@ public enum FieldIssueKind
     /// device), which is no record of a case; the role is not applied.
     /// </summary>
     RoleOnItsOwn,
+
+    /// <summary>
+    /// A pack expects a follow-up after a record of an entity type that does not close a case; it is not applied.
+    /// <see cref="FieldIssue.Field"/> is empty.
+    /// </summary>
+    FollowUpWithoutClosing,
 }
 
 /// <summary>One problem with a vault's field definitions.</summary>
@@ -54,6 +60,7 @@ public sealed class FieldCatalog
     private readonly Dictionary<string, int> _order = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _dated = new(StringComparer.Ordinal);
     private readonly Dictionary<string, CaseRole> _role = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _followUp = new(StringComparer.Ordinal);
 
     /// <summary>The folders an entity can be kept under, in the order <see cref="KeptUnder"/> lists them.</summary>
     public static IReadOnlyList<string> Holders { get; } = ["subject", "group"];
@@ -142,6 +149,15 @@ public sealed class FieldCatalog
             foreach (var field in list.Where(f => f.Required && f.Hidden))
                 issues.Add(new(FieldIssueKind.HiddenRequired, type, field.Name, "a required field cannot be hidden"));
 
+        foreach (var set in latest)
+        {
+            if (set.FollowUpDays is not { } days) continue;
+            if (TypeRole(set.Type) == CaseRole.Closes)
+                _followUp.TryAdd(set.Type, days);
+            else
+                issues.Add(new(FieldIssueKind.FollowUpWithoutClosing, set.Type, "", $"{set.Pack} expects a follow-up {days} days after a {set.Type}, which closes no case"));
+        }
+
         foreach (var (type, dated) in _dated.OrderBy(t => t.Key, StringComparer.Ordinal).ToList())
         {
             if (Find(type, dated)?.Kind == FieldKind.Date) continue;
@@ -185,6 +201,12 @@ public sealed class FieldCatalog
     /// null when none does.
     /// </summary>
     public CaseRole? TypeRole(string type) => _role.TryGetValue(type, out var role) ? role : null;
+
+    /// <summary>
+    /// Within how many days after a record of <paramref name="type"/> closes a case a follow-up is expected, from the
+    /// first pack that says; null when none does, or when the type closes no case.
+    /// </summary>
+    public int? FollowUpDays(string type) => _followUp.TryGetValue(type, out var days) ? days : null;
 
     /// <summary>The fields of <paramref name="type"/>, in pack order and then declaration order.</summary>
     public IReadOnlyList<FieldDefinition> For(string type) => _byType.GetValueOrDefault(type) ?? [];

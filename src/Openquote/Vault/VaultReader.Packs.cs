@@ -354,6 +354,14 @@ public static partial class VaultReader
                 return Bad<FieldSet>(file, UnreadableReason.Invalid, "the role of an entity type is opens or closes");
         }
 
+        int? followUpDays = null;
+        if (root.TryGetProperty("followUpDays", out var followUpValue))
+        {
+            if (followUpValue.ValueKind != JsonValueKind.Number || !followUpValue.TryGetInt32(out var days) || days < 1)
+                return Bad<FieldSet>(file, UnreadableReason.Invalid, "followUpDays is a whole number of days, 1 or more");
+            followUpDays = days;
+        }
+
         var fields = new List<FieldDefinition>();
         if (root.TryGetProperty("fields", out var fieldsArray))
         {
@@ -387,7 +395,7 @@ public static partial class VaultReader
             }
         }
 
-        return new(new FieldSet(pack, type, version, fields, constraints) { Label = typeLabel, Under = under, Order = order, Dated = dated, Role = role }, null);
+        return new(new FieldSet(pack, type, version, fields, constraints) { Label = typeLabel, Under = under, Order = order, Dated = dated, Role = role, FollowUpDays = followUpDays }, null);
     }
 
     private static readonly string[] FieldsFormats = ["openquote.fields/0", "openquote.fields/1"];

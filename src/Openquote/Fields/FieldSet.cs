@@ -133,6 +133,13 @@ public sealed record FieldSet(
     /// record falls in whatever case its date places it. See <see cref="Records.CaseReader"/>.
     /// </summary>
     public CaseRole? Role { get; init; }
+
+    /// <summary>
+    /// For a type that closes a case: within how many days after the closing a follow-up is expected — a record of
+    /// the subject, whatever its type — or null when the file does not say and none is.
+    /// See <see cref="Records.SubjectCase.FollowUpOn"/>.
+    /// </summary>
+    public int? FollowUpDays { get; init; }
 }
 
 /// <summary>What a record of an entity type does to a subject's case (<see cref="Records.CaseReader"/>).</summary>

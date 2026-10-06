@@ -6,6 +6,9 @@ Versions before 0.16.0 are described by their tags and the package history on nu
 
 ## [Unreleased]
 
+### Added
+- A field file of a type that closes a case may say within how many days a follow-up is expected (`followUpDays`). `FieldCatalog.FollowUpDays` gives it; `FieldIssueKind.FollowUpWithoutClosing` reports it on a type that closes no case. `SubjectCase.FollowUpDue`, `FirstAfterClosing` and `FirstAfterClosingDay` tell when it is due and the subject's first record after the closing — in the case or beginning the next one — and `SubjectCase.FollowUpOn(day)` says whether it came in time, came late, is still awaited or is overdue. Nothing is stored. Engines that predate the key ignore it, and every count stays the same.
+
 ## [0.17.1] - 2026-10-06
 
 ### Fixed

@@ -53,18 +53,67 @@ public sealed class SubjectCase
     /// <summary>True while no record has closed the case and no later opening has followed it.</summary>
     public bool IsOpen => Closing is null && !FollowedByOpening;
 
+    /// <summary>
+    /// The subject's first record after the closing — the first of <see cref="AfterClosing"/>, or the record that began
+    /// the next case — or null when none has come or the case has not closed.
+    /// </summary>
+    public Entity? FirstAfterClosing { get; private set; }
+
+    /// <summary>The day of <see cref="FirstAfterClosing"/>, or null when there is none.</summary>
+    public DateOnly? FirstAfterClosingDay { get; private set; }
+
+    /// <summary>
+    /// The last day a follow-up is expected by: the closing's day and the days its type gives
+    /// (<see cref="FieldCatalog.FollowUpDays"/>). Null when the case has not closed or its closing expects none.
+    /// </summary>
+    public DateOnly? FollowUpDue { get; private set; }
+
+    /// <summary>
+    /// Where the follow-up after the closing stands on <paramref name="day"/> — any record of the subject after the
+    /// closing counts as one. Nothing is judged about the subject; the host lists what it is asked to.
+    /// </summary>
+    public FollowUp FollowUpOn(DateOnly day)
+    {
+        if (FollowUpDue is not { } due) return FollowUp.NotExpected;
+        if (FirstAfterClosingDay is { } came && came <= due) return FollowUp.Done;
+        if (FirstAfterClosingDay is { } late && late <= day) return FollowUp.Late;
+        return day <= due ? FollowUp.Waiting : FollowUp.Overdue;
+    }
+
     internal void Add(Entity record) => _records.Add(record);
 
-    internal void Close(Entity record, DateOnly day)
+    internal void Close(Entity record, DateOnly day, int? followUpDays)
     {
         if (!ReferenceEquals(_records[^1], record)) _records.Add(record);
         Closing = record;
         End = day;
+        FollowUpDue = followUpDays is { } days ? day.AddDays(days) : null;
     }
+
+    internal void Follow(Entity record, DateOnly day) => (FirstAfterClosing, FirstAfterClosingDay) = (record, day);
 
     internal void AddAfterClosing(Entity record) => _afterClosing.Add(record);
 
     internal void EndByOpening() => FollowedByOpening = true;
+}
+
+/// <summary>Where the follow-up after a case's closing stands on a day (<see cref="SubjectCase.FollowUpOn"/>).</summary>
+public enum FollowUp
+{
+    /// <summary>The case has not closed, or its closing expects no follow-up.</summary>
+    NotExpected,
+
+    /// <summary>A record of the subject came after the closing, by the day it was due.</summary>
+    Done,
+
+    /// <summary>The first record of the subject after the closing came after the day it was due.</summary>
+    Late,
+
+    /// <summary>No record of the subject has come after the closing yet, and the day it is due has not passed.</summary>
+    Waiting,
+
+    /// <summary>No record of the subject came after the closing, and the day it was due has passed.</summary>
+    Overdue,
 }
 
 /// <summary>A subject's cases, oldest first, and the records that could not be placed in time.</summary>
@@ -117,8 +166,16 @@ public static class CaseReader
         var cases = new List<SubjectCase>();
         SubjectCase? open = null;
         SubjectCase? closed = null;
+        // The case closed last whose first record after the closing has not come yet.
+        SubjectCase? following = null;
         foreach (var (day, record) in dated.OrderBy(r => r.Day).ThenBy(r => r.Record.Reference.Id, StringComparer.Ordinal))
         {
+            if (following is not null)
+            {
+                following.Follow(record, day);
+                following = null;
+            }
+            var followUpDays = fields.FollowUpDays(record.Reference.Type);
             switch (fields.TypeRole(record.Reference.Type))
             {
                 case CaseRole.Opens:
@@ -128,17 +185,17 @@ public static class CaseReader
                     closed = null;
                     break;
                 case CaseRole.Closes when open is not null:
-                    open.Close(record, day);
-                    (closed, open) = (open, null);
+                    open.Close(record, day, followUpDays);
+                    (closed, open, following) = (open, null, open);
                     break;
                 case CaseRole.Closes when closed is not null:
                     closed.AddAfterClosing(record);
                     break;
                 case CaseRole.Closes:
                     var unopened = new SubjectCase(record, day, opened: false);
-                    unopened.Close(record, day);
+                    unopened.Close(record, day, followUpDays);
                     cases.Add(unopened);
-                    closed = unopened;
+                    closed = following = unopened;
                     break;
                 default:
                     if (open is not null) open.Add(record);
