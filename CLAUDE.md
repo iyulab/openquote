@@ -22,3 +22,6 @@ dotnet test --solution Openquote.slnx
 Warnings are errors (`Directory.Build.props`). The test build also compiles the C# examples of
 `README.md` and `docs/` (`tests/Openquote.Tests/DocExamples.targets`), so a change to an example is
 checked by running the tests again.
+
+A change a package user would notice goes under `[Unreleased]` in `CHANGELOG.md` with the commit
+that makes it; raising the version moves those entries under a section for it.
