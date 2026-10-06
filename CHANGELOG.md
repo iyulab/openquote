@@ -6,6 +6,8 @@ Versions before 0.16.0 are described by their tags and the package history on nu
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-10-06
+
 ### Fixed
 - A code a person has to confirm is offered whenever the nearest settled record holds it, as documented. A code settled rarely could fall outside the few candidates a suggestion lists — after the codes chosen often — and was then not offered at all. On synthetic sessions about a rare topic to confirm, it is now offered for 23–33 of 40 instead of 20–22; for sessions about other topics, still for none of 80 from 60 settled records on, and for 3 of 80 with 20.
 
@@ -31,7 +33,8 @@ Versions before 0.16.0 are described by their tags and the package history on nu
 ### Added
 - `DefinitionWriter` writes report forms in the order a reader reads them.
 
-[Unreleased]: https://github.com/iyulab/openquote/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/iyulab/openquote/compare/v0.17.1...HEAD
+[0.17.1]: https://github.com/iyulab/openquote/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/iyulab/openquote/compare/v0.16.1...v0.17.0
 [0.16.1]: https://github.com/iyulab/openquote/compare/v0.16.0...v0.16.1
 [0.16.0]: https://github.com/iyulab/openquote/compare/v0.15.1...v0.16.0
