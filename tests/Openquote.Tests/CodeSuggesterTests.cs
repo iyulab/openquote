@@ -286,6 +286,41 @@ public class CodeSuggesterTests
     }
 
     [Fact]
+    public async Task Offers_a_code_to_confirm_the_nearest_settled_record_holds_though_the_records_around_it_outvote_it()
+    {
+        // Eight codes settled often, the code to confirm once: ten similar records voting, it loses the vote and
+        // falls out of the field's candidates — but it is still the nearest record's code.
+        const string Topics = """
+            { "format": "openquote.scheme/0", "scheme": "topic", "version": 1, "items": [
+              { "code": "t0", "label": "T0", "suggest": true }, { "code": "t1", "label": "T1", "suggest": true },
+              { "code": "t2", "label": "T2", "suggest": true }, { "code": "t3", "label": "T3", "suggest": true },
+              { "code": "t4", "label": "T4", "suggest": true }, { "code": "t5", "label": "T5", "suggest": true },
+              { "code": "t6", "label": "T6", "suggest": true }, { "code": "t7", "label": "T7", "suggest": true },
+              { "code": "crisis", "label": "Crisis" } ] }
+            """;
+        const string Says = """
+            { "format": "openquote.suggestions/0", "pack": "care", "version": 1, "schemes": { "topic": { "1": { "crisis": "confirm" } } } }
+            """;
+        VaultFile[] records =
+        [
+            // The records of t0 read almost like the draft too: together they outweigh the one record nearest to it.
+            .. Enumerable.Range(0, 40).Select(i => File(Json(10 + i, $"r{i}", "create",
+                fields: Session($"p{i}", i % 8 == 0 ? "came in to talk, wants to end their class" : $"topic word w{i % 8} today", $"t{i % 8}")))),
+            File(Json(60, "c1", "create", fields: Session("pc", "came in to talk, wants to end their life", "crisis"))),
+        ];
+        var content = VaultReader.Read([.. Vault(records).Where(f => f.Path != "schemes/topic/v1.json"), File("schemes/topic/v1.json", Topics),
+            File("suggestions/care/v1.json", Says)]);
+        var cancel = TestContext.Current.CancellationToken;
+        var suggester = await CodeSuggester.BuildAsync(content, "session", March, ThresholdPolicy.Default with { Votes = 10 }, cancel);
+
+        var suggestions = await suggester.SuggestAsync(Draft(("note", "came in to talk, wants to end their life")), cancel);
+
+        var crisis = Assert.Single(Assert.Single(suggestions).Codes, c => c.Code == "crisis");
+        Assert.Equal((true, SuggestionBasis.SimilarRecords), (crisis.Confirm, crisis.Basis));
+        Assert.Equal("c1", crisis.Similar[0]);
+    }
+
+    [Fact]
     public async Task Puts_the_code_of_the_nearest_settled_record_before_the_code_chosen_most_often_though_below_the_threshold()
     {
         VaultFile[] records =

@@ -169,6 +169,7 @@ public class SuggestionQualityMeasurement
             ("fixed 0.5", new(1, int.MaxValue, 0.5)),
             ("replay 0.6", new(0.6, 30, 0.5)),
             ("replay 0.7 (default)", ThresholdPolicy.Default),
+            ("replay 0.7 ten votes", ThresholdPolicy.Default with { Votes = 10 }),
             ("replay 0.8", new(0.8, 30, 0.5)),
         ];
         var output = TestContext.Current.TestOutputHelper!;
@@ -182,7 +183,7 @@ public class SuggestionQualityMeasurement
             foreach (var voice in new[] { "same", "other" })
             {
                 var random = new Random(2);
-                int first = 0, inThree = 0, trustedFirst = 0, asked = 0;
+                int first = 0, inThree = 0, trustedFirst = 0, trustedWrong = 0, asked = 0;
                 foreach (var (code, same, other) in Topics)
                 {
                     for (var i = 0; i < 15; i++)
@@ -191,10 +192,11 @@ public class SuggestionQualityMeasurement
                         asked++;
                         first += codes.Count > 0 && codes[0].Code == code ? 1 : 0;
                         trustedFirst += codes.Count > 0 && codes[0].Code == code && codes[0].Trusted ? 1 : 0;
+                        trustedWrong += codes.Count > 0 && codes[0].Code != code && codes[0].Trusted ? 1 : 0;
                         inThree += codes.Take(3).Any(c => c.Code == code) ? 1 : 0;
                     }
                 }
-                line += $" · {voice}: first {100.0 * first / asked,5:F1}% (trusted {100.0 * trustedFirst / asked,5:F1}%) top3 {100.0 * inThree / asked,5:F1}%";
+                line += $" · {voice}: first {100.0 * first / asked,5:F1}% (trusted {100.0 * trustedFirst / asked,5:F1}%, wrong {100.0 * trustedWrong / asked,5:F1}%) top3 {100.0 * inThree / asked,5:F1}%";
             }
             // The rare topic to confirm: offered at all, offered with records as evidence, offered as a layer's answer —
             // for sessions that are about it, and for sessions that are not (where it would only alarm).

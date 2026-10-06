@@ -6,6 +6,12 @@ Versions before 0.16.0 are described by their tags and the package history on nu
 
 ## [Unreleased]
 
+### Fixed
+- A code a person has to confirm is offered whenever the nearest settled record holds it, as documented — also when the code is settled so rarely that it is not among the field's candidates (with several similar records voting, the records around the nearest one outvote it).
+
+### Changed
+- `Openquote.Gil` builds on Gil 0.16.0. Its similar records now vote; `CodeSuggester` keeps the nearest record deciding alone, as before. On synthetic sessions written in other words than the settled ones, ten voters at thresholds replayed for a precision of 0.7 answered wrongly 37–58% of them from 240 settled records on, against none for the nearest record alone, while the codes suggested first stayed the same.
+
 ## [0.17.0] - 2026-10-06
 
 ### Added

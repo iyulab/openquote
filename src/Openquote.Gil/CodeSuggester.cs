@@ -189,8 +189,12 @@ public sealed class CodeSuggester
                 fields.Add(field);
                 continue;
             }
-            var (key, memory) = await policy.ChooseAsync(form, field, settled, cancellationToken).ConfigureAwait(false);
-            fields.Add(new GilField(field.Name, field.Role) { Candidates = field.Candidates, Multiple = field.Multiple, KeyThreshold = key, MemoryThreshold = memory });
+            var chosen = await policy.ChooseAsync(form, field, settled, cancellationToken).ConfigureAwait(false);
+            fields.Add(new GilField(field.Name, field.Role)
+            {
+                Candidates = field.Candidates, Multiple = field.Multiple, KeyThreshold = chosen.Key, MemoryThreshold = chosen.Memory,
+                SimilarDocumentVotes = chosen.SimilarDocumentVotes,
+            });
         }
         return new FormDefinition(type, fields, PromptLanguage.English);
     }
@@ -224,6 +228,15 @@ public sealed class CodeSuggester
             var codes = suggestion.Candidates.Select(c => Suggested(c, suggestion, values, target) with { Trusted = c.Trusted, Nearest = c.Value == nearest })
                 .Where(c => !c.Confirm || ((c.Trusted || c.Nearest) && c.Basis == SuggestionBasis.SimilarRecords))
                 .ToList();
+            // The nearest record's code to confirm is offered even where the field's candidates leave it out: the
+            // similar records vote, and a code settled rarely loses the vote to the codes around it — yet the one
+            // record that reads most like this one is what a code a person must not miss rests on.
+            if (nearest is not null && target.Codes.TryGetValue(nearest, out var how) && how == Suggestion.Confirm && codes.All(c => c.Code != nearest))
+            {
+                var match = suggestion.SimilarDocuments[0];
+                codes.Add(new SuggestedCode(nearest, match.Similarity, [.. suggestion.SimilarDocuments.Where(m => m.Answer == nearest).Select(m => m.Source)],
+                    Confirm: true, SuggestionBasis.SimilarRecords, null) { Nearest = true });
+            }
             // Answers first, in the order Gil ranks them; then, among guesses, the code of the nearest record before
             // the codes chosen often — it says something about this record, they do not. A record's other fields can
             // keep its nearest record below any threshold, and the code chosen most often would otherwise lead.
