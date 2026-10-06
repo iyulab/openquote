@@ -23,6 +23,12 @@ public enum FieldIssueKind
     /// <see cref="FieldIssue.Field"/> is empty.
     /// </summary>
     KeptNowhere,
+
+    /// <summary>
+    /// The field a pack says dates a record of the type is not a date field of the type; the field called
+    /// <c>date</c> dates it instead.
+    /// </summary>
+    DatedNotADate,
 }
 
 /// <summary>One problem with a vault's field definitions.</summary>
@@ -39,6 +45,8 @@ public sealed class FieldCatalog
     private readonly List<string> _types = [];
     private readonly Dictionary<string, string> _typeLabels = new(StringComparer.Ordinal);
     private readonly Dictionary<string, IReadOnlyList<string>> _under = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _order = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _dated = new(StringComparer.Ordinal);
 
     /// <summary>The folders an entity can be kept under, in the order <see cref="KeptUnder"/> lists them.</summary>
     public static IReadOnlyList<string> Holders { get; } = ["subject", "group"];
@@ -75,6 +83,8 @@ public sealed class FieldCatalog
                 _types.Add(set.Type);
             }
             if (set.Label is { } typeLabel) _typeLabels.TryAdd(set.Type, typeLabel);
+            if (set.Order is { } place) _order.TryAdd(set.Type, place);
+            if (set.Dated is { } dated) _dated.TryAdd(set.Type, dated);
             if (set.Under is { } under)
             {
                 var kept = _under.GetValueOrDefault(set.Type) ?? Holders;
@@ -118,6 +128,13 @@ public sealed class FieldCatalog
             foreach (var field in list.Where(f => f.Required && f.Hidden))
                 issues.Add(new(FieldIssueKind.HiddenRequired, type, field.Name, "a required field cannot be hidden"));
 
+        foreach (var (type, dated) in _dated.OrderBy(t => t.Key, StringComparer.Ordinal).ToList())
+        {
+            if (Find(type, dated)?.Kind == FieldKind.Date) continue;
+            issues.Add(new(FieldIssueKind.DatedNotADate, type, dated, $"{dated} is not a date field of {type}"));
+            _dated.Remove(type);
+        }
+
         Issues = issues;
     }
 
@@ -139,6 +156,15 @@ public sealed class FieldCatalog
     /// </summary>
     public IReadOnlyList<string> KeptUnder(string type) =>
         IsKeptOnItsOwn(type) ? [] : _under.GetValueOrDefault(type) ?? Holders;
+
+    /// <summary>Where a host places <paramref name="type"/> among the others, from the first pack that says; null when none does.</summary>
+    public int? TypeOrder(string type) => _order.TryGetValue(type, out var place) ? place : null;
+
+    /// <summary>
+    /// The date field that says when a record of <paramref name="type"/> happened: the one the first pack that says
+    /// names, or the field called <c>date</c>.
+    /// </summary>
+    public string DatedField(string type) => _dated.GetValueOrDefault(type) ?? "date";
 
     /// <summary>The fields of <paramref name="type"/>, in pack order and then declaration order.</summary>
     public IReadOnlyList<FieldDefinition> For(string type) => _byType.GetValueOrDefault(type) ?? [];

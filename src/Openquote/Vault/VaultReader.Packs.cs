@@ -325,6 +325,22 @@ public static partial class VaultReader
                 return Bad<FieldSet>(file, UnreadableReason.Invalid, "under names each folder once");
         }
 
+        int? order = null;
+        if (root.TryGetProperty("order", out var orderValue))
+        {
+            if (orderValue.ValueKind != JsonValueKind.Number || !orderValue.TryGetInt32(out var place) || place < 0)
+                return Bad<FieldSet>(file, UnreadableReason.Invalid, "the order of an entity type is a whole number of 0 or more");
+            order = place;
+        }
+
+        string? dated = null;
+        if (root.TryGetProperty("dated", out var datedValue))
+        {
+            if (datedValue.ValueKind != JsonValueKind.String || datedValue.GetString() is not { Length: > 0 } name)
+                return Bad<FieldSet>(file, UnreadableReason.Invalid, "dated names the date field that says when a record of the type happened");
+            dated = name;
+        }
+
         var fields = new List<FieldDefinition>();
         if (root.TryGetProperty("fields", out var fieldsArray))
         {
@@ -358,7 +374,7 @@ public static partial class VaultReader
             }
         }
 
-        return new(new FieldSet(pack, type, version, fields, constraints) { Label = typeLabel, Under = under }, null);
+        return new(new FieldSet(pack, type, version, fields, constraints) { Label = typeLabel, Under = under, Order = order, Dated = dated }, null);
     }
 
     private static readonly string[] FieldsFormats = ["openquote.fields/0", "openquote.fields/1"];

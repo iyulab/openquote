@@ -470,7 +470,7 @@ Format 1 also says how a value taken from the subject ages — a school grade co
 }
 ```
 
-A file may also name its entity type and say where entities of it are kept — a referral concerns one subject, so it is kept in that subject's folder and never in a group's:
+A file may also name its entity type, say where entities of it are kept — a referral concerns one subject, so it is kept in that subject's folder and never in a group's — and place the type among the others:
 
 ```json
 {
@@ -480,6 +480,7 @@ A file may also name its entity type and say where entities of it are kept — a
   "version": 1,
   "label": "Referral",
   "under": [ "subject" ],
+  "order": 30,
   "fields": [
     { "name": "date", "kind": "date", "required": true, "label": "Date" },
     { "name": "to", "kind": "coded", "scheme": "care.service" },
@@ -499,9 +500,11 @@ A file may also name its entity type and say where entities of it are kept — a
 - `label` (optional) is what people read for the field; [Labels](#labels) can give it per locale.
 - `label` at the top of the file (optional, non-empty text) is what people read for the entity type itself; `types` in [Labels](#labels) gives it per locale.
 - `under` (optional) lists the folders an entity of the type is kept in: `subject`, `group` or both, each once. A file for `subject`, `group`, `practitioner` or `device` has none — those are kept on their own. Without it nothing is said, and an entity may be kept in either folder, as the engine always allows. It tells a host where to offer the record; the engine still reads an entity wherever its first change is. An engine that predates the two keys ignores them, and every count stays the same.
+- `order` (optional, a whole number of 0 or more) places the entity type among the others where a host lists them — the kinds of record kept under a subject, say, in the order the work takes: a smaller number first, types without one after. It orders what a host shows; nothing counted depends on it.
+- `dated` (optional) names the `date` field of the type that says when a record of it happened — a closing dated by when it closed, say. Without it, the field called `date` does. A host reads it to put records in time order and to place a record in a stretch of days; a report form still names its own `period.field`. An engine that predates `order` and `dated` ignores them, and every count stays the same.
 - `constrain` (optional) narrows fields other packs declared, by `name`: `required` and `hidden` may each be set to `true`, and at least one must be. A key set to `false` is invalid, because a constraint only narrows. A pack does not constrain its own fields; it declares them as they should be.
 
-`FieldCatalog.Types` lists the entity types the packs declare fields for, in the order of the first pack that declares each (a pack's types by name). `FieldCatalog.TypeLabel` gives a type's own label from the first pack that names it, and `FieldCatalog.KeptUnder` the folders an entity of the type is kept in — those every pack that says allows (a pack may narrow what an earlier one said), both when none says, and none for the types kept on their own (`FieldCatalog.IsKeptOnItsOwn`).
+`FieldCatalog.Types` lists the entity types the packs declare fields for, in the order of the first pack that declares each (a pack's types by name). `FieldCatalog.TypeLabel` gives a type's own label from the first pack that names it, `FieldCatalog.TypeOrder` its place and `FieldCatalog.DatedField` its dating field from the first pack that says (the field called `date` when none does), and `FieldCatalog.KeptUnder` the folders an entity of the type is kept in — those every pack that says allows (a pack may narrow what an earlier one said), both when none says, and none for the types kept on their own (`FieldCatalog.IsKeptOnItsOwn`).
 
 `VaultContent.FieldCatalog` merges the field files of the vault's packs, each pack at its highest version, packs in the order they build on each other (a pack is placed as soon as the packs it builds on are placed, taking ids in order; packs without a manifest come last). A field is kept from the first pack that declares it; then each constraint is applied. `FieldCatalog.Issues` lists what does not fit (`FieldIssue`):
 
@@ -512,6 +515,7 @@ A file may also name its entity type and say where entities of it are kept — a
 | `ConstraintFromUnrelatedPack` | A constraint narrows a field of a pack it does not build on; it is not applied. |
 | `HiddenRequired` | A field ends up both required and hidden. |
 | `KeptNowhere` | The packs that say where an entity type is kept leave no folder in common; the earlier packs' answer stands. |
+| `DatedNotADate` | The field a pack names in `dated` is not a `date` field of the type; the field called `date` dates its records instead. |
 
 ## Reading rules
 

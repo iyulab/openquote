@@ -245,6 +245,71 @@ public class FieldCatalogTests
     }
 
     [Fact]
+    public void A_field_file_may_place_its_entity_type_among_the_others_and_name_the_field_that_dates_a_record()
+    {
+        var content = VaultReader.Read([File("fields/care/closing/v1.json", """
+            { "format": "openquote.fields/1", "pack": "care", "type": "closing", "version": 1, "order": 40, "dated": "closed",
+              "fields": [ { "name": "closed", "kind": "date", "required": true } ] }
+            """)]);
+
+        Assert.Empty(content.Unreadable);
+        var set = Assert.Single(content.Fields);
+        Assert.Equal(40, set.Order);
+        Assert.Equal("closed", set.Dated);
+    }
+
+    [Theory]
+    [InlineData("\"order\": \"1\"")]
+    [InlineData("\"order\": 1.5")]
+    [InlineData("\"order\": -1")]
+    [InlineData("\"dated\": \"\"")]
+    [InlineData("\"dated\": 3")]
+    public void An_invalid_order_or_dating_field_is_reported(string key)
+    {
+        var json = $$"""{ "format": "openquote.fields/1", "pack": "care", "type": "closing", "version": 1, {{key}} }""";
+
+        Assert.Equal(UnreadableReason.Invalid, Assert.Single(VaultReader.Read([File("fields/care/closing/v1.json", json)]).Unreadable).Reason);
+    }
+
+    [Fact]
+    public void Gives_each_type_its_place_and_dating_field_from_the_first_pack_that_says()
+    {
+        string Kind(string pack, string type, string meta, string fields = """[ { "name": "date", "kind": "date" } ]""") =>
+            $$"""{ "format": "openquote.fields/1", "pack": "{{pack}}", "type": "{{type}}", "version": 1, {{meta}} "fields": {{fields}} }""";
+        var content = VaultReader.Read(
+        [
+            File("fields/care/intake/v1.json", Kind("care", "intake", "\"order\": 10,")),
+            File("fields/care/closing/v1.json", Kind("care", "closing", "\"order\": 40, \"dated\": \"closed\",", """[ { "name": "closed", "kind": "date" } ]""")),
+            File("fields/care.school/intake/v1.json", Kind("care.school", "intake", "\"order\": 99, \"dated\": \"taken\",", """[ { "name": "taken", "kind": "date" } ]""")),
+            File("fields/care/session/v1.json", CareSession),
+        ]);
+        var catalog = new FieldCatalog(content.Fields, [Pack("care.school", "care"), Pack("care")]);
+
+        Assert.Equal(10, catalog.TypeOrder("intake"));    // the first pack's, not the one building on it
+        Assert.Equal(40, catalog.TypeOrder("closing"));
+        Assert.Null(catalog.TypeOrder("session"));        // no pack places it
+        Assert.Equal("closed", catalog.DatedField("closing"));
+        Assert.Equal("taken", catalog.DatedField("intake")); // the first pack that names one
+        Assert.Equal("date", catalog.DatedField("session")); // none named: the field called date
+        Assert.Equal("date", catalog.DatedField("note"));    // a type no pack declares
+        Assert.Empty(catalog.Issues);
+    }
+
+    [Fact]
+    public void A_dating_field_that_is_not_a_date_field_of_the_type_is_an_issue_and_the_field_called_date_dates_it()
+    {
+        var content = VaultReader.Read([File("fields/care/closing/v1.json", """
+            { "format": "openquote.fields/1", "pack": "care", "type": "closing", "version": 1, "dated": "reason",
+              "fields": [ { "name": "date", "kind": "date" }, { "name": "reason", "kind": "text" } ] }
+            """)]);
+        var catalog = new FieldCatalog(content.Fields, [Pack("care")]);
+
+        var issue = Assert.Single(catalog.Issues);
+        Assert.Equal((FieldIssueKind.DatedNotADate, "closing", "reason"), (issue.Kind, issue.Type, issue.Field));
+        Assert.Equal("date", catalog.DatedField("closing"));
+    }
+
+    [Fact]
     public void A_pack_that_builds_on_another_may_narrow_where_a_type_is_kept_but_not_to_nowhere()
     {
         string Under(string pack, string under) =>

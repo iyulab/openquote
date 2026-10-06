@@ -115,4 +115,16 @@ public sealed record FieldSet(
     /// file does not say. Subjects, groups, practitioners and devices are not kept under anything and never say.
     /// </summary>
     public IReadOnlyList<string>? Under { get; init; }
+
+    /// <summary>
+    /// Where a host places the entity type among the others — a smaller number first — or null when the file does
+    /// not say. It orders what a host shows; nothing counted depends on it.
+    /// </summary>
+    public int? Order { get; init; }
+
+    /// <summary>
+    /// The date field that says when a record of the type happened, or null when the file does not say (the field
+    /// called <c>date</c> then does).
+    /// </summary>
+    public string? Dated { get; init; }
 }
