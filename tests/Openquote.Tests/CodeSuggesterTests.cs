@@ -288,8 +288,8 @@ public class CodeSuggesterTests
     [Fact]
     public async Task Offers_a_code_to_confirm_the_nearest_settled_record_holds_though_the_records_around_it_outvote_it()
     {
-        // Eight codes settled often, the code to confirm once: ten similar records voting, it loses the vote and
-        // falls out of the field's candidates — but it is still the nearest record's code.
+        // Eight codes settled often, the code to confirm once: with ten similar records voting it loses the vote and
+        // falls out of the field's few candidates — but it is still the nearest record's code.
         const string Topics = """
             { "format": "openquote.scheme/0", "scheme": "topic", "version": 1, "items": [
               { "code": "t0", "label": "T0", "suggest": true }, { "code": "t1", "label": "T1", "suggest": true },

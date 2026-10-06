@@ -228,9 +228,10 @@ public sealed class CodeSuggester
             var codes = suggestion.Candidates.Select(c => Suggested(c, suggestion, values, target) with { Trusted = c.Trusted, Nearest = c.Value == nearest })
                 .Where(c => !c.Confirm || ((c.Trusted || c.Nearest) && c.Basis == SuggestionBasis.SimilarRecords))
                 .ToList();
-            // The nearest record's code to confirm is offered even where the field's candidates leave it out: the
-            // similar records vote, and a code settled rarely loses the vote to the codes around it — yet the one
-            // record that reads most like this one is what a code a person must not miss rests on.
+            // The nearest record's code to confirm is offered even where the field's candidates leave it out: they are
+            // few, a code settled rarely comes after the codes chosen often (or loses to them where several similar
+            // records vote) — yet the one record that reads most like this one is what a code a person must not miss
+            // rests on.
             if (nearest is not null && target.Codes.TryGetValue(nearest, out var how) && how == Suggestion.Confirm && codes.All(c => c.Code != nearest))
             {
                 var match = suggestion.SimilarDocuments[0];
