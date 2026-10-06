@@ -341,6 +341,19 @@ public static partial class VaultReader
             dated = name;
         }
 
+        CaseRole? role = null;
+        if (root.TryGetProperty("role", out var roleValue))
+        {
+            role = roleValue.ValueKind == JsonValueKind.String ? roleValue.GetString() switch
+            {
+                "opens" => CaseRole.Opens,
+                "closes" => CaseRole.Closes,
+                _ => null,
+            } : null;
+            if (role is null)
+                return Bad<FieldSet>(file, UnreadableReason.Invalid, "the role of an entity type is opens or closes");
+        }
+
         var fields = new List<FieldDefinition>();
         if (root.TryGetProperty("fields", out var fieldsArray))
         {
@@ -374,7 +387,7 @@ public static partial class VaultReader
             }
         }
 
-        return new(new FieldSet(pack, type, version, fields, constraints) { Label = typeLabel, Under = under, Order = order, Dated = dated }, null);
+        return new(new FieldSet(pack, type, version, fields, constraints) { Label = typeLabel, Under = under, Order = order, Dated = dated, Role = role }, null);
     }
 
     private static readonly string[] FieldsFormats = ["openquote.fields/0", "openquote.fields/1"];

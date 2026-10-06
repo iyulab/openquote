@@ -127,4 +127,20 @@ public sealed record FieldSet(
     /// called <c>date</c> then does).
     /// </summary>
     public string? Dated { get; init; }
+
+    /// <summary>
+    /// Whether a record of the type opens or closes a subject's case — or null when the file does not say, and the
+    /// record falls in whatever case its date places it. See <see cref="Records.CaseReader"/>.
+    /// </summary>
+    public CaseRole? Role { get; init; }
+}
+
+/// <summary>What a record of an entity type does to a subject's case (<see cref="Records.CaseReader"/>).</summary>
+public enum CaseRole
+{
+    /// <summary>A record of the type opens a case — an intake, say.</summary>
+    Opens,
+
+    /// <summary>A record of the type closes the open case — a closing, say.</summary>
+    Closes,
 }

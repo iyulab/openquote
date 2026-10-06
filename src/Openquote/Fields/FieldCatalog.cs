@@ -29,6 +29,12 @@ public enum FieldIssueKind
     /// <c>date</c> dates it instead.
     /// </summary>
     DatedNotADate,
+
+    /// <summary>
+    /// A pack gives a role in a case to an entity type kept on its own (a subject, a group, a practitioner or a
+    /// device), which is no record of a case; the role is not applied.
+    /// </summary>
+    RoleOnItsOwn,
 }
 
 /// <summary>One problem with a vault's field definitions.</summary>
@@ -47,6 +53,7 @@ public sealed class FieldCatalog
     private readonly Dictionary<string, IReadOnlyList<string>> _under = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _order = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _dated = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, CaseRole> _role = new(StringComparer.Ordinal);
 
     /// <summary>The folders an entity can be kept under, in the order <see cref="KeptUnder"/> lists them.</summary>
     public static IReadOnlyList<string> Holders { get; } = ["subject", "group"];
@@ -85,6 +92,13 @@ public sealed class FieldCatalog
             if (set.Label is { } typeLabel) _typeLabels.TryAdd(set.Type, typeLabel);
             if (set.Order is { } place) _order.TryAdd(set.Type, place);
             if (set.Dated is { } dated) _dated.TryAdd(set.Type, dated);
+            if (set.Role is { } role)
+            {
+                if (IsKeptOnItsOwn(set.Type))
+                    issues.Add(new(FieldIssueKind.RoleOnItsOwn, set.Type, "", $"{set.Pack} says a {set.Type} {(role == CaseRole.Opens ? "opens" : "closes")} a case"));
+                else
+                    _role.TryAdd(set.Type, role);
+            }
             if (set.Under is { } under)
             {
                 var kept = _under.GetValueOrDefault(set.Type) ?? Holders;
@@ -165,6 +179,12 @@ public sealed class FieldCatalog
     /// names, or the field called <c>date</c>.
     /// </summary>
     public string DatedField(string type) => _dated.GetValueOrDefault(type) ?? "date";
+
+    /// <summary>
+    /// Whether a record of <paramref name="type"/> opens or closes a subject's case, from the first pack that says;
+    /// null when none does.
+    /// </summary>
+    public CaseRole? TypeRole(string type) => _role.TryGetValue(type, out var role) ? role : null;
 
     /// <summary>The fields of <paramref name="type"/>, in pack order and then declaration order.</summary>
     public IReadOnlyList<FieldDefinition> For(string type) => _byType.GetValueOrDefault(type) ?? [];

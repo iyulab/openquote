@@ -296,6 +296,50 @@ public class FieldCatalogTests
     }
 
     [Fact]
+    public void Gives_each_type_its_role_in_a_case_from_the_first_pack_that_says()
+    {
+        string Kind(string pack, string type, string role) =>
+            $$"""{ "format": "openquote.fields/1", "pack": "{{pack}}", "type": "{{type}}", "version": 1, "role": "{{role}}", "fields": [] }""";
+        var content = VaultReader.Read(
+        [
+            File("fields/care/intake/v1.json", Kind("care", "intake", "opens")),
+            File("fields/care/closing/v1.json", Kind("care", "closing", "closes")),
+            File("fields/care.school/intake/v1.json", Kind("care.school", "intake", "closes")),
+        ]);
+        var catalog = new FieldCatalog(content.Fields, [Pack("care.school", "care"), Pack("care")]);
+
+        Assert.Equal(CaseRole.Opens, content.Fields.Single(s => s.Pack == "care" && s.Type == "intake").Role);
+        Assert.Equal(CaseRole.Opens, catalog.TypeRole("intake")); // the first pack's, not the one building on it
+        Assert.Equal(CaseRole.Closes, catalog.TypeRole("closing"));
+        Assert.Null(catalog.TypeRole("session"));
+        Assert.Empty(catalog.Issues);
+    }
+
+    [Theory]
+    [InlineData("\"role\": \"reopens\"")]
+    [InlineData("\"role\": \"\"")]
+    [InlineData("\"role\": 1")]
+    public void An_invalid_role_is_reported(string key)
+    {
+        var json = $$"""{ "format": "openquote.fields/1", "pack": "care", "type": "closing", "version": 1, {{key}} }""";
+
+        Assert.Equal(UnreadableReason.Invalid, Assert.Single(VaultReader.Read([File("fields/care/closing/v1.json", json)]).Unreadable).Reason);
+    }
+
+    [Fact]
+    public void A_role_given_to_a_type_kept_on_its_own_is_an_issue_and_not_applied()
+    {
+        var content = VaultReader.Read([File("fields/care/subject/v1.json", """
+            { "format": "openquote.fields/1", "pack": "care", "type": "subject", "version": 1, "role": "opens", "fields": [] }
+            """)]);
+        var catalog = new FieldCatalog(content.Fields, [Pack("care")]);
+
+        var issue = Assert.Single(catalog.Issues);
+        Assert.Equal((FieldIssueKind.RoleOnItsOwn, "subject"), (issue.Kind, issue.Type));
+        Assert.Null(catalog.TypeRole("subject"));
+    }
+
+    [Fact]
     public void A_dating_field_that_is_not_a_date_field_of_the_type_is_an_issue_and_the_field_called_date_dates_it()
     {
         var content = VaultReader.Read([File("fields/care/closing/v1.json", """

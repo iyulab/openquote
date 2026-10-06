@@ -502,9 +502,10 @@ A file may also name its entity type, say where entities of it are kept — a re
 - `under` (optional) lists the folders an entity of the type is kept in: `subject`, `group` or both, each once. A file for `subject`, `group`, `practitioner` or `device` has none — those are kept on their own. Without it nothing is said, and an entity may be kept in either folder, as the engine always allows. It tells a host where to offer the record; the engine still reads an entity wherever its first change is. An engine that predates the two keys ignores them, and every count stays the same.
 - `order` (optional, a whole number of 0 or more) places the entity type among the others where a host lists them — the kinds of record kept under a subject, say, in the order the work takes: a smaller number first, types without one after. It orders what a host shows; nothing counted depends on it.
 - `dated` (optional) names the `date` field of the type that says when a record of it happened — a closing dated by when it closed, say. Without it, the field called `date` does. A host reads it to put records in time order and to place a record in a stretch of days; a report form still names its own `period.field`. An engine that predates `order` and `dated` ignores them, and every count stays the same.
+- `role` (optional) is `opens` or `closes`: a record of the type opens a subject's case — an intake, say — or closes it — a closing. See [Cases](#cases). A type kept on its own has none. An engine that predates it ignores it, and every count stays the same.
 - `constrain` (optional) narrows fields other packs declared, by `name`: `required` and `hidden` may each be set to `true`, and at least one must be. A key set to `false` is invalid, because a constraint only narrows. A pack does not constrain its own fields; it declares them as they should be.
 
-`FieldCatalog.Types` lists the entity types the packs declare fields for, in the order of the first pack that declares each (a pack's types by name). `FieldCatalog.TypeLabel` gives a type's own label from the first pack that names it, `FieldCatalog.TypeOrder` its place and `FieldCatalog.DatedField` its dating field from the first pack that says (the field called `date` when none does), and `FieldCatalog.KeptUnder` the folders an entity of the type is kept in — those every pack that says allows (a pack may narrow what an earlier one said), both when none says, and none for the types kept on their own (`FieldCatalog.IsKeptOnItsOwn`).
+`FieldCatalog.Types` lists the entity types the packs declare fields for, in the order of the first pack that declares each (a pack's types by name). `FieldCatalog.TypeLabel` gives a type's own label from the first pack that names it, `FieldCatalog.TypeOrder` its place, `FieldCatalog.DatedField` its dating field (the field called `date` when none says) and `FieldCatalog.TypeRole` its role in a case from the first pack that says, and `FieldCatalog.KeptUnder` the folders an entity of the type is kept in — those every pack that says allows (a pack may narrow what an earlier one said), both when none says, and none for the types kept on their own (`FieldCatalog.IsKeptOnItsOwn`).
 
 `VaultContent.FieldCatalog` merges the field files of the vault's packs, each pack at its highest version, packs in the order they build on each other (a pack is placed as soon as the packs it builds on are placed, taking ids in order; packs without a manifest come last). A field is kept from the first pack that declares it; then each constraint is applied. `FieldCatalog.Issues` lists what does not fit (`FieldIssue`):
 
@@ -516,6 +517,36 @@ A file may also name its entity type, say where entities of it are kept — a re
 | `HiddenRequired` | A field ends up both required and hidden. |
 | `KeptNowhere` | The packs that say where an entity type is kept leave no folder in common; the earlier packs' answer stands. |
 | `DatedNotADate` | The field a pack names in `dated` is not a `date` field of the type; the field called `date` dates its records instead. |
+| `RoleOnItsOwn` | A pack gives a role in a case to a type kept on its own (a subject, a group, a practitioner or a device); it is not applied. |
+
+## Cases
+
+A case is one stretch of work with a subject, from the record that opened it to the record that closed it. Nothing in a vault marks a record as belonging to a case: `CaseReader.Read(subject, entities, fieldCatalog)` reads a subject's cases from its records each time, the way a report counts them, so a change to the rule reads every vault anew and no file is ever rewritten. The packs say which entity types open and close a case (`role`) and which field dates a record (`dated`):
+
+```json
+{
+  "format": "openquote.fields/1",
+  "pack": "care",
+  "type": "intake",
+  "version": 2,
+  "label": "Intake",
+  "under": [ "subject" ],
+  "order": 10,
+  "role": "opens",
+  "fields": [
+    { "name": "date", "kind": "date", "required": true, "label": "Date" }
+  ]
+}
+```
+
+The subject's records are those kept in its folder and the group records that list it among their `attendees`; destroyed records and the types kept on their own are left out. They are read in the order of the day their dating field holds, and records of one day in the order they were written (by id):
+
+- A record of a type that `opens` starts a new case. A case still open then ends there, followed by the opening (`SubjectCase.FollowedByOpening`) — not counted as closed.
+- A record of a type that `closes` closes the open case (`SubjectCase.Closing`, `SubjectCase.End`). With no case open it is one of the `AfterClosing` records of the case closed last — a closing that confirms the first after a follow-up, say — or, before any case, a case of its own.
+- Any other record joins the open case. With none open, it is one of the `AfterClosing` records of the case closed last — a follow-up does not reopen a case or start another — or, before any case, it begins a case without an opening (`SubjectCase.Opening` is null), as the records of a vault kept before intakes were do.
+- A record whose dating field holds no date is in no case; `SubjectCases.Undated` lists it, so a host shows it apart rather than losing it.
+
+A case is open (`SubjectCase.IsOpen`) while no record has closed it and no later opening has followed it. Packs without roles leave every dated record of a subject in one case without an opening.
 
 ## Reading rules
 
