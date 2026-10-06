@@ -25,6 +25,7 @@ A host application may store a vault encrypted, for example by wrapping each fil
   labels/<pack>/v<N>.<locale>.json           labels a pack gives in one locale
   fields/<pack>/<type>/v<N>.json             fields a pack declares for an entity type
   suggestions/<pack>/v<N>.json               which scheme items a pack lets hosts suggest
+  scales/<pack>/v<N>.json                    the scales whose scores a pack's responses record
   practitioners/<id>.<device>.json           change to a practitioner
   devices/<id>.<device>.json                 change to a device name
   subjects/<subject-id>/<id>.<device>.json   change to a subject or to an entity kept under it
@@ -552,9 +553,44 @@ A case is open (`SubjectCase.IsOpen`) while no record has closed it and no later
 
 When the closing's type gives `followUpDays` (`FieldCatalog.FollowUpDays`), a follow-up is due that many days after the closing (`SubjectCase.FollowUpDue`). Any record of the subject after the closing is the follow-up — the first of the case's `AfterClosing` records, or the record that began the next case (`SubjectCase.FirstAfterClosing`, `FirstAfterClosingDay`). `SubjectCase.FollowUpOn(day)` says where it stands on a day: `Done` (it came by the day it was due), `Late` (it came after), `Waiting` (none yet, not due yet), `Overdue` (none, and the day has passed) — or `NotExpected` for a case not closed, or closed by a type that gives no days. Nothing is stored or judged: a host lists the cases it is asked about.
 
+## Scales
+
+A scale gives a total score — a symptom checklist, say. A pack that records scores says which entity type is a response, which of its fields names the scale and which holds the score, and, for each scale, the range a score can take and which way a better score moves:
+
+```json
+{
+  "format": "openquote.scales/0",
+  "pack": "care.scale",
+  "version": 1,
+  "responses": { "type": "response", "scale": "scale", "score": "score" },
+  "scales": {
+    "wellbeing-5": {
+      "direction": "higher-is-better", "min": 0, "max": 25,
+      "licence": { "terms": "Free to use with the source named", "source": "https://example.org/terms", "retrieved": "2026-10-05" }
+    }
+  }
+}
+```
+
+- Path: `scales/<pack>/v<version>.json`; `pack` and `version` must match it. `pack` is a pack id as for a manifest (and not `local` or `oq`).
+- `responses` names the entity `type` of a response (not a type kept on its own), its `scale` field — a `coded` field whose code is the scale's — and its `score` field, a `number` field. The packs declare those fields as for any type ([Field definitions](#field-definitions)); `ScaleCatalog.Check(fieldCatalog)` lists a scale field that is not coded and a score field that is not a number.
+- `scales` maps each scale's code to its `direction` (`lower-is-better` or `higher-is-better`), its `min` and `max` (numbers, `min` below `max`) and, optionally, its `licence`: the `terms` in a sentence, their `source` and the day they were `retrieved` (`YYYY-MM-DD`).
+- A scale says nothing that divides people by their score: no cutoff and no rule for what counts as a change. The direction is a fact of the scale; a host may orient a change by it.
+
+`VaultContent.ScaleCatalog` takes each pack's highest version; a code two packs give stands as the pack first by id gives it, and `ScaleCatalog.Issues` lists the other.
+
+`ScaleReader.Read(subjectCases, fieldCatalog, scaleCatalog)` reads what a subject's responses say over each of its [cases](#cases), from records already kept — nothing is stored:
+
+- A case's responses are its records of the response type from its first record to its closing; records after a closing are not part of it.
+- For each scale a response names, the first score is the case's baseline (`CaseScale.Baseline`) and the last its last available score (`CaseScale.Last`) — a case that ends without a final response still has one, so it is not left out.
+- A case is paired for a scale when its scores fall on two different days; `CaseScale.Change` is then the last score less the baseline.
+- A response whose scale or score cannot be read is listed apart (`CaseScales.Unusable`) with the reason: no single code (`NoScale`), a code no pack gives for its type (`UnknownScale`), no number (`NoScore`), a score outside the range (`OutOfRange`), or devices' values not yet settled (`Conflicted`).
+
+`ScaleReader.Summarize(cases, from, to)` counts the cases closed in those days (by the day of the closing): for each scale, the closed cases with a score of it and how many of them are paired, and apart from them the closed cases with no score at all (`ScaleSummary.Unscored`) — so the cases without a change to read are always in view.
+
 ## Reading rules
 
-The reader never stops on a bad file. A file whose path matches the layout but cannot be used is listed as unreadable with a reason and what it was for — a subject's or group's records, a scheme version, a crosswalk, a form, a pack, labels, field definitions, suggestions or a run record, read from the path alone (`VaultFileKind.Of`, which also reads a sync client's copy by the start of its name) — and every other file is still read:
+The reader never stops on a bad file. A file whose path matches the layout but cannot be used is listed as unreadable with a reason and what it was for — a subject's or group's records, a scheme version, a crosswalk, a form, a pack, labels, field definitions, suggestions, scales or a run record, read from the path alone (`VaultFileKind.Of`, which also reads a sync client's copy by the start of its name) — and every other file is still read:
 
 | Reason | When |
 |---|---|
@@ -571,7 +607,7 @@ The only condition that refuses the whole read is the declaration check describe
 ## Compatibility
 
 - A change a previous engine could ignore without producing a wrong number (a new optional key) is additive and keeps the declared version.
-- A change that would make a previous engine count wrongly without noticing (a new folder of records that reports count, a key that changes what is counted) raises the declared vault format, so that previous engines refuse the vault instead of reading it. Folders a previous engine ignores without changing any count — `packs/`, `labels/`, `fields/`, `suggestions/` — are additive.
+- A change that would make a previous engine count wrongly without noticing (a new folder of records that reports count, a key that changes what is counted) raises the declared vault format, so that previous engines refuse the vault instead of reading it. Folders a previous engine ignores without changing any count — `packs/`, `labels/`, `fields/`, `suggestions/`, `scales/` — are additive. So is a response type kept under subjects, since no report counts it until a report form names it.
 - A new folder of records that no report counts (for example appointments kept for scheduling) is additive too: a previous engine skips paths outside the layout above, and every count stays the same. The format version whose report forms first count records in such a folder raises the declared vault format, since a previous engine would run those reports without the records and give a smaller number.
 - Version 1 file formats are new format versions of their file kinds (`openquote.scheme/1`, `openquote.crosswalk/1`, `openquote.report/1`, `openquote.run/1`, `openquote.fields/1`, `openquote.export/1`), so an engine that reads only version 0 reports each such file as a format it does not know rather than misreading it. What it would then count differently — values of an extending scheme, values a crosswalk it skipped would have carried — is why a vault holding them declares version 1: an earlier engine refuses the vault before counting anything. A version 1 engine reads a version 0 vault as it is, and counts blank and conflicted records apart in it too.
 - A pack manifest may name a definition file in a folder a previous engine does not know; that engine reads the manifest without the line. Engines before `suggestions/` was added (package versions up to 0.6) read a manifest that names a suggestion file as unreadable instead, and keep using the pack's earlier version.

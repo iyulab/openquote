@@ -208,7 +208,7 @@ public static class CaseReader
         return new SubjectCases(cases, [.. undated.OrderBy(e => e.Reference.Id, StringComparer.Ordinal)]);
     }
 
-    private static DateOnly? DayOf(Entity entity, string field) =>
+    internal static DateOnly? DayOf(Entity entity, string field) =>
         entity.Fields.TryGetValue(field, out var value) && value.ValueKind == JsonValueKind.String
         && DateOnly.TryParseExact(value.GetString(), "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day)
             ? day

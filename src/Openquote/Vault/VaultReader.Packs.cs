@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using Openquote.Fields;
 using Openquote.Labels;
 using Openquote.Packs;
+using Openquote.Scales;
 using Openquote.Suggestions;
 
 namespace Openquote.Vault;
@@ -62,7 +63,7 @@ public static partial class VaultReader
             if (DefinitionKindOf(provided) is not (DefinitionKind.None or DefinitionKind.Pack))
                 provides.Add(provided);
             else if (!IsLaterDefinition(provided))
-                return Bad<PackManifest>(file, UnreadableReason.Invalid, "provides lists definition files: schemes, crosswalks, forms, labels, fields or suggestions");
+                return Bad<PackManifest>(file, UnreadableReason.Invalid, "provides lists definition files: schemes, crosswalks, forms, labels, fields, suggestions or scales");
         }
 
         return new(new PackManifest(id, version, label, depends, provides), null);
@@ -125,6 +126,79 @@ public static partial class VaultReader
         }
 
         return new(new SuggestionSet(pack, version, items), null);
+    }
+
+    [GeneratedRegex(@"^scales/(?<pack>[^/]+)/v(?<version>[1-9][0-9]*)\.json\z")]
+    private static partial Regex ScalesPath();
+
+    private static Definition<ScaleSet> ParseScales(VaultFile file)
+    {
+        if (!TryRoot(file, "openquote.scales/0", out var root, out var error)) return new(null, error);
+        var path = ScalesPath().Match(file.Path);
+
+        if (!TryString(root, "pack", out var pack) || !TryInt(root, "version", out var version) || version < 1)
+            return Bad<ScaleSet>(file, UnreadableReason.Invalid, "scales need a pack and a version of 1 or more");
+        if (PackIdProblem(pack) is { } packProblem) return Bad<ScaleSet>(file, UnreadableReason.Invalid, packProblem);
+        if (pack != path.Groups["pack"].Value || version.ToString(CultureInfo.InvariantCulture) != path.Groups["version"].Value)
+            return Bad<ScaleSet>(file, UnreadableReason.NameMismatch, $"the path should be scales/{pack}/v{version}.json");
+
+        if (!root.TryGetProperty("responses", out var responses) || responses.ValueKind != JsonValueKind.Object
+            || !TryString(responses, "type", out var type) || !TryString(responses, "scale", out var scaleField)
+            || !TryString(responses, "score", out var scoreField) || scaleField == scoreField)
+            return Bad<ScaleSet>(file, UnreadableReason.Invalid, "responses names the entity type of a response, its field naming the scale and its field holding the score");
+        if (FieldCatalog.IsKeptOnItsOwn(type))
+            return Bad<ScaleSet>(file, UnreadableReason.Invalid, $"responses: {type} is kept on its own, not under a subject");
+
+        if (!root.TryGetProperty("scales", out var scalesObject) || scalesObject.ValueKind != JsonValueKind.Object
+            || !scalesObject.EnumerateObject().Any())
+            return Bad<ScaleSet>(file, UnreadableReason.Invalid, "scales maps each scale's code to its direction and range");
+        var scales = new Dictionary<string, Scale>(StringComparer.Ordinal);
+        foreach (var entry in scalesObject.EnumerateObject())
+        {
+            var scale = entry.Value;
+            if (entry.Name.Length == 0 || scale.ValueKind != JsonValueKind.Object)
+                return Bad<ScaleSet>(file, UnreadableReason.Invalid, "scales maps each scale's code to its direction and range");
+            ScaleDirection? direction = TryString(scale, "direction", out var d) ? d switch
+            {
+                "lower-is-better" => ScaleDirection.LowerIsBetter,
+                "higher-is-better" => ScaleDirection.HigherIsBetter,
+                _ => null,
+            } : null;
+            if (direction is null)
+                return Bad<ScaleSet>(file, UnreadableReason.Invalid, $"{entry.Name}: direction is lower-is-better or higher-is-better");
+            if (!TryDecimal(scale, "min", out var min) || !TryDecimal(scale, "max", out var max) || min >= max)
+                return Bad<ScaleSet>(file, UnreadableReason.Invalid, $"{entry.Name}: min and max are numbers, min below max");
+
+            ScaleLicence? licence = null;
+            if (scale.TryGetProperty("licence", out var l))
+            {
+                if (l.ValueKind != JsonValueKind.Object || !TryString(l, "terms", out var terms))
+                    return Bad<ScaleSet>(file, UnreadableReason.Invalid, $"{entry.Name}: licence says its terms");
+                string? source = null;
+                if (l.TryGetProperty("source", out _) && !TryString(l, "source", out source))
+                    return Bad<ScaleSet>(file, UnreadableReason.Invalid, $"{entry.Name}: licence source is text");
+                DateOnly? retrieved = null;
+                if (l.TryGetProperty("retrieved", out _))
+                {
+                    if (!TryString(l, "retrieved", out var r)
+                        || !DateOnly.TryParseExact(r, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day))
+                        return Bad<ScaleSet>(file, UnreadableReason.Invalid, $"{entry.Name}: licence retrieved is a date, YYYY-MM-DD");
+                    retrieved = day;
+                }
+
+                licence = new ScaleLicence(terms, source, retrieved);
+            }
+
+            scales[entry.Name] = new Scale(entry.Name, direction.Value, min, max, licence);
+        }
+
+        return new(new ScaleSet(pack, version, type, scaleField, scoreField, scales), null);
+    }
+
+    private static bool TryDecimal(JsonElement obj, string name, out decimal value)
+    {
+        value = 0;
+        return obj.TryGetProperty(name, out var e) && e.ValueKind == JsonValueKind.Number && e.TryGetDecimal(out value);
     }
 
     private static Definition<LabelSet> ParseLabels(VaultFile file)

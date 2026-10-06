@@ -6,6 +6,7 @@ using Openquote.Fields;
 using Openquote.Labels;
 using Openquote.Packs;
 using Openquote.Reports;
+using Openquote.Scales;
 using Openquote.Suggestions;
 
 namespace Openquote.Vault;
@@ -25,6 +26,9 @@ public sealed record VaultContent(
 {
     /// <summary>What the vault's packs say about suggesting scheme items, apart from the schemes.</summary>
     public IReadOnlyList<SuggestionSet> Suggestions { get; init; } = [];
+
+    /// <summary>What the vault's packs say about their scales: the response type and each scale's range and direction.</summary>
+    public IReadOnlyList<ScaleSet> Scales { get; init; } = [];
 
     /// <summary>
     /// The version of the vault format its declaration (<c>vault.json</c>) names, or null when the
@@ -62,6 +66,9 @@ public sealed record VaultContent(
     /// <summary>Whether each scheme item may be suggested, as the schemes and the vault's packs say.</summary>
     public SuggestionCatalog SuggestionCatalog() => new(Suggestions, Packs);
 
+    /// <summary>The scales of the vault's packs, each pack at its highest version.</summary>
+    public ScaleCatalog ScaleCatalog() => new(Scales, Packs);
+
     private IEnumerable<string> DefinitionPaths() =>
         Schemes.Select(s => $"schemes/{s.Name}/v{s.Version}.json")
             .Concat(Crosswalks.Select(c => c.Into is null
@@ -71,12 +78,13 @@ public sealed record VaultContent(
             .Concat(Exports.Select(e => $"exports/{e.Name}/v{e.Version}.json"))
             .Concat(Labels.Select(l => $"labels/{l.Pack}/v{l.Version}.{l.Locale}.json"))
             .Concat(Fields.Select(f => $"fields/{f.Pack}/{f.Type}/v{f.Version}.json"))
-            .Concat(Suggestions.Select(s => $"suggestions/{s.Pack}/v{s.Version}.json"));
+            .Concat(Suggestions.Select(s => $"suggestions/{s.Pack}/v{s.Version}.json"))
+            .Concat(Scales.Select(m => $"scales/{m.Pack}/v{m.Version}.json"));
 }
 
 /// <summary>
 /// Reads a vault: change files, scheme versions, crosswalks, report forms, run records, export forms, pack manifests, labels,
-/// field definitions and suggestion files. A file that cannot
+/// field definitions, suggestion files and scale files. A file that cannot
 /// be used never stops the read: it is reported in <see cref="VaultContent.Unreadable"/> and
 /// everything else is still returned.
 /// </summary>
@@ -118,6 +126,7 @@ public static partial class VaultReader
         var labels = new List<LabelSet>();
         var fieldSets = new List<FieldSet>();
         var suggestions = new List<SuggestionSet>();
+        var scales = new List<ScaleSet>();
         var runFiles = new List<VaultFile>();
 
         foreach (var file in all.OrderBy(f => f.Path, StringComparer.Ordinal))
@@ -147,6 +156,9 @@ public static partial class VaultReader
                     continue;
                 case DefinitionKind.Suggestions:
                     Collect(ParseSuggestions(file), suggestions, unreadable);
+                    continue;
+                case DefinitionKind.Scales:
+                    Collect(ParseScales(file), scales, unreadable);
                     continue;
             }
 
@@ -199,6 +211,7 @@ public static partial class VaultReader
         return new VaultContent(changes, schemes, crosswalks, reports, unreadable, runs, exports, packs, labels, fieldSets)
         {
             Suggestions = suggestions,
+            Scales = scales,
             DeclaredVersion = declared,
         };
     }
@@ -228,7 +241,7 @@ public static partial class VaultReader
         throw new VaultFormatException(declared, known);
     }
 
-    private static readonly string[] LayoutFolders = ["schemes", "reports", "exports", "practitioners", "devices", "subjects", "groups", "runs", "packs", "labels", "fields", "suggestions"];
+    private static readonly string[] LayoutFolders = ["schemes", "reports", "exports", "practitioners", "devices", "subjects", "groups", "runs", "packs", "labels", "fields", "suggestions", "scales"];
 
     // A sync client keeps the losing side of a conflict under the same name with something added
     // after ".json" (" (conflicted copy …)", ".sync-conflict-…", "-<computer>"). A change file's copy

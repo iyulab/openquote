@@ -9,7 +9,7 @@ namespace Openquote.Vault;
 
 public static partial class VaultReader
 {
-    private enum DefinitionKind { None, Scheme, Crosswalk, Report, Export, Pack, Labels, Fields, Suggestions }
+    private enum DefinitionKind { None, Scheme, Crosswalk, Report, Export, Pack, Labels, Fields, Suggestions, Scales }
 
     private readonly record struct Definition<T>(T? Value, UnreadableFile? Error) where T : class;
 
@@ -33,6 +33,7 @@ public static partial class VaultReader
         if (PackPath().IsMatch(path)) return DefinitionKind.Pack;
         if (LabelsPath().IsMatch(path)) return DefinitionKind.Labels;
         if (SuggestionsPath().IsMatch(path)) return DefinitionKind.Suggestions;
+        if (ScalesPath().IsMatch(path)) return DefinitionKind.Scales;
         return FieldsPath().IsMatch(path) ? DefinitionKind.Fields : DefinitionKind.None;
     }
 

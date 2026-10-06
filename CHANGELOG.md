@@ -8,6 +8,8 @@ Versions before 0.16.0 are described by their tags and the package history on nu
 
 ### Added
 - A field file of a type that closes a case may say within how many days a follow-up is expected (`followUpDays`). `FieldCatalog.FollowUpDays` gives it; `FieldIssueKind.FollowUpWithoutClosing` reports it on a type that closes no case. `SubjectCase.FollowUpDue`, `FirstAfterClosing` and `FirstAfterClosingDay` tell when it is due and the subject's first record after the closing — in the case or beginning the next one — and `SubjectCase.FollowUpOn(day)` says whether it came in time, came late, is still awaited or is overdue. Nothing is stored. Engines that predate the key ignore it, and every count stays the same.
+- A pack may give scales (`scales/<pack>/v<N>.json`, format `openquote.scales/0`): which entity type records a response, which of its fields names the scale and which holds the score, and for each scale its range, the way a better score moves and, optionally, its terms of use. `VaultContent.ScaleCatalog` merges them; `ScaleCatalog.Check` lists a scale field that is not coded or a score field that is not a number. A scale holds no cutoff and no rule for a change.
+- `ScaleReader.Read` reads, for each of a subject's cases, each scale's baseline (the first score) and last available score up to the closing, whether they fall on two days, and the change between them; a response it cannot use is listed apart with the reason. `ScaleReader.Summarize` counts the cases closed in a stretch of days by scale, and those closed with no score at all. Nothing is stored. Engines that predate `scales/` ignore the folder, and every count stays the same.
 
 ## [0.17.1] - 2026-10-06
 
