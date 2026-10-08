@@ -6,6 +6,8 @@ Versions before 0.16.0 are described by their tags and the package history on nu
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-10-08
+
 ### Added
 - A field file of a type that closes a case may say within how many days a follow-up is expected (`followUpDays`). `FieldCatalog.FollowUpDays` gives it; `FieldIssueKind.FollowUpWithoutClosing` reports it on a type that closes no case. `SubjectCase.FollowUpDue`, `FirstAfterClosing` and `FirstAfterClosingDay` tell when it is due and the subject's first record after the closing — in the case or beginning the next one — and `SubjectCase.FollowUpOn(day)` says whether it came in time, came late, is still awaited or is overdue. Nothing is stored. Engines that predate the key ignore it, and every count stays the same.
 - A pack may give scales (`scales/<pack>/v<N>.json`, format `openquote.scales/0`): which entity type records a response, which of its fields names the scale and which holds the score, and for each scale its range, the way a better score moves and, optionally, its terms of use. `VaultContent.ScaleCatalog` merges them; `ScaleCatalog.Check` lists a scale field that is not coded or a score field that is not a number. A scale holds no cutoff and no rule for a change.
@@ -38,7 +40,8 @@ Versions before 0.16.0 are described by their tags and the package history on nu
 ### Added
 - `DefinitionWriter` writes report forms in the order a reader reads them.
 
-[Unreleased]: https://github.com/iyulab/openquote/compare/v0.17.1...HEAD
+[Unreleased]: https://github.com/iyulab/openquote/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/iyulab/openquote/compare/v0.17.1...v0.18.0
 [0.17.1]: https://github.com/iyulab/openquote/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/iyulab/openquote/compare/v0.16.1...v0.17.0
 [0.16.1]: https://github.com/iyulab/openquote/compare/v0.16.0...v0.16.1
