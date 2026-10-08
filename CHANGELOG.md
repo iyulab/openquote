@@ -13,6 +13,9 @@ Versions before 0.16.0 are described by their tags and the package history on nu
 - A pack may give scales (`scales/<pack>/v<N>.json`, format `openquote.scales/0`): which entity type records a response, which of its fields names the scale and which holds the score, and for each scale its range, the way a better score moves and, optionally, its terms of use. `VaultContent.ScaleCatalog` merges them; `ScaleCatalog.Check` lists a scale field that is not coded or a score field that is not a number. A scale holds no cutoff and no rule for a change.
 - `ScaleReader.Read` reads, for each of a subject's cases, each scale's baseline (the first score) and last available score up to the closing, whether they fall on two days, and the change between them; a response it cannot use is listed apart with the reason. `ScaleReader.Summarize` counts the cases closed in a stretch of days by scale, and those closed with no score at all. Nothing is stored. Engines that predate `scales/` ignore the folder, and every count stays the same.
 
+### Changed
+- `Openquote.Gil` takes Gil 0.17.0 and hands each judged field its memory similarity floor with its threshold: when several similar records vote, a draft less like them than the replayed answers were is only guessed at, though they agree. The nearest record still decides alone (one vote), so suggestions are unchanged.
+
 ## [0.17.1] - 2026-10-06
 
 ### Fixed

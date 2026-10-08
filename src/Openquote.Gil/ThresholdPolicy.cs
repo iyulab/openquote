@@ -51,8 +51,8 @@ internal sealed record ThresholdPolicy(double TargetPrecision, int MinimumAnswer
         if (field.Multiple)
         {
             return settled.Count(d => d.Sets.TryGetValue(field.Name, out var set) && set.Count > 0) < MinimumAnswered
-                ? new(null, null, Votes)
-                : new(ThresholdSelection.SelectKeyThreshold(new FieldMemory(), form, field.Name, settled, TargetPrecision, MinimumAnswered).Chosen?.Threshold, null, Votes);
+                ? new(null, null, Votes, null)
+                : new(ThresholdSelection.SelectKeyThreshold(new FieldMemory(), form, field.Name, settled, TargetPrecision, MinimumAnswered).Chosen?.Threshold, null, Votes, null);
         }
         if (settled.Count(d => d.Values.ContainsKey(field.Name)) < MinimumAnswered)
         {
@@ -66,15 +66,20 @@ internal sealed record ThresholdPolicy(double TargetPrecision, int MinimumAnswer
         var replay = await ThresholdSelection.SelectLayersAsync(new FieldMemory(), new LexicalMemory(), form, field.Name, settled, TargetPrecision, MinimumAnswered,
             cancellationToken).ConfigureAwait(false);
         var key = replay.Key.Chosen?.Threshold;
-        return replay.Memory.Chosen is { } memory ? new(key, memory.Threshold, field.SimilarDocumentVotes) : NearlySame(key);
+        // The floor goes with the threshold: a draft less like its voters than the replayed answers were only
+        // guesses, though the voters agree (a single voter has none — its score is already the likeness).
+        return replay.Memory.Chosen is { } memory ? new(key, memory.Threshold, field.SimilarDocumentVotes, memory.SimilarityFloor) : NearlySame(key);
     }
 
     /// <summary>The nearest record answering alone, nearly the same as the draft — or never, with no such threshold.</summary>
-    private FieldThresholds NearlySame(double? key) => new(key, NearlySameMemoryThreshold, NearestAlone);
+    private FieldThresholds NearlySame(double? key) => new(key, NearlySameMemoryThreshold, NearestAlone, null);
 
     /// <summary>The similar record layer's vote with a single voter: the nearest record, on its similarity.</summary>
     private const int NearestAlone = 1;
 }
 
-/// <summary>A judged field's thresholds, and how many similar records vote — the scale its memory threshold is on.</summary>
-internal sealed record FieldThresholds(double? Key, double? Memory, int SimilarDocumentVotes);
+/// <summary>
+/// A judged field's thresholds, how many similar records vote — the scale its memory threshold is on — and the
+/// likeness a draft needs to its voters for their vote to answer (none for a single voter).
+/// </summary>
+internal sealed record FieldThresholds(double? Key, double? Memory, int SimilarDocumentVotes, double? MemorySimilarityFloor);

@@ -193,7 +193,7 @@ public sealed class CodeSuggester
             fields.Add(new GilField(field.Name, field.Role)
             {
                 Candidates = field.Candidates, Multiple = field.Multiple, KeyThreshold = chosen.Key, MemoryThreshold = chosen.Memory,
-                SimilarDocumentVotes = chosen.SimilarDocumentVotes,
+                MemorySimilarityFloor = chosen.MemorySimilarityFloor, SimilarDocumentVotes = chosen.SimilarDocumentVotes,
             });
         }
         return new FormDefinition(type, fields, PromptLanguage.English);
