@@ -62,8 +62,15 @@ public sealed class FieldCatalog
     private readonly Dictionary<string, CaseRole> _role = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _followUp = new(StringComparer.Ordinal);
 
-    /// <summary>The folders an entity can be kept under, in the order <see cref="KeptUnder"/> lists them.</summary>
-    public static IReadOnlyList<string> Holders { get; } = ["subject", "group"];
+    /// <summary>
+    /// The folders an entity can be kept under, in the order <see cref="KeptUnder"/> lists them: a subject's, a
+    /// group's, or the activity folder — for work about no subject or group.
+    /// </summary>
+    public static IReadOnlyList<string> Holders { get; } = ["subject", "group", "activity"];
+
+    // Where an entity type is kept when no pack says: a subject's or a group's folder, never the activity
+    // folder — a record about no one is kept there only when a pack says so.
+    private static readonly IReadOnlyList<string> Unsaid = ["subject", "group"];
 
     /// <summary>True for the entity types that are kept on their own rather than under a subject or a group.</summary>
     public static bool IsKeptOnItsOwn(string type) => type is "subject" or "group" or "practitioner" or DeviceNames.EntityType;
@@ -185,7 +192,7 @@ public sealed class FieldCatalog
     /// subject's and a group's when none says. Empty for the types kept on their own (<see cref="IsKeptOnItsOwn"/>).
     /// </summary>
     public IReadOnlyList<string> KeptUnder(string type) =>
-        IsKeptOnItsOwn(type) ? [] : _under.GetValueOrDefault(type) ?? Holders;
+        IsKeptOnItsOwn(type) ? [] : _under.GetValueOrDefault(type) ?? Unsaid;
 
     /// <summary>Where a host places <paramref name="type"/> among the others, from the first pack that says; null when none does.</summary>
     public int? TypeOrder(string type) => _order.TryGetValue(type, out var place) ? place : null;

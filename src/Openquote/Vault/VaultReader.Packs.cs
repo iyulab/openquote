@@ -393,7 +393,7 @@ public static partial class VaultReader
                 return Bad<FieldSet>(file, UnreadableReason.Invalid, $"a {type} is not kept under anything");
             if (underValue.ValueKind != JsonValueKind.Array || underValue.GetArrayLength() == 0
                 || underValue.EnumerateArray().Any(h => h.ValueKind != JsonValueKind.String || !FieldCatalog.Holders.Contains(h.GetString()!)))
-                return Bad<FieldSet>(file, UnreadableReason.Invalid, "under lists where an entity of the type is kept: subject, group or both");
+                return Bad<FieldSet>(file, UnreadableReason.Invalid, "under lists where an entity of the type is kept: subject, group, activity, or more than one");
             under = [.. underValue.EnumerateArray().Select(h => h.GetString()!)];
             if (under.Distinct(StringComparer.Ordinal).Count() != under.Count)
                 return Bad<FieldSet>(file, UnreadableReason.Invalid, "under names each folder once");

@@ -89,7 +89,8 @@ public static class DefinitionWriter
     /// <summary>
     /// The file of <paramref name="report"/>: format 0 when it splits by a classified field in a named
     /// version and at most one string field of the record, by month, with no filter and the default
-    /// measures — what a format 0 form says; format 1 otherwise. Throws when the form cannot be run as
+    /// measures — what a format 0 form says; format 2 when it counts activity records too
+    /// (<see cref="ReportDefinition.Activities"/>); format 1 otherwise. Throws when the form cannot be run as
     /// it stands (<see cref="ReportDefinition.Problem"/>), since the reader would not read it.
     /// </summary>
     public static VaultFile Report(ReportDefinition report)
@@ -97,10 +98,10 @@ public static class DefinitionWriter
         ArgumentNullException.ThrowIfNull(report);
         if (report.Problem() is { } problem) throw new ArgumentException(problem, nameof(report));
         var defaultMeasures = report.Sums.Count == 0 && report.Measures.SequenceEqual([ReportMeasure.Records, ReportMeasure.People]);
-        var v0 = report.RowsAndColumn && report.Dimensions[0].Version is not null && defaultMeasures;
+        var v0 = !report.Activities && report.RowsAndColumn && report.Dimensions[0].Version is not null && defaultMeasures;
         var json = new JsonObject
         {
-            ["format"] = v0 ? "openquote.report/0" : "openquote.report/1",
+            ["format"] = report.Activities ? "openquote.report/2" : v0 ? "openquote.report/0" : "openquote.report/1",
             ["report"] = report.Name,
             ["version"] = report.Version,
             ["label"] = report.Label,

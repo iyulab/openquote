@@ -8,7 +8,7 @@ namespace Openquote.Vault;
 /// still be named by what it was for. Only the fields that apply to <see cref="Kind"/> are set.
 /// </summary>
 /// <param name="Kind">
-/// <c>subject</c>, <c>group</c>, <c>practitioners</c>, <c>devices</c>, <c>scheme</c>, <c>crosswalk</c>,
+/// <c>subject</c>, <c>group</c>, <c>activity</c>, <c>practitioners</c>, <c>devices</c>, <c>scheme</c>, <c>crosswalk</c>,
 /// <c>report</c>, <c>export</c>, <c>pack</c>, <c>labels</c>, <c>fields</c>, <c>suggestions</c>, <c>scales</c>, <c>run</c> or <c>other</c>.
 /// </param>
 /// <param name="Id">The subject's or group's id.</param>
@@ -52,6 +52,7 @@ public sealed partial record VaultFileKind(
         {
             ["subjects", var id, _] => new("subject", Id: id),
             ["groups", var id, _] => new("group", Id: id),
+            ["activities", _] => new("activity"),
             ["practitioners", _] => new("practitioners"),
             ["devices", _] => new("devices"),
             ["schemes", var name, var file] when !version.Success && AcrossName().Match(file) is { Success: true } across =>

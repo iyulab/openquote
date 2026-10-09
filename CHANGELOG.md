@@ -6,6 +6,10 @@ Versions before 0.16.0 are described by their tags and the package history on nu
 
 ## [Unreleased]
 
+### Added
+- Records about no subject or group — work such as a training given or attended, or a programme written — are kept in a folder of their own, `activities/<id>.<device>.json`. `VaultWriter.CreateActivity` writes one; `Entity.Activity` tells it apart, and such a record is about no one (`People` is empty). A field file says a type is kept there with `"under": ["activity"]`; a type no pack places there is never offered there.
+- Report and export forms of format 2 (`openquote.report/2`, `openquote.export/2`; `ReportDefinition.Activities`, `ExportDefinition.Activities`) count or list the records of `activities/` as well. Forms of format 0 and 1 count and list records kept under subjects and groups only, so they count the same as in earlier engines, which list a format 2 form as a format they do not know. `DefinitionWriter.Report` writes format 2 for a form that counts activity records, and two runs of which only one counts them cannot be compared. The vault keeps its declared format.
+
 ## [0.18.0] - 2026-10-08
 
 ### Added

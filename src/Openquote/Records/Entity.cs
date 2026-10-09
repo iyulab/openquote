@@ -58,6 +58,13 @@ public sealed class Entity
     }
 
     /// <summary>
+    /// True for a record kept in the activity folder: work about no subject or group (a training given or
+    /// attended, say). It is about no one — <see cref="People"/> is empty — and a report or export form
+    /// counts it only from format 2.
+    /// </summary>
+    public bool Activity => Changes[0].Path.StartsWith("activities/", StringComparison.Ordinal);
+
+    /// <summary>
     /// The subjects this entity is about: the subject itself, the subject whose folder holds it,
     /// or — for an entity held by a group — the subjects listed in its <c>attendees</c> field.
     /// Distinct and ordered; empty when none are known.

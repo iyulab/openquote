@@ -90,6 +90,7 @@ public sealed record ReportDiff(
         var (a, b) = (earlier.Report, later.Report);
         if (a.Name != b.Name) return $"form '{b.Name}' is not '{a.Name}'";
         if (a.Counts != b.Counts) return $"it counts '{b.Counts}', not '{a.Counts}'";
+        if (a.Activities != b.Activities) return b.Activities ? "it counts activity records too" : "it does not count activity records";
         if (a.Period.Field != b.Period.Field) return $"its period field is '{b.Period.Field}', not '{a.Period.Field}'";
         if (a.Dimensions.Count != b.Dimensions.Count)
             return $"it has {b.Dimensions.Count} dimensions, not {a.Dimensions.Count}";

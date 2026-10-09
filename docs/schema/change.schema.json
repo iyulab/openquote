@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/iyulab/openquote/blob/main/docs/schema/change.schema.json",
   "title": "Openquote change file",
-  "description": "A change to one entity, at practitioners/, devices/, subjects/<subject-id>/ or groups/<group-id>/ as <id>.<device>.json. The id and device must match the file name.",
+  "description": "A change to one entity, at practitioners/, devices/, activities/, subjects/<subject-id>/ or groups/<group-id>/ as <id>.<device>.json. The id and device must match the file name.",
   "type": "object",
   "required": ["format", "id", "device", "at", "entity", "op", "base", "fields"],
   "properties": {

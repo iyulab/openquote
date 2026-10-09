@@ -82,6 +82,13 @@ public sealed record ReportDefinition(
     /// <summary>The most dimensions a form may have.</summary>
     public const int MaxDimensions = 3;
 
+    /// <summary>
+    /// True when the form counts the records kept in the activity folder as well (see
+    /// <see cref="Records.Entity.Activity"/>) — format 2. A form of format 0 or 1 counts the records kept
+    /// under subjects and groups only, so it counts the same in an engine that predates the activity folder.
+    /// </summary>
+    public bool Activities { get; init; }
+
     /// <summary>The conditions every counted record meets; none by default.</summary>
     public IReadOnlyList<ReportFilter> Filters { get; init; } = [];
 
@@ -97,7 +104,7 @@ public sealed record ReportDefinition(
     /// <summary>Two forms are equal when every part is, dimensions and filters compared in order.</summary>
     public bool Equals(ReportDefinition? other) =>
         other is not null && Name == other.Name && Version == other.Version && Label == other.Label
-        && Counts == other.Counts && Period == other.Period && Dimensions.SequenceEqual(other.Dimensions)
+        && Counts == other.Counts && Activities == other.Activities && Period == other.Period && Dimensions.SequenceEqual(other.Dimensions)
         && Filters.SequenceEqual(other.Filters) && Measures.SequenceEqual(other.Measures) && Sums.SequenceEqual(other.Sums);
 
     /// <inheritdoc/>

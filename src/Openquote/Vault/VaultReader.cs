@@ -241,7 +241,7 @@ public static partial class VaultReader
         throw new VaultFormatException(declared, known);
     }
 
-    private static readonly string[] LayoutFolders = ["schemes", "reports", "exports", "practitioners", "devices", "subjects", "groups", "runs", "packs", "labels", "fields", "suggestions", "scales"];
+    private static readonly string[] LayoutFolders = ["schemes", "reports", "exports", "practitioners", "devices", "subjects", "groups", "activities", "runs", "packs", "labels", "fields", "suggestions", "scales"];
 
     // A sync client keeps the losing side of a conflict under the same name with something added
     // after ".json" (" (conflicted copy …)", ".sync-conflict-…", "-<computer>"). A change file's copy
@@ -257,7 +257,7 @@ public static partial class VaultReader
         return json > 0 && json + ".json".Length < name.Length;
     }
 
-    // practitioners/<file>.json, devices/<file>.json, subjects/<subject-id>/<file>.json, groups/<group-id>/<file>.json
+    // practitioners/<file>.json, devices/<file>.json, activities/<file>.json, subjects/<subject-id>/<file>.json, groups/<group-id>/<file>.json
     // — or a sync client's copy of one, with something added after ".json".
     private static bool IsChangePath(string path)
     {
@@ -266,7 +266,7 @@ public static partial class VaultReader
         var after = json + ".json".Length;
         if (after < path.Length && (char.IsAsciiLetterOrDigit(path[after]) || path.IndexOf('/', after) >= 0)) return false;
         var parts = path.Split('/');
-        return (parts.Length == 2 && parts[0] is "practitioners" or "devices")
+        return (parts.Length == 2 && parts[0] is "practitioners" or "devices" or "activities")
             || (parts.Length == 3 && parts[0] is "subjects" or "groups");
     }
 

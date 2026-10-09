@@ -80,6 +80,19 @@ public sealed class VaultWriter
         return ChangeFile(id, at, new EntityRef(type, id), "create", [], fields, sources, $"{container}/{ownerId}");
     }
 
+    /// <summary>
+    /// A new record of <paramref name="type"/> kept in the activity folder: work about no subject or group, such
+    /// as a training given or attended. A subject, group, practitioner or device name has a folder of its own.
+    /// </summary>
+    public VaultFile CreateActivity(string type, IReadOnlyDictionary<string, JsonNode?> fields, IReadOnlyDictionary<string, string>? sources = null)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(type);
+        if (type is "subject" or "group" or "practitioner" or DeviceNames.EntityType)
+            throw new ArgumentException($"a {type} is not kept in the activity folder", nameof(type));
+        var (id, at) = Stamp();
+        return ChangeFile(id, at, new EntityRef(type, id), "create", [], fields, sources, "activities");
+    }
+
     /// <summary>A new practitioner.</summary>
     public VaultFile CreatePractitioner(IReadOnlyDictionary<string, JsonNode?> fields)
     {

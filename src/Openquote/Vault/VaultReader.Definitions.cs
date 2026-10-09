@@ -224,14 +224,16 @@ public static partial class VaultReader
         _ => null,
     };
 
-    private static readonly string[] ReportFormats = ["openquote.report/0", "openquote.report/1"];
+    private static readonly string[] ReportFormats = ["openquote.report/0", "openquote.report/1", "openquote.report/2"];
 
     private static Definition<ReportDefinition> ParseReport(VaultFile file)
     {
         // Format 0 splits by rows (a classified field) and at most one column (a string field);
-        // format 1 by one to three dimensions, whose scheme version may be "in-force".
+        // format 1 by one to three dimensions, whose scheme version may be "in-force"; format 2 is
+        // format 1 counting the records of the activity folder too.
         if (!TryRoot(file, ReportFormats, out var root, out var error)) return new(null, error);
-        var v1 = TryString(root, "format", out var format) && format == "openquote.report/1";
+        var activities = TryString(root, "format", out var format) && format == "openquote.report/2";
+        var v1 = activities || format == "openquote.report/1";
         var path = ReportPath().Match(file.Path);
 
         if (!TryString(root, "report", out var name) || !TryInt(root, "version", out var version) || version < 1
@@ -302,7 +304,7 @@ public static partial class VaultReader
             }
         }
 
-        var report = new ReportDefinition(name, version, label, counts, reportPeriod, dimensions) { Filters = filters };
+        var report = new ReportDefinition(name, version, label, counts, reportPeriod, dimensions) { Filters = filters, Activities = activities };
         if (measures is not null) report = report with { Measures = measures, Sums = sums };
         return report.Problem() is { } problem ? Bad<ReportDefinition>(file, UnreadableReason.Invalid, problem) : new(report, null);
     }
@@ -372,8 +374,10 @@ public static partial class VaultReader
 
     private static Definition<ExportDefinition> ParseExport(VaultFile file)
     {
-        if (!TryRoot(file, ["openquote.export/0", "openquote.export/1"], out var root, out var error)) return new(null, error);
-        var extended = root.GetProperty("format").GetString() == "openquote.export/1";
+        // Format 2 is format 1 listing the records of the activity folder too.
+        if (!TryRoot(file, ["openquote.export/0", "openquote.export/1", "openquote.export/2"], out var root, out var error)) return new(null, error);
+        var activities = root.GetProperty("format").GetString() == "openquote.export/2";
+        var extended = activities || root.GetProperty("format").GetString() == "openquote.export/1";
         var path = ExportPath().Match(file.Path);
 
         if (!TryString(root, "export", out var name) || !TryInt(root, "version", out var version) || version < 1
@@ -398,7 +402,7 @@ public static partial class VaultReader
             columns.Add(column);
         }
 
-        return new(new ExportDefinition(name, version, label, rows, periodField, columns), null);
+        return new(new ExportDefinition(name, version, label, rows, periodField, columns) { Activities = activities }, null);
     }
 
     // The keys of a column that only an export form of format 1 may use: an earlier engine would read the

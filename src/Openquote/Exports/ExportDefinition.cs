@@ -16,7 +16,15 @@ public sealed record ExportDefinition(
     string Label,
     string Rows,
     string PeriodField,
-    IReadOnlyList<ExportColumn> Columns);
+    IReadOnlyList<ExportColumn> Columns)
+{
+    /// <summary>
+    /// True when the form lists the records kept in the activity folder as well (see
+    /// <see cref="Records.Entity.Activity"/>) — format 2. A form of format 0 or 1 lists the records kept
+    /// under subjects and groups only.
+    /// </summary>
+    public bool Activities { get; init; }
+}
 
 /// <summary>One column of an export form: its heading, and where its cells come from.</summary>
 public abstract record ExportColumn(string Label);

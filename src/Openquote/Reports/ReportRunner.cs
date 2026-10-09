@@ -58,7 +58,7 @@ public static class ReportRunner
 
         foreach (var entity in entities)
         {
-            if (entity.Destroyed || entity.Reference.Type != report.Counts) continue;
+            if (entity.Destroyed || entity.Reference.Type != report.Counts || (entity.Activity && !report.Activities)) continue;
             var id = entity.Reference.Id;
             var disputed = entity.Conflicts.TryGetValue(report.Period.Field, out var dates);
             if (disputed)

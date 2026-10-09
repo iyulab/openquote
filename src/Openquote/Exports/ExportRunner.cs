@@ -65,7 +65,7 @@ public static class ExportRunner
         var listed = new List<(DateOnly Date, Entity Entity)>();
         foreach (var e in all)
         {
-            if (e.Reference.Type != export.Rows) continue;
+            if (e.Reference.Type != export.Rows || (e.Activity && !export.Activities)) continue;
             // A disputed date lists the record in every period one of its dates falls in, at the earliest.
             IEnumerable<JsonElement> dates = e.Conflicts.TryGetValue(export.PeriodField, out var heads)
                 ? heads.Select(h => h.Value)
