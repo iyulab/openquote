@@ -436,6 +436,26 @@ public static partial class VaultReader
             followUpDays = days;
         }
 
+        Awaiting? awaits = null;
+        if (root.TryGetProperty("awaits", out var awaitsValue))
+        {
+            const string AwaitsShape = "awaits names the field a record waits to have answered, and may list the codes of it that say no answer has come yet";
+            if (awaitsValue.ValueKind != JsonValueKind.Object || !TryString(awaitsValue, "field", out var awaitedField) || awaitedField.Length == 0)
+                return Bad<FieldSet>(file, UnreadableReason.Invalid, AwaitsShape);
+            var pending = new List<string>();
+            if (awaitsValue.TryGetProperty("pending", out var pendingValue))
+            {
+                if (pendingValue.ValueKind != JsonValueKind.Array) return Bad<FieldSet>(file, UnreadableReason.Invalid, AwaitsShape);
+                foreach (var code in pendingValue.EnumerateArray())
+                {
+                    if (code.ValueKind != JsonValueKind.String || code.GetString() is not { Length: > 0 } text || pending.Contains(text))
+                        return Bad<FieldSet>(file, UnreadableReason.Invalid, AwaitsShape);
+                    pending.Add(text);
+                }
+            }
+            awaits = new Awaiting(awaitedField, pending);
+        }
+
         var fields = new List<FieldDefinition>();
         if (root.TryGetProperty("fields", out var fieldsArray))
         {
@@ -469,7 +489,7 @@ public static partial class VaultReader
             }
         }
 
-        return new(new FieldSet(pack, type, version, fields, constraints) { Label = typeLabel, Under = under, Order = order, Dated = dated, Role = role, FollowUpDays = followUpDays }, null);
+        return new(new FieldSet(pack, type, version, fields, constraints) { Label = typeLabel, Under = under, Order = order, Dated = dated, Role = role, FollowUpDays = followUpDays, Awaits = awaits }, null);
     }
 
     private static readonly string[] FieldsFormats = ["openquote.fields/0", "openquote.fields/1"];

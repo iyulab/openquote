@@ -16,6 +16,15 @@
     "dated": { "type": "string", "minLength": 1 },
     "role": { "enum": ["opens", "closes"] },
     "followUpDays": { "type": "integer", "minimum": 1 },
+    "awaits": {
+      "type": "object",
+      "required": ["field"],
+      "properties": {
+        "field": { "type": "string", "minLength": 1 },
+        "pending": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
+      },
+      "additionalProperties": false
+    },
     "fields": { "type": "array", "items": { "$ref": "#/$defs/field" } },
     "constrain": { "type": "array", "items": { "$ref": "#/$defs/constraint" } }
   },

@@ -140,7 +140,20 @@ public sealed record FieldSet(
     /// See <see cref="Records.SubjectCase.FollowUpOn"/>.
     /// </summary>
     public int? FollowUpDays { get; init; }
+
+    /// <summary>
+    /// For a type whose records wait for an answer — a referral for the service's reply, say: the field the answer
+    /// is entered in, and the codes of it that say none has come yet. Null when the file does not say.
+    /// See <see cref="FieldCatalog.Awaits"/> and <see cref="Records.AwaitingReader"/>.
+    /// </summary>
+    public Awaiting? Awaits { get; init; }
 }
+
+/// <summary>
+/// The field a record of a type waits to have answered, and the codes of it that say the answer has not come yet.
+/// A record waits while the field is blank or holds one of <see cref="Pending"/>.
+/// </summary>
+public sealed record Awaiting(string Field, IReadOnlyList<string> Pending);
 
 /// <summary>What a record of an entity type does to a subject's case (<see cref="Records.CaseReader"/>).</summary>
 public enum CaseRole

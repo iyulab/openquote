@@ -41,6 +41,12 @@ public enum FieldIssueKind
     /// <see cref="FieldIssue.Field"/> is empty.
     /// </summary>
     FollowUpWithoutClosing,
+
+    /// <summary>A pack says a type waits for a field no pack declares for it; it is not applied.</summary>
+    AwaitsUnknownField,
+
+    /// <summary>A pack lists codes that say a type's answer has not come for a field that holds no codes; it is not applied.</summary>
+    AwaitsCodesOfUncodedField,
 }
 
 /// <summary>One problem with a vault's field definitions.</summary>
@@ -61,6 +67,7 @@ public sealed class FieldCatalog
     private readonly Dictionary<string, string> _dated = new(StringComparer.Ordinal);
     private readonly Dictionary<string, CaseRole> _role = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _followUp = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Awaiting> _awaits = new(StringComparer.Ordinal);
 
     /// <summary>
     /// The folders an entity can be kept under, in the order <see cref="KeptUnder"/> lists them: a subject's, a
@@ -165,6 +172,18 @@ public sealed class FieldCatalog
                 issues.Add(new(FieldIssueKind.FollowUpWithoutClosing, set.Type, "", $"{set.Pack} expects a follow-up {days} days after a {set.Type}, which closes no case"));
         }
 
+        foreach (var set in latest)
+        {
+            if (set.Awaits is not { } awaits || _awaits.ContainsKey(set.Type)) continue;
+            var awaited = Find(set.Type, awaits.Field);
+            if (awaited is null)
+                issues.Add(new(FieldIssueKind.AwaitsUnknownField, set.Type, awaits.Field, $"{set.Pack} has a {set.Type} wait for {awaits.Field}, which no pack declares for it"));
+            else if (awaits.Pending.Count > 0 && awaited.Kind != FieldKind.Coded)
+                issues.Add(new(FieldIssueKind.AwaitsCodesOfUncodedField, set.Type, awaits.Field, $"{set.Pack} lists codes for {awaits.Field}, which holds no codes"));
+            else
+                _awaits[set.Type] = awaits;
+        }
+
         foreach (var (type, dated) in _dated.OrderBy(t => t.Key, StringComparer.Ordinal).ToList())
         {
             if (Find(type, dated)?.Kind == FieldKind.Date) continue;
@@ -214,6 +233,12 @@ public sealed class FieldCatalog
     /// first pack that says; null when none does, or when the type closes no case.
     /// </summary>
     public int? FollowUpDays(string type) => _followUp.TryGetValue(type, out var days) ? days : null;
+
+    /// <summary>
+    /// The field a record of <paramref name="type"/> waits to have answered and the codes that say it has not been,
+    /// from the first pack that says; null when none does, or when what it says does not fit the type's fields.
+    /// </summary>
+    public Awaiting? Awaits(string type) => _awaits.GetValueOrDefault(type);
 
     /// <summary>The fields of <paramref name="type"/>, in pack order and then declaration order.</summary>
     public IReadOnlyList<FieldDefinition> For(string type) => _byType.GetValueOrDefault(type) ?? [];

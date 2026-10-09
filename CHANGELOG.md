@@ -6,6 +6,9 @@ Versions before 0.16.0 are described by their tags and the package history on nu
 
 ## [Unreleased]
 
+### Added
+- A field file may say a record of its type waits for an answer: `"awaits": { "field": "outcome", "pending": ["waiting"] }` — the field the answer is entered in, and the codes of it that say none has come yet. `FieldCatalog.Awaits(type)` gives it, and `AwaitingReader.Read(entities, fields)` lists the records still waiting (blank, or holding only those codes), the oldest day first. A field the type lacks, or codes for a field that holds none, is named in `FieldCatalog.Issues` (`AwaitsUnknownField`, `AwaitsCodesOfUncodedField`) and not applied. Engines that predate it ignore the key.
+
 ## [0.19.0] - 2026-10-09
 
 ### Added
