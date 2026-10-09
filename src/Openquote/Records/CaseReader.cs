@@ -34,13 +34,14 @@ public sealed class SubjectCase
     public DateOnly? End { get; private set; }
 
     /// <summary>
-    /// The case's records in time order, from the first (the opening, when there is one) to the closing, both included.
+    /// The case's records in time order, from the first (the opening, when there is one) to the closing, both included,
+    /// and the records of the closing's own day written after it: the day a case closes is the case's.
     /// </summary>
     public IReadOnlyList<Entity> Records => _records;
 
     /// <summary>
-    /// The records dated after the closing and before the next opening, in time order — a follow-up, say, or a
-    /// closing that confirms the first. They do not reopen the case or start another.
+    /// The records dated after the closing's day and before the next opening, in time order — a follow-up, say — and a
+    /// closing that confirms the first, on any day. They do not reopen the case or start another.
     /// </summary>
     public IReadOnlyList<Entity> AfterClosing => _afterClosing;
 
@@ -54,8 +55,9 @@ public sealed class SubjectCase
     public bool IsOpen => Closing is null && !FollowedByOpening;
 
     /// <summary>
-    /// The subject's first record after the closing — the first of <see cref="AfterClosing"/>, or the record that began
-    /// the next case — or null when none has come or the case has not closed.
+    /// The subject's first record on a day after the closing's — the first of <see cref="AfterClosing"/> on such a day,
+    /// or the record that began the next case — or null when none has come or the case has not closed. A record of the
+    /// closing's own day is not a follow-up.
     /// </summary>
     public Entity? FirstAfterClosing { get; private set; }
 
@@ -166,11 +168,11 @@ public static class CaseReader
         var cases = new List<SubjectCase>();
         SubjectCase? open = null;
         SubjectCase? closed = null;
-        // The case closed last whose first record after the closing has not come yet.
+        // The case closed last whose first record on a later day than the closing has not come yet.
         SubjectCase? following = null;
         foreach (var (day, record) in dated.OrderBy(r => r.Day).ThenBy(r => r.Record.Reference.Id, StringComparer.Ordinal))
         {
-            if (following is not null)
+            if (following is not null && day > following.End)
             {
                 following.Follow(record, day);
                 following = null;
@@ -198,7 +200,9 @@ public static class CaseReader
                     closed = following = unopened;
                     break;
                 default:
+                    // The day a case closes is the case's own: a record of that day joins it, whichever was written first.
                     if (open is not null) open.Add(record);
+                    else if (closed is not null && day == closed.End) closed.Add(record);
                     else if (closed is not null) closed.AddAfterClosing(record);
                     else cases.Add(open = new SubjectCase(record, day, opened: false));
                     break;

@@ -238,6 +238,41 @@ public class CaseReaderTests
     }
 
     [Fact]
+    public void A_record_of_the_closing_day_written_after_the_closing_is_the_cases_and_not_its_follow_up()
+    {
+        var only = Assert.Single(CaseReader.Read("s1", Entities(
+            Record("intake", "2026-03-02"), Record("closing", "2026-04-20"), Record("session", "2026-04-20"), Record("session", "2026-04-27")), Following).Cases);
+
+        Assert.Equal(["intake", "closing", "session"], Types(only.Records));
+        Assert.Equal(new DateOnly(2026, 4, 20), only.End);
+        Assert.Equal("2026-04-27", (string?)only.AfterClosing.Single().Fields["date"].GetString());
+        Assert.Equal(new DateOnly(2026, 4, 27), only.FirstAfterClosingDay);
+        Assert.Equal(FollowUp.Done, only.FollowUpOn(new DateOnly(2026, 6, 30)));
+    }
+
+    [Fact]
+    public void A_closing_day_alone_leaves_the_follow_up_waiting()
+    {
+        var only = Assert.Single(CaseReader.Read("s1", Entities(
+            Record("intake", "2026-03-02"), Record("closing", "2026-04-20"), Record("session", "2026-04-20")), Following).Cases);
+
+        Assert.Null(only.FirstAfterClosing);
+        Assert.Empty(only.AfterClosing);
+        Assert.Equal(FollowUp.Waiting, only.FollowUpOn(new DateOnly(2026, 4, 21)));
+    }
+
+    [Fact]
+    public void A_new_intake_on_the_closing_day_opens_the_next_case_and_is_not_its_follow_up()
+    {
+        var cases = CaseReader.Read("s1", Entities(
+            Record("intake", "2026-03-02"), Record("closing", "2026-04-20"), Record("intake", "2026-04-20")), Following).Cases;
+
+        Assert.Equal(2, cases.Count);
+        Assert.Null(cases[0].FirstAfterClosing);
+        Assert.Equal(FollowUp.Waiting, cases[0].FollowUpOn(new DateOnly(2026, 4, 21)));
+    }
+
+    [Fact]
     public void A_new_intake_after_the_closing_is_the_follow_up_of_the_case_before()
     {
         var cases = CaseReader.Read("s1", Entities(
