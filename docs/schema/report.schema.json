@@ -70,7 +70,7 @@
         "field": { "type": "string", "minLength": 1 },
         "scheme": { "type": "string", "minLength": 1 },
         "version": { "oneOf": [{ "type": "integer", "minimum": 1 }, { "const": "in-force" }] },
-        "of": { "const": "subject" },
+        "of": { "type": "string", "minLength": 1, "not": { "enum": ["group", "practitioner", "device"] } },
         "values": { "enum": ["primary", "all"] }
       },
       "dependentRequired": { "scheme": ["version"], "version": ["scheme"] }

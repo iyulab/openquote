@@ -184,7 +184,7 @@ public static partial class VaultReader
         foreach (var place in key.EnumerateArray())
         {
             if (place.ValueKind == JsonValueKind.String) places[i] = place.GetString();
-            else if (place.ValueKind != JsonValueKind.Null || (report.Dimensions[i].Classified && !report.Dimensions[i].OfSubject)) return null;
+            else if (place.ValueKind != JsonValueKind.Null || (report.Dimensions[i].Classified && report.Dimensions[i].Of is null)) return null;
             i++;
         }
         return places;

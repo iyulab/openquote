@@ -23,8 +23,18 @@ namespace Openquote.Reports;
 /// one of them rather than by the primary one: a record then counts once in each cell its values
 /// lead to — the cells add up to more than the records (see <see cref="ReportRun.Multiple"/>).
 /// </param>
-public sealed record ReportDimension(string Field, string? Scheme = null, int? Version = null, bool OfSubject = false, bool All = false)
+/// <param name="OfKind">
+/// An entity type to read the field of instead of the record's: the records of that type in the same case as the record
+/// (see <see cref="Records.CaseReader"/>) — the intake of the case a closing closed, say. A record whose case holds one
+/// such record takes its value; several take their value when they all have the same one; otherwise, and when the case
+/// holds none or the record is in no case, its place is null — no single value. A run needs the field catalog that says
+/// which types open and close a case.
+/// </param>
+public sealed record ReportDimension(string Field, string? Scheme = null, int? Version = null, bool OfSubject = false, bool All = false, string? OfKind = null)
 {
+    /// <summary>What the dimension reads the field of: <c>subject</c>, an entity type of the same case, or null for the record itself.</summary>
+    public string? Of => OfSubject ? "subject" : OfKind;
+
     /// <summary>True when the dimension places by classified values rather than by a string value.</summary>
     public bool Classified => Scheme is not null;
 }
@@ -144,7 +154,8 @@ public sealed record ReportDefinition(
         if (Dimensions.Count is 0 or > MaxDimensions) return $"a report has one to {MaxDimensions} dimensions";
         if (Placers.Any(d => !d.Classified && d.Version is not null)) return "only a classified dimension or filter names a scheme version";
         if (Filters.Any(f => f.In.Count == 0)) return "a filter names the values it lets through";
-        if (Placers.Any(d => d.All && (!d.Classified || d.OfSubject))) return "only a classified dimension of the record counts every value";
+        if (Placers.Any(d => d.All && (!d.Classified || d.Of is not null))) return "only a classified dimension of the record counts every value";
+        if (Placers.Any(d => d.OfSubject && d.OfKind is not null)) return "a dimension reads one thing's field: the subjects' or a record of the case";
         if (Filters.Any(f => f.On.All)) return "a filter reads the primary value";
         if (Placers.Where(d => d.Classified).GroupBy(d => d.Scheme).Any(g => g.Select(d => d.Version).Distinct().Count() > 1))
             return "a report counts each scheme in one version";

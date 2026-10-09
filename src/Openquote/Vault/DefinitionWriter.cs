@@ -145,7 +145,7 @@ public static class DefinitionWriter
             node["scheme"] = scheme;
             node["version"] = dimension.Version is { } version ? version : "in-force";
         }
-        if (dimension.OfSubject) node["of"] = "subject";
+        if (dimension.Of is { } of) node["of"] = of;
         if (dimension.All) node["values"] = "all";
         return node;
     }

@@ -98,7 +98,7 @@ public sealed record ReportDiff(
         {
             var (x, y) = (a.Dimensions[i], b.Dimensions[i]);
             if (x.Field != y.Field) return $"dimension {i + 1} is field '{y.Field}', not '{x.Field}'";
-            if (x.Scheme != y.Scheme || x.OfSubject != y.OfSubject || x.All != y.All) return $"dimension {i + 1} is {Split(y)}, not {Split(x)}";
+            if (x.Scheme != y.Scheme || x.Of != y.Of || x.All != y.All) return $"dimension {i + 1} is {Split(y)}, not {Split(x)}";
         }
         if (a.Filters.Count != b.Filters.Count
             || a.Filters.Zip(b.Filters).Any(p => p.First.On with { Version = null } != p.Second.On with { Version = null }
@@ -114,7 +114,8 @@ public sealed record ReportDiff(
     }
 
     private static string Split(ReportDimension d) =>
-        (d.Scheme is { } scheme ? $"classified in '{scheme}'" : "split by its string value") + (d.OfSubject ? " of the subjects" : "")
+        (d.Scheme is { } scheme ? $"classified in '{scheme}'" : "split by its string value")
+        + (d.OfSubject ? " of the subjects" : d.OfKind is { } kind ? $" of the case's {kind}" : "")
         + (d.All ? " by every value" : "");
 
     // Where a revision alone would put a record from `place`: each classified place carried to the

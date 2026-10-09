@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using Openquote.Classification;
+using Openquote.Fields;
 using Openquote.Records;
 
 namespace Openquote.Reports;
@@ -19,7 +20,9 @@ public static class ReportRunner
     /// field holds no value to count (see <see cref="Entity.HasValue"/>), so an empty field is told
     /// apart from a gap in the crosswalks. When dimensions disagree, pending wins over unmapped and
     /// unmapped over blank. A string dimension's place is the field's string value, or null. A
-    /// dimension of the subjects reads their field instead (see <see cref="ReportDimension.OfSubject"/>).
+    /// dimension of the subjects reads their field instead (see <see cref="ReportDimension.OfSubject"/>), and a
+    /// dimension of a kind of record reads the field of that kind's records in the record's case (see
+    /// <see cref="ReportDimension.OfKind"/>) — read with <paramref name="fields"/>, which says which types open and close a case.
     /// A record a filter places outside its values is not in the run at all; one a filter cannot
     /// place yet — pending, unmapped, blank or conflicted there — is listed with those records, so a
     /// filter never drops a record silently. Destroyed entities are not counted. Each counted record also carries the subjects it is
@@ -28,11 +31,12 @@ public static class ReportRunner
     /// day within the period on which that version changes.
     /// </summary>
     /// <exception cref="ArgumentException">
-    /// The form cannot be run (see <see cref="ReportDefinition.Problem"/>), or a dimension names no
-    /// scheme version and none is in force on <paramref name="to"/>.
+    /// The form cannot be run (see <see cref="ReportDefinition.Problem"/>), a dimension names no
+    /// scheme version and none is in force on <paramref name="to"/>, or a dimension reads a kind of record of the
+    /// case and no <paramref name="fields"/> are given.
     /// </exception>
     public static ReportRun Run(ReportDefinition report, DateOnly from, DateOnly to,
-        IEnumerable<Entity> entities, SchemeCatalog catalog)
+        IEnumerable<Entity> entities, SchemeCatalog catalog, FieldCatalog? fields = null)
     {
         ArgumentNullException.ThrowIfNull(report);
         ArgumentNullException.ThrowIfNull(entities);
@@ -44,9 +48,15 @@ public static class ReportRunner
                 $"no version of scheme '{report.Schemes.First(s => report.VersionOf(s) is null && catalog.InForce(s, to) is null)}' is in force on {to:yyyy-MM-dd}",
                 nameof(report));
         var dimensions = form.Dimensions;
+        var all = entities as IReadOnlyCollection<Entity> ?? [.. entities];
+        var ofCase = form.Dimensions.Concat(form.Filters.Select(f => f.On)).Any(d => d.OfKind is not null);
+        if (ofCase && fields is null)
+            throw new ArgumentException("a form that reads a field of another record of the case needs the field catalog that says which types open and close a case", nameof(fields));
         var placing = new Placing(catalog,
             form.Schemes.ToDictionary(s => s, _ => new SortedSet<string>(StringComparer.Ordinal), StringComparer.Ordinal),
-            Subjects(entities, form));
+            Subjects(all, form),
+            ofCase ? new CaseIndex(all, fields!) : null);
+        entities = all;
 
         var cells = new SortedDictionary<IReadOnlyList<string?>, List<string>>(KeyComparer.Instance);
         var pending = new List<string>();
@@ -140,10 +150,11 @@ public static class ReportRunner
         && value.ValueKind == JsonValueKind.Number && value.TryGetDecimal(out var number) ? number : null;
 
     /// <summary>Runs <paramref name="report"/> over one calendar month.</summary>
-    public static ReportRun RunMonth(ReportDefinition report, int year, int month, IEnumerable<Entity> entities, SchemeCatalog catalog)
+    public static ReportRun RunMonth(ReportDefinition report, int year, int month, IEnumerable<Entity> entities, SchemeCatalog catalog,
+        FieldCatalog? fields = null)
     {
         var from = new DateOnly(year, month, 1);
-        return Run(report, from, from.AddMonths(1).AddDays(-1), entities, catalog);
+        return Run(report, from, from.AddMonths(1).AddDays(-1), entities, catalog, fields);
     }
 
     /// <summary>
@@ -151,12 +162,13 @@ public static class ReportRunner
     /// the day, the month, or the year from the form's start month (see <see cref="ReportPeriod.Containing"/>).
     /// </summary>
     /// <exception cref="ArgumentException">The form is run over a range a person picks; use <see cref="Run"/>.</exception>
-    public static ReportRun RunContaining(ReportDefinition report, DateOnly day, IEnumerable<Entity> entities, SchemeCatalog catalog)
+    public static ReportRun RunContaining(ReportDefinition report, DateOnly day, IEnumerable<Entity> entities, SchemeCatalog catalog,
+        FieldCatalog? fields = null)
     {
         ArgumentNullException.ThrowIfNull(report);
         var (from, to) = report.Period.Containing(day)
             ?? throw new ArgumentException("the form is run over a range a person picks", nameof(report));
-        return Run(report, from, to, entities, catalog);
+        return Run(report, from, to, entities, catalog, fields);
     }
 
     // Every key the places make, one place from each dimension.
@@ -179,20 +191,46 @@ public static class ReportRunner
                 .ToDictionary(e => e.Reference.Id, StringComparer.Ordinal)
             : new Dictionary<string, Entity>();
 
-    private sealed record Placing(SchemeCatalog Catalog, Dictionary<string, SortedSet<string>> Crosswalks,
-        Dictionary<string, Entity> Subjects)
+    // Each subject's cases, read once and only for the subjects a record placed by its case is about.
+    private sealed class CaseIndex(IReadOnlyCollection<Entity> entities, FieldCatalog fields)
     {
-        // Where a dimension places a record: by the record's own field, or by its subjects' — the
-        // subject's place when there is one, their common value when there are several and they
-        // agree on it, and otherwise no single value (null).
+        private readonly Dictionary<string, SubjectCases> _bySubject = new(StringComparer.Ordinal);
+
+        // The records of the cases `record` is in — one per subject it is about — each record once.
+        public IEnumerable<Entity> CaseRecordsOf(Entity record)
+        {
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var subject in record.People)
+            {
+                if (!_bySubject.TryGetValue(subject, out var cases))
+                    _bySubject[subject] = cases = CaseReader.Read(subject, entities, fields);
+                var found = cases.Cases.FirstOrDefault(c => c.Records.Concat(c.AfterClosing).Any(r => r.Reference == record.Reference));
+                if (found is null) continue;
+                foreach (var r in found.Records.Concat(found.AfterClosing))
+                    if (seen.Add(r.Reference.Id)) yield return r;
+            }
+        }
+    }
+
+    private sealed record Placing(SchemeCatalog Catalog, Dictionary<string, SortedSet<string>> Crosswalks,
+        Dictionary<string, Entity> Subjects, CaseIndex? Cases)
+    {
+        // Where a dimension places a record: by the record's own field, by its subjects', or by that of the
+        // records of a kind in its case — the one place when there is one, their common value when there are
+        // several and they agree on it, and otherwise no single value (null).
         public (Outcome, string?) Place(Entity record, ReportDimension d)
         {
+            if (d.OfKind is { } kind)
+                return Common([.. Cases!.CaseRecordsOf(record).Where(r => r.Reference.Type == kind).Select(r => PlaceIn(r, d))]);
             if (!d.OfSubject) return PlaceIn(record, d);
-            var places = record.People
+            return Common([.. record.People
                 .Select(id => Subjects.GetValueOrDefault(id))
                 .OfType<Entity>()
-                .Select(subject => PlaceIn(subject, d))
-                .ToList();
+                .Select(subject => PlaceIn(subject, d))]);
+        }
+
+        private static (Outcome, string?) Common(List<(Outcome, string?)> places)
+        {
             if (places.Count == 1) return places[0];
             return places.Count > 0 && places.All(p => p.Item1 == Outcome.Placed && p.Item2 is not null)
                 && places.Select(p => p.Item2).Distinct(StringComparer.Ordinal).Count() == 1

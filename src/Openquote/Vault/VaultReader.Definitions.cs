@@ -339,18 +339,21 @@ public static partial class VaultReader
     };
 
     private const string DimensionShape =
-        "a dimension names a field, with a scheme and a scheme version or \"in-force\" when it is classified, \"of\": \"subject\" to read the subjects' field, and \"values\": \"primary\" or \"all\"";
+        "a dimension names a field, with a scheme and a scheme version or \"in-force\" when it is classified, \"of\": \"subject\" to read the subjects' field or \"of\": \"<type>\" a field of that kind of record in the same case, and \"values\": \"primary\" or \"all\"";
 
     // {field, scheme?, version?, of?, values?}: classified when it has a scheme and a version, of the
-    // subjects with of "subject", by every value with values "all".
+    // subjects with of "subject" or of a kind of record of the case with of "<type>", by every value with values "all".
     private static ReportDimension? ParseDimension(JsonElement d)
     {
         if (d.ValueKind != JsonValueKind.Object || !TryString(d, "field", out var field)) return null;
         var ofSubject = false;
+        string? ofKind = null;
         if (d.TryGetProperty("of", out _))
         {
-            if (!TryString(d, "of", out var of) || of != "subject") return null;
-            ofSubject = true;
+            // "subject", or an entity type whose records in the same case the field is read of.
+            if (!TryString(d, "of", out var of) || of is "group" or "practitioner" || of == Records.DeviceNames.EntityType) return null;
+            if (of == "subject") ofSubject = true;
+            else ofKind = of;
         }
         var all = false;
         if (d.TryGetProperty("values", out _))
@@ -358,9 +361,9 @@ public static partial class VaultReader
             if (!TryString(d, "values", out var values) || values is not ("primary" or "all")) return null;
             all = values == "all";
         }
-        if (!d.TryGetProperty("scheme", out _) && !d.TryGetProperty("version", out _)) return new ReportDimension(field, OfSubject: ofSubject, All: all);
+        if (!d.TryGetProperty("scheme", out _) && !d.TryGetProperty("version", out _)) return new ReportDimension(field, OfSubject: ofSubject, All: all, OfKind: ofKind);
         return TryString(d, "scheme", out var scheme) && TryDimensionVersion(d, out var counted)
-            ? new ReportDimension(field, scheme, counted, ofSubject, all)
+            ? new ReportDimension(field, scheme, counted, ofSubject, all, ofKind)
             : null;
     }
 
