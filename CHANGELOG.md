@@ -6,6 +6,8 @@ Versions before 0.16.0 are described by their tags and the package history on nu
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-10-12
+
 ### Added
 - A field file may say a record of its type waits for an answer: `"awaits": { "field": "outcome", "pending": ["waiting"] }` — the field the answer is entered in, and the codes of it that say none has come yet. `FieldCatalog.Awaits(type)` gives it, and `AwaitingReader.Read(entities, fields)` lists the records still waiting (blank, or holding only those codes), the oldest day first. A field the type lacks, or codes for a field that holds none, is named in `FieldCatalog.Issues` (`AwaitsUnknownField`, `AwaitsCodesOfUncodedField`) and not applied. Engines that predate it ignore the key.
 
@@ -56,7 +58,8 @@ Versions before 0.16.0 are described by their tags and the package history on nu
 ### Added
 - `DefinitionWriter` writes report forms in the order a reader reads them.
 
-[Unreleased]: https://github.com/iyulab/openquote/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/iyulab/openquote/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/iyulab/openquote/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/iyulab/openquote/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/iyulab/openquote/compare/v0.17.1...v0.18.0
 [0.17.1]: https://github.com/iyulab/openquote/compare/v0.17.0...v0.17.1
