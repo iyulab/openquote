@@ -25,6 +25,7 @@
       },
       "additionalProperties": false
     },
+    "plans": { "type": "string", "minLength": 1 },
     "fields": { "type": "array", "items": { "$ref": "#/$defs/field" } },
     "constrain": { "type": "array", "items": { "$ref": "#/$defs/constraint" } }
   },

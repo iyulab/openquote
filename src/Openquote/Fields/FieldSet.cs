@@ -147,6 +147,12 @@ public sealed record FieldSet(
     /// See <see cref="FieldCatalog.Awaits"/> and <see cref="Records.AwaitingReader"/>.
     /// </summary>
     public Awaiting? Awaits { get; init; }
+
+    /// <summary>
+    /// For a type whose records set the day of the next meeting — a session, say: the date field that day is entered
+    /// in. Null when the file does not say. See <see cref="FieldCatalog.Plans"/> and <see cref="Records.PlannedReader"/>.
+    /// </summary>
+    public string? Plans { get; init; }
 }
 
 /// <summary>

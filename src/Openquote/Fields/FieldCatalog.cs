@@ -47,6 +47,9 @@ public enum FieldIssueKind
 
     /// <summary>A pack lists codes that say a type's answer has not come for a field that holds no codes; it is not applied.</summary>
     AwaitsCodesOfUncodedField,
+
+    /// <summary>A pack says a type sets the next meeting's day in a field no pack declares for it, or one that holds no date; it is not applied.</summary>
+    PlansNoDateField,
 }
 
 /// <summary>One problem with a vault's field definitions.</summary>
@@ -68,6 +71,7 @@ public sealed class FieldCatalog
     private readonly Dictionary<string, CaseRole> _role = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _followUp = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Awaiting> _awaits = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _plans = new(StringComparer.Ordinal);
 
     /// <summary>
     /// The folders an entity can be kept under, in the order <see cref="KeptUnder"/> lists them: a subject's, a
@@ -184,6 +188,15 @@ public sealed class FieldCatalog
                 _awaits[set.Type] = awaits;
         }
 
+        foreach (var set in latest)
+        {
+            if (set.Plans is not { } planned || _plans.ContainsKey(set.Type)) continue;
+            if (Find(set.Type, planned)?.Kind == FieldKind.Date)
+                _plans[set.Type] = planned;
+            else
+                issues.Add(new(FieldIssueKind.PlansNoDateField, set.Type, planned, $"{set.Pack} has a {set.Type} set the next meeting's day in {planned}, which no pack declares for it as a date"));
+        }
+
         foreach (var (type, dated) in _dated.OrderBy(t => t.Key, StringComparer.Ordinal).ToList())
         {
             if (Find(type, dated)?.Kind == FieldKind.Date) continue;
@@ -239,6 +252,12 @@ public sealed class FieldCatalog
     /// from the first pack that says; null when none does, or when what it says does not fit the type's fields.
     /// </summary>
     public Awaiting? Awaits(string type) => _awaits.GetValueOrDefault(type);
+
+    /// <summary>
+    /// The date field a record of <paramref name="type"/> sets the next meeting's day in, from the first pack that says;
+    /// null when none does, or when the field is not a date field of the type.
+    /// </summary>
+    public string? Plans(string type) => _plans.GetValueOrDefault(type);
 
     /// <summary>The fields of <paramref name="type"/>, in pack order and then declaration order.</summary>
     public IReadOnlyList<FieldDefinition> For(string type) => _byType.GetValueOrDefault(type) ?? [];

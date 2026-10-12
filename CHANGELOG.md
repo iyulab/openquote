@@ -6,6 +6,9 @@ Versions before 0.16.0 are described by their tags and the package history on nu
 
 ## [Unreleased]
 
+### Added
+- A field file may say which of its date fields a record sets the next meeting's day in: `"plans": "next"`. `FieldCatalog.Plans(type)` gives it, and `PlannedReader.Read(entities, fields)` gives each subject's next meeting — the day its latest such record names, by day — so a later record takes the place of what an earlier one set. A field that is not a date field of the type is named in `FieldCatalog.Issues` (`PlansNoDateField`) and not applied. Engines that predate it ignore the key.
+
 ## [0.20.0] - 2026-10-12
 
 ### Added

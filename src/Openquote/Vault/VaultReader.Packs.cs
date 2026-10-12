@@ -456,6 +456,14 @@ public static partial class VaultReader
             awaits = new Awaiting(awaitedField, pending);
         }
 
+        string? plans = null;
+        if (root.TryGetProperty("plans", out var plansValue))
+        {
+            if (plansValue.ValueKind != JsonValueKind.String || plansValue.GetString() is not { Length: > 0 } planned)
+                return Bad<FieldSet>(file, UnreadableReason.Invalid, "plans names the date field a record sets the next meeting's day in");
+            plans = planned;
+        }
+
         var fields = new List<FieldDefinition>();
         if (root.TryGetProperty("fields", out var fieldsArray))
         {
@@ -489,7 +497,7 @@ public static partial class VaultReader
             }
         }
 
-        return new(new FieldSet(pack, type, version, fields, constraints) { Label = typeLabel, Under = under, Order = order, Dated = dated, Role = role, FollowUpDays = followUpDays, Awaits = awaits }, null);
+        return new(new FieldSet(pack, type, version, fields, constraints) { Label = typeLabel, Under = under, Order = order, Dated = dated, Role = role, FollowUpDays = followUpDays, Awaits = awaits, Plans = plans }, null);
     }
 
     private static readonly string[] FieldsFormats = ["openquote.fields/0", "openquote.fields/1"];
