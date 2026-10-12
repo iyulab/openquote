@@ -6,6 +6,9 @@ Versions before 0.16.0 are described by their tags and the package history on nu
 
 ## [Unreleased]
 
+### Added
+- An export form's period may name the unit it is asked for in, as a report form's does: `"period": { "field": "date", "unit": "year", "startMonth": 3 }` (`day`, `month`, `year` or `range`). `ExportDefinition.Unit` and `StartMonth` give it, and `ExportDefinition.Containing(day)` the first and last day of the period holding a day. It changes nothing listed: a form still lists the rows of whatever days it is run over, and engines that predate the key ignore it. A unit it cannot use, or a `startMonth` for a unit other than a year, makes the form unreadable.
+
 ## [0.21.0] - 2026-10-12
 
 ### Added

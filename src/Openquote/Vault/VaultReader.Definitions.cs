@@ -314,14 +314,7 @@ public static partial class VaultReader
     {
         if (!root.TryGetProperty("period", out var period) || period.ValueKind != JsonValueKind.Object
             || !TryString(period, "unit", out var unitText) || !TryString(period, "field", out var field)) return null;
-        PeriodUnit? unit = unitText switch
-        {
-            "month" => PeriodUnit.Month,
-            "day" when v1 => PeriodUnit.Day,
-            "year" when v1 => PeriodUnit.Year,
-            "range" when v1 => PeriodUnit.Range,
-            _ => null,
-        };
+        var unit = UnitOf(unitText, v1);
         if (unit is null) return null;
         var startMonth = 1;
         if (period.TryGetProperty("startMonth", out _) && (unit != PeriodUnit.Year || !TryInt(period, "startMonth", out startMonth)))
@@ -329,6 +322,16 @@ public static partial class VaultReader
         var parsed = new ReportPeriod(field, unit.Value, startMonth);
         return parsed.Problem() is null ? parsed : null;
     }
+
+    // A period's unit by its name; format 0 of a report form knows months only.
+    private static PeriodUnit? UnitOf(string text, bool v1) => text switch
+    {
+        "month" => PeriodUnit.Month,
+        "day" when v1 => PeriodUnit.Day,
+        "year" when v1 => PeriodUnit.Year,
+        "range" when v1 => PeriodUnit.Range,
+        _ => null,
+    };
 
     private static ReportMeasure? Measure(string name) => name switch
     {
@@ -390,6 +393,19 @@ public static partial class VaultReader
             return Bad<ExportDefinition>(file, UnreadableReason.NameMismatch, $"the path should be exports/{name}/v{version}.json");
         if (!root.TryGetProperty("period", out var period) || period.ValueKind != JsonValueKind.Object || !TryString(period, "field", out var periodField))
             return Bad<ExportDefinition>(file, UnreadableReason.Invalid, "period must name a calendar-date field");
+        // The unit is optional in every format: an engine that predates it lists the same rows over the same days.
+        PeriodUnit? exportUnit = null;
+        var exportStartMonth = 1;
+        if (period.TryGetProperty("unit", out _))
+        {
+            exportUnit = TryString(period, "unit", out var unitText) ? UnitOf(unitText, v1: true) : null;
+            if (exportUnit is null)
+                return Bad<ExportDefinition>(file, UnreadableReason.Invalid, "period.unit is day, month, year or range");
+        }
+        if (period.TryGetProperty("startMonth", out _) && (exportUnit != PeriodUnit.Year || !TryInt(period, "startMonth", out exportStartMonth)))
+            return Bad<ExportDefinition>(file, UnreadableReason.Invalid, "only a year has a start month");
+        if (exportUnit is { } checkedUnit && new ReportPeriod(periodField, checkedUnit, exportStartMonth).Problem() is { } periodProblem)
+            return Bad<ExportDefinition>(file, UnreadableReason.Invalid, periodProblem);
         if (!root.TryGetProperty("columns", out var columnsJson) || columnsJson.ValueKind != JsonValueKind.Array || columnsJson.GetArrayLength() == 0)
             return Bad<ExportDefinition>(file, UnreadableReason.Invalid, "columns must be a non-empty array");
 
@@ -405,7 +421,7 @@ public static partial class VaultReader
             columns.Add(column);
         }
 
-        return new(new ExportDefinition(name, version, label, rows, periodField, columns) { Activities = activities }, null);
+        return new(new ExportDefinition(name, version, label, rows, periodField, columns) { Activities = activities, Unit = exportUnit, StartMonth = exportStartMonth }, null);
     }
 
     // The keys of a column that only an export form of format 1 may use: an earlier engine would read the

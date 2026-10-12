@@ -270,7 +270,7 @@ In `openquote.report/1`, a form splits what it counts by one to three `dimension
   "version": 1,
   "label": "Session list",
   "rows": "session",
-  "period": { "field": "date" },
+  "period": { "field": "date", "unit": "month" },
   "columns": [
     { "label": "Date", "field": "date" },
     { "label": "Year", "year": "date", "startMonth": 9 },
@@ -284,6 +284,7 @@ In `openquote.report/1`, a form splits what it counts by one to three `dimension
 
 - Path: `exports/<export>/v<version>.json`; `export` and `version` must match it.
 - `rows`: the entity type listed, one row per entity. `period.field`: the calendar-date field that places it in the period; a record whose dates were set without seeing each other is listed in each period one of them falls in.
+- `period.unit` (optional, in every format): the unit people ask for the form in — `day`, `month`, `year` (with `startMonth`, as in a report form) or `range` — so one form is asked for the way a report form of the same work is (`ExportDefinition.Unit`, `ExportDefinition.Containing`). Without it nothing is said and any days may be picked. It changes nothing listed: a form is still run over whatever days it is given, and an engine that predates the key ignores it and lists the same rows. A unit it cannot use, or a `startMonth` for a unit other than a year, makes the form unreadable.
 - A cell over a field holding values set without seeing each other — of the record, of an entity it refers to, or of its subjects — is left empty, and the record is listed apart (`ExportTable.Conflicted`) beside those whose classified cell waits for a person or has no code.
 - `columns`: a non-empty array. Each column has a `label` and exactly one source, recognised in this order:
 

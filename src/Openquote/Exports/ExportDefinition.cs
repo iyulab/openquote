@@ -1,3 +1,5 @@
+using Openquote.Reports;
+
 namespace Openquote.Exports;
 
 /// <summary>
@@ -24,6 +26,23 @@ public sealed record ExportDefinition(
     /// under subjects and groups only.
     /// </summary>
     public bool Activities { get; init; }
+
+    /// <summary>
+    /// The unit people ask for the form in — a day, a month, a year or a range, as a report form's period
+    /// takes them — or null when the form names none, and any days may be picked. It is how the form is
+    /// asked for; the rows listed are those of whatever days it is run over.
+    /// </summary>
+    public PeriodUnit? Unit { get; init; }
+
+    /// <summary>For a <see cref="PeriodUnit.Year"/> unit, the month (1–12) a year starts in; 1 otherwise.</summary>
+    public int StartMonth { get; init; } = 1;
+
+    /// <summary>
+    /// The first and last day of the period of the form's unit that holds <paramref name="day"/>; null when the
+    /// form names no unit or a range, whose days a person picks.
+    /// </summary>
+    public (DateOnly From, DateOnly To)? Containing(DateOnly day) =>
+        Unit is { } unit ? new ReportPeriod(PeriodField, unit, StartMonth).Containing(day) : null;
 }
 
 /// <summary>One column of an export form: its heading, and where its cells come from.</summary>

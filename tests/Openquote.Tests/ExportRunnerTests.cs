@@ -4,6 +4,7 @@ using Openquote.Classification;
 using Openquote.Exports;
 using Openquote.Fields;
 using Openquote.Records;
+using Openquote.Reports;
 using Openquote.Vault;
 
 namespace Openquote.Tests;
@@ -358,6 +359,47 @@ public class ExportRunnerTests
     public void A_column_that_does_not_say_where_its_cells_come_from_is_unreadable(string column)
     {
         var json = $$"""{"format":"openquote.export/0","export":"list","version":1,"label":"L","rows":"session","period":{"field":"date"},"columns":[{{column}}]}""";
+        var content = VaultReader.Read([new VaultFile("exports/list/v1.json", Encoding.UTF8.GetBytes(json))]);
+
+        Assert.Empty(content.Exports);
+        Assert.Equal(UnreadableReason.Invalid, Assert.Single(content.Unreadable).Reason);
+    }
+
+    [Theory]
+    [InlineData("openquote.export/0")]
+    [InlineData("openquote.export/1")]
+    [InlineData("openquote.export/2")]
+    public void An_export_form_may_say_the_unit_it_is_asked_for_in_as_a_report_form_does(string format)
+    {
+        static ExportDefinition Read(string format, string period)
+        {
+            var json = $$"""{"format":"{{format}}","export":"list","version":1,"label":"L","rows":"session","period":{{period}},"columns":[{"label":"d","field":"date"}]}""";
+            return Assert.Single(VaultReader.Read([new VaultFile("exports/list/v1.json", Encoding.UTF8.GetBytes(json))]).Exports);
+        }
+
+        var none = Read(format, """{"field":"date"}""");
+        var month = Read(format, """{"field":"date","unit":"month"}""");
+        var schoolYear = Read(format, """{"field":"date","unit":"year","startMonth":3}""");
+        var range = Read(format, """{"field":"date","unit":"range"}""");
+
+        var day = new DateOnly(2026, 2, 14);
+        Assert.Equal((null, null), (none.Unit, none.Containing(day)));
+        Assert.Equal((PeriodUnit.Month, (new DateOnly(2026, 2, 1), new DateOnly(2026, 2, 28))), (month.Unit, month.Containing(day)!.Value));
+        Assert.Equal((new DateOnly(2025, 3, 1), new DateOnly(2026, 2, 28)), schoolYear.Containing(day));
+        Assert.Equal((PeriodUnit.Range, null), (range.Unit, range.Containing(day)));
+        // The unit says how the form is asked for; the columns and the rows over given days are the same without it.
+        Assert.Equal(none.Columns, month.Columns);
+    }
+
+    [Theory]
+    [InlineData("""{"field":"date","unit":"week"}""")]
+    [InlineData("""{"field":"date","unit":3}""")]
+    [InlineData("""{"field":"date","unit":"month","startMonth":3}""")]
+    [InlineData("""{"field":"date","startMonth":3}""")]
+    [InlineData("""{"field":"date","unit":"year","startMonth":13}""")]
+    public void An_export_period_with_a_unit_it_cannot_use_is_unreadable(string period)
+    {
+        var json = $$"""{"format":"openquote.export/0","export":"list","version":1,"label":"L","rows":"session","period":{{period}},"columns":[{"label":"d","field":"date"}]}""";
         var content = VaultReader.Read([new VaultFile("exports/list/v1.json", Encoding.UTF8.GetBytes(json))]);
 
         Assert.Empty(content.Exports);
