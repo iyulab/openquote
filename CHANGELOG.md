@@ -6,6 +6,8 @@ Versions before 0.16.0 are described by their tags and the package history on nu
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-10-12
+
 ### Added
 - A field file may say which of its date fields a record sets the next meeting's day in: `"plans": "next"`. `FieldCatalog.Plans(type)` gives it, and `PlannedReader.Read(entities, fields)` gives each subject's next meeting — the day its latest such record names, by day — so a later record takes the place of what an earlier one set. A field that is not a date field of the type is named in `FieldCatalog.Issues` (`PlansNoDateField`) and not applied. Engines that predate it ignore the key.
 
@@ -61,7 +63,8 @@ Versions before 0.16.0 are described by their tags and the package history on nu
 ### Added
 - `DefinitionWriter` writes report forms in the order a reader reads them.
 
-[Unreleased]: https://github.com/iyulab/openquote/compare/v0.20.0...HEAD
+[Unreleased]: https://github.com/iyulab/openquote/compare/v0.21.0...HEAD
+[0.21.0]: https://github.com/iyulab/openquote/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/iyulab/openquote/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/iyulab/openquote/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/iyulab/openquote/compare/v0.17.1...v0.18.0
