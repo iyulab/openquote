@@ -525,6 +525,8 @@ A file may also name its entity type, say where entities of it are kept — a re
 | `DatedNotADate` | The field a pack names in `dated` is not a `date` field of the type; the field called `date` dates its records instead. |
 | `RoleOnItsOwn` | A pack gives a role in a case to a type kept on its own (a subject, a group, a practitioner or a device); it is not applied. |
 | `FollowUpWithoutClosing` | A pack gives `followUpDays` to a type that closes no case; it is not applied. |
+| `AwaitsUnknownField` | A pack says a type waits for a field no pack declares for it; it is not applied. |
+| `AwaitsCodesOfUncodedField` | A pack lists codes that say a type's answer has not come for a field that holds no codes; it is not applied. |
 
 ## Cases
 
