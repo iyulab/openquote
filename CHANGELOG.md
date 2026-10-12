@@ -6,6 +6,8 @@ Versions before 0.16.0 are described by their tags and the package history on nu
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-10-12
+
 ### Added
 - An export form's period may name the unit it is asked for in, as a report form's does: `"period": { "field": "date", "unit": "year", "startMonth": 3 }` (`day`, `month`, `year` or `range`). `ExportDefinition.Unit` and `StartMonth` give it, and `ExportDefinition.Containing(day)` the first and last day of the period holding a day. It changes nothing listed: a form still lists the rows of whatever days it is run over, and engines that predate the key ignore it. A unit it cannot use, or a `startMonth` for a unit other than a year, makes the form unreadable.
 
@@ -66,7 +68,8 @@ Versions before 0.16.0 are described by their tags and the package history on nu
 ### Added
 - `DefinitionWriter` writes report forms in the order a reader reads them.
 
-[Unreleased]: https://github.com/iyulab/openquote/compare/v0.21.0...HEAD
+[Unreleased]: https://github.com/iyulab/openquote/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/iyulab/openquote/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/iyulab/openquote/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/iyulab/openquote/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/iyulab/openquote/compare/v0.18.0...v0.19.0
