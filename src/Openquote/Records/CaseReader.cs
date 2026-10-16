@@ -65,6 +65,14 @@ public sealed class SubjectCase
     public DateOnly? FirstAfterClosingDay { get; private set; }
 
     /// <summary>
+    /// Whether the closing ended the work as planned, as the packs say of its type (<see cref="FieldCatalog.Completes"/>):
+    /// true when its field holds one of the codes that say so — the code a value of several marks first, or the only
+    /// one — false when it holds another or none. Null when the case has not closed, or the packs say nothing of the
+    /// closing's type. Nothing is judged: the pack's codes are read, as they were entered.
+    /// </summary>
+    public bool? Completed { get; private set; }
+
+    /// <summary>
     /// The last day a follow-up is expected by: the closing's day and the days its type gives
     /// (<see cref="FieldCatalog.FollowUpDays"/>). Null when the case has not closed or its closing expects none.
     /// </summary>
@@ -84,12 +92,25 @@ public sealed class SubjectCase
 
     internal void Add(Entity record) => _records.Add(record);
 
-    internal void Close(Entity record, DateOnly day, int? followUpDays)
+    internal void Close(Entity record, DateOnly day, int? followUpDays, Completion? completes)
     {
         if (!ReferenceEquals(_records[^1], record)) _records.Add(record);
         Closing = record;
         End = day;
         FollowUpDue = followUpDays is { } days ? day.AddDays(days) : null;
+        Completed = completes is null ? null : CompletedBy(record, completes);
+    }
+
+    // The code the closing's field holds — of several, the one marked first, else the only one — is one of the codes.
+    private static bool CompletedBy(Entity record, Completion completes)
+    {
+        if (!record.HasValue(completes.Field)) return false;
+        var value = record.Fields[completes.Field];
+        var values = value.ValueKind == JsonValueKind.Array ? [.. value.EnumerateArray()] : new List<JsonElement> { value };
+        var leading = values.Count == 1 ? values[0] : values.FirstOrDefault(v => v.ValueKind == JsonValueKind.Object
+            && v.TryGetProperty("primary", out var primary) && primary.ValueKind == JsonValueKind.True);
+        return leading.ValueKind == JsonValueKind.Object && leading.TryGetProperty("code", out var code)
+            && code.ValueKind == JsonValueKind.String && completes.Codes.Contains(code.GetString()!);
     }
 
     internal void Follow(Entity record, DateOnly day) => (FirstAfterClosing, FirstAfterClosingDay) = (record, day);
@@ -178,6 +199,7 @@ public static class CaseReader
                 following = null;
             }
             var followUpDays = fields.FollowUpDays(record.Reference.Type);
+            var completes = fields.Completes(record.Reference.Type);
             switch (fields.TypeRole(record.Reference.Type))
             {
                 case CaseRole.Opens:
@@ -187,7 +209,7 @@ public static class CaseReader
                     closed = null;
                     break;
                 case CaseRole.Closes when open is not null:
-                    open.Close(record, day, followUpDays);
+                    open.Close(record, day, followUpDays, completes);
                     (closed, open, following) = (open, null, open);
                     break;
                 case CaseRole.Closes when closed is not null:
@@ -195,7 +217,7 @@ public static class CaseReader
                     break;
                 case CaseRole.Closes:
                     var unopened = new SubjectCase(record, day, opened: false);
-                    unopened.Close(record, day, followUpDays);
+                    unopened.Close(record, day, followUpDays, completes);
                     cases.Add(unopened);
                     closed = following = unopened;
                     break;

@@ -149,6 +149,13 @@ public sealed record FieldSet(
     public Awaiting? Awaits { get; init; }
 
     /// <summary>
+    /// For a type that closes a case: the coded field and the codes of it that say the work ended as planned — a
+    /// closing's reason, say. Null when the file does not say. See <see cref="FieldCatalog.Completes"/> and
+    /// <see cref="Records.SubjectCase.Completed"/>.
+    /// </summary>
+    public Completion? Completes { get; init; }
+
+    /// <summary>
     /// For a type whose records set the day of the next meeting — a session, say: the date field that day is entered
     /// in. Null when the file does not say. See <see cref="FieldCatalog.Plans"/> and <see cref="Records.PlannedReader"/>.
     /// </summary>
@@ -160,6 +167,11 @@ public sealed record FieldSet(
 /// A record waits while the field is blank or holds one of <see cref="Pending"/>.
 /// </summary>
 public sealed record Awaiting(string Field, IReadOnlyList<string> Pending);
+
+/// <summary>Which values of a closing say the work ended as planned (<see cref="FieldSet.Completes"/>).</summary>
+/// <param name="Field">The type's coded field.</param>
+/// <param name="Codes">The codes of it that say so, at least one.</param>
+public sealed record Completion(string Field, IReadOnlyList<string> Codes);
 
 /// <summary>What a record of an entity type does to a subject's case (<see cref="Records.CaseReader"/>).</summary>
 public enum CaseRole

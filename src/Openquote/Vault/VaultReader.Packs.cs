@@ -456,6 +456,24 @@ public static partial class VaultReader
             awaits = new Awaiting(awaitedField, pending);
         }
 
+        Completion? completes = null;
+        if (root.TryGetProperty("completes", out var completesValue))
+        {
+            const string CompletesShape = "completes names a coded field and lists the codes of it that say the work ended as planned";
+            if (completesValue.ValueKind != JsonValueKind.Object || !TryString(completesValue, "field", out var completedField) || completedField.Length == 0
+                || !completesValue.TryGetProperty("codes", out var codesValue) || codesValue.ValueKind != JsonValueKind.Array)
+                return Bad<FieldSet>(file, UnreadableReason.Invalid, CompletesShape);
+            var codes = new List<string>();
+            foreach (var code in codesValue.EnumerateArray())
+            {
+                if (code.ValueKind != JsonValueKind.String || code.GetString() is not { Length: > 0 } text || codes.Contains(text))
+                    return Bad<FieldSet>(file, UnreadableReason.Invalid, CompletesShape);
+                codes.Add(text);
+            }
+            if (codes.Count == 0) return Bad<FieldSet>(file, UnreadableReason.Invalid, CompletesShape);
+            completes = new Completion(completedField, codes);
+        }
+
         string? plans = null;
         if (root.TryGetProperty("plans", out var plansValue))
         {
@@ -497,7 +515,7 @@ public static partial class VaultReader
             }
         }
 
-        return new(new FieldSet(pack, type, version, fields, constraints) { Label = typeLabel, Under = under, Order = order, Dated = dated, Role = role, FollowUpDays = followUpDays, Awaits = awaits, Plans = plans }, null);
+        return new(new FieldSet(pack, type, version, fields, constraints) { Label = typeLabel, Under = under, Order = order, Dated = dated, Role = role, FollowUpDays = followUpDays, Awaits = awaits, Completes = completes, Plans = plans }, null);
     }
 
     private static readonly string[] FieldsFormats = ["openquote.fields/0", "openquote.fields/1"];

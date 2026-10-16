@@ -50,6 +50,17 @@ public enum FieldIssueKind
 
     /// <summary>A pack says a type sets the next meeting's day in a field no pack declares for it, or one that holds no date; it is not applied.</summary>
     PlansNoDateField,
+
+    /// <summary>
+    /// A pack says which values of a type end the work as planned, for a type that closes no case; it is not applied.
+    /// </summary>
+    CompletesWithoutClosing,
+
+    /// <summary>
+    /// A pack says which values of a type end the work as planned in a field no pack declares for it, or one that holds
+    /// no codes; it is not applied.
+    /// </summary>
+    CompletesNoCodedField,
 }
 
 /// <summary>One problem with a vault's field definitions.</summary>
@@ -71,6 +82,7 @@ public sealed class FieldCatalog
     private readonly Dictionary<string, CaseRole> _role = new(StringComparer.Ordinal);
     private readonly Dictionary<string, int> _followUp = new(StringComparer.Ordinal);
     private readonly Dictionary<string, Awaiting> _awaits = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Completion> _completes = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _plans = new(StringComparer.Ordinal);
 
     /// <summary>
@@ -190,6 +202,17 @@ public sealed class FieldCatalog
 
         foreach (var set in latest)
         {
+            if (set.Completes is not { } completes || _completes.ContainsKey(set.Type)) continue;
+            if (TypeRole(set.Type) != CaseRole.Closes)
+                issues.Add(new(FieldIssueKind.CompletesWithoutClosing, set.Type, completes.Field, $"{set.Pack} says which {set.Type} ends the work as planned, though a {set.Type} closes no case"));
+            else if (Find(set.Type, completes.Field)?.Kind != FieldKind.Coded)
+                issues.Add(new(FieldIssueKind.CompletesNoCodedField, set.Type, completes.Field, $"{set.Pack} says which {set.Type} ends the work as planned by {completes.Field}, which no pack declares for it as a coded field"));
+            else
+                _completes[set.Type] = completes;
+        }
+
+        foreach (var set in latest)
+        {
             if (set.Plans is not { } planned || _plans.ContainsKey(set.Type)) continue;
             if (Find(set.Type, planned)?.Kind == FieldKind.Date)
                 _plans[set.Type] = planned;
@@ -252,6 +275,13 @@ public sealed class FieldCatalog
     /// from the first pack that says; null when none does, or when what it says does not fit the type's fields.
     /// </summary>
     public Awaiting? Awaits(string type) => _awaits.GetValueOrDefault(type);
+
+    /// <summary>
+    /// The coded field of <paramref name="type"/> and the codes of it that say a closing of the type ended the work as
+    /// planned, from the first pack that says; null when none does, when the type closes no case, or when the field is
+    /// not a coded field of the type.
+    /// </summary>
+    public Completion? Completes(string type) => _completes.GetValueOrDefault(type);
 
     /// <summary>
     /// The date field a record of <paramref name="type"/> sets the next meeting's day in, from the first pack that says;

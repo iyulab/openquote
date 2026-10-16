@@ -6,6 +6,9 @@ Versions before 0.16.0 are described by their tags and the package history on nu
 
 ## [Unreleased]
 
+### Added
+- A field file of a type that closes a case may say which closings ended the work as planned — `completes`, a coded field and the codes of it that say so — and `SubjectCase.Completed` reads it: true or false for a closed case whose closing's type says, null otherwise (`FieldCatalog.Completes`; new catalog issues `CompletesWithoutClosing` and `CompletesNoCodedField`). An engine that predates it ignores it, and every count stays the same.
+
 ### Changed
 - `Openquote.Gil` depends on Gil 0.19.0. Its suggestions are unchanged: every value it learns from is one a person settled, so the settlement kinds Gil 0.18.0 added for values a program fills do not apply.
 

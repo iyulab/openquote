@@ -25,6 +25,15 @@
       },
       "additionalProperties": false
     },
+    "completes": {
+      "type": "object",
+      "required": ["field", "codes"],
+      "properties": {
+        "field": { "type": "string", "minLength": 1 },
+        "codes": { "type": "array", "items": { "type": "string", "minLength": 1 }, "minItems": 1, "uniqueItems": true }
+      },
+      "additionalProperties": false
+    },
     "plans": { "type": "string", "minLength": 1 },
     "fields": { "type": "array", "items": { "$ref": "#/$defs/field" } },
     "constrain": { "type": "array", "items": { "$ref": "#/$defs/constraint" } }
