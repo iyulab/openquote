@@ -8,7 +8,7 @@ namespace Openquote.Gil;
 /// How a suggester chooses each judged field's thresholds — the similarity at which a similar settled record
 /// answers, and the score at which a value settled alongside the draft's values does. Once a field has
 /// <see cref="MinimumAnswered"/> settled values both are chosen by replaying the settled records in the order
-/// they were settled (<see cref="ThresholdSelection.SelectLayersAsync"/>), down to where the answers still
+/// they were settled (<see cref="ThresholdSelection.SelectLayersAsync(FieldMemory, IMemory, FormDefinition, string, IEnumerable{SettledDocument}, double, int, CancellationToken)"/>), down to where the answers still
 /// reach <see cref="TargetPrecision"/>. Where no similarity threshold is chosen — too few settled values to
 /// replay, or no band of answers reaching the target — a record nearly the same as the draft still answers
 /// (<see cref="NearlySameMemoryThreshold"/>): such a record is evidence however the rest of the memory does,

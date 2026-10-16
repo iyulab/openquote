@@ -6,6 +6,9 @@ Versions before 0.16.0 are described by their tags and the package history on nu
 
 ## [Unreleased]
 
+### Changed
+- `Openquote.Gil` depends on Gil 0.19.0. Its suggestions are unchanged: every value it learns from is one a person settled, so the settlement kinds Gil 0.18.0 added for values a program fills do not apply.
+
 ## [0.22.0] - 2026-10-12
 
 ### Added
