@@ -6,6 +6,9 @@ Versions before 0.16.0 are described by their tags and the package history on nu
 
 ## [Unreleased]
 
+### Added
+- `FieldSuggestions.Coarse`: where a coded field's scheme is a tree and no code is answered, the class of codes (the top item of the tree) the draft's records back, trusted at thresholds chosen like the codes' own, else a guess. `SuggestedClass` names the class, its score and whether it is trusted. A flat scheme, or one whose codes fall in one class, offers none.
+
 ## [0.23.0] - 2026-10-18
 
 ### Added

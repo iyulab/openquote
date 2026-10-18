@@ -17,7 +17,17 @@ namespace Openquote.Gil;
 /// The codes suggested for one coded field of a record being entered: the field, the scheme version
 /// they belong to, and the codes in the order they are suggested.
 /// </summary>
-public sealed record FieldSuggestions(string Field, string Scheme, int Version, IReadOnlyList<SuggestedCode> Codes);
+public sealed record FieldSuggestions(string Field, string Scheme, int Version, IReadOnlyList<SuggestedCode> Codes)
+{
+    /// <summary>
+    /// The class of codes the field's records back where no code is answered — the top item of the scheme's tree the
+    /// codes under the draft's records belong to — or none when the scheme has no tree. A guess unless <see cref="SuggestedClass.Trusted"/>.
+    /// </summary>
+    public SuggestedClass? Coarse { get; init; }
+}
+
+/// <summary>A class of codes — a top item of the scheme's tree — offered where no single code is answered.</summary>
+public sealed record SuggestedClass(string Code, double Score, bool Trusted);
 
 /// <summary>
 /// One suggested code, with its score, why it is suggested (<paramref name="Basis"/>) and the settled
@@ -143,7 +153,7 @@ public sealed class CodeSuggester
                     .ToDictionary(i => i.Code, i => i.Suggestion, StringComparer.Ordinal) is { Count: > 0 } codes)
             {
                 targets[field.Name] = new Target(scheme, codes, field.Many);
-                formFields.Add(new GilField(field.Name, FieldRole.Judged) { Candidates = [.. codes.Keys], Multiple = field.Many });
+                formFields.Add(new GilField(field.Name, FieldRole.Judged) { Candidates = [.. codes.Keys], Multiple = field.Many, Coarse = ClassesOf(scheme, codes.Keys) });
             }
             else
             {
@@ -193,7 +203,7 @@ public sealed class CodeSuggester
             fields.Add(new GilField(field.Name, field.Role)
             {
                 Candidates = field.Candidates, Multiple = field.Multiple, KeyThreshold = chosen.Key, MemoryThreshold = chosen.Memory,
-                MemorySimilarityFloor = chosen.MemorySimilarityFloor, SimilarDocumentVotes = chosen.SimilarDocumentVotes,
+                MemorySimilarityFloor = chosen.MemorySimilarityFloor, SimilarDocumentVotes = chosen.SimilarDocumentVotes, Coarse = chosen.Coarse ?? field.Coarse,
             });
         }
         return new FormDefinition(type, fields, PromptLanguage.English);
@@ -244,7 +254,10 @@ public sealed class CodeSuggester
             codes = [.. codes.Where(c => c.Trusted), .. codes.Where(c => !c.Trusted && c.Nearest), .. codes.Where(c => !c.Trusted && !c.Nearest)];
             if (codes.Count > 0)
             {
-                result.Add(new FieldSuggestions(suggestion.Field, target.Scheme.Name, target.Scheme.Version, codes));
+                result.Add(new FieldSuggestions(suggestion.Field, target.Scheme.Name, target.Scheme.Version, codes)
+                {
+                    Coarse = suggestion.Coarse is { } coarse ? new SuggestedClass(coarse.Value, coarse.Score, coarse.Trusted) : null,
+                });
             }
         }
         return result;
@@ -389,4 +402,23 @@ public sealed class CodeSuggester
     };
 
     private sealed record Target(Scheme Scheme, Dictionary<string, Suggestion> Codes, bool Many);
+
+    /// <summary>
+    /// Each suggestible code's class: the top item of the scheme's tree it sits under (itself when it has no parent). None
+    /// when the scheme is flat — or every code falls in one class — so a level of one class is never offered.
+    /// </summary>
+    private static CoarseLevel? ClassesOf(Scheme scheme, IEnumerable<string> codes)
+    {
+        var parents = scheme.Items.ToDictionary(i => i.Code, i => i.Parent, StringComparer.Ordinal);
+        string Top(string code)
+        {
+            for (var guard = 0; guard < parents.Count && parents.TryGetValue(code, out var parent) && parent is not null; guard++)
+            {
+                code = parent;
+            }
+            return code;
+        }
+        var classes = codes.ToDictionary(c => c, Top, StringComparer.Ordinal);
+        return classes.Values.Distinct(StringComparer.Ordinal).Count() > 1 && classes.Any(c => c.Key != c.Value) ? new CoarseLevel(classes) : null;
+    }
 }

@@ -54,6 +54,23 @@ public class SuggestionQualityMeasurement
           { "code": "crisis", "label": "Crisis" } ] }
         """;
 
+    // The same topics under three classes, as a tree a scheme can say: the class items are not suggested themselves.
+    private const string TreeScheme = """
+        { "format": "openquote.scheme/0", "scheme": "topic", "version": 1, "items": [
+          { "code": "feelings", "label": "Feelings" }, { "code": "relations", "label": "Relations" }, { "code": "daily", "label": "Daily life" },
+          { "code": "study", "label": "Study", "parent": "daily", "suggest": true }, { "code": "friends", "label": "Friends", "parent": "relations", "suggest": true },
+          { "code": "family", "label": "Family", "parent": "relations", "suggest": true }, { "code": "anxiety", "label": "Anxiety", "parent": "feelings", "suggest": true },
+          { "code": "mood", "label": "Mood", "parent": "feelings", "suggest": true }, { "code": "anger", "label": "Anger", "parent": "feelings", "suggest": true },
+          { "code": "sleep", "label": "Sleep", "parent": "daily", "suggest": true }, { "code": "gaming", "label": "Gaming", "parent": "daily", "suggest": true },
+          { "code": "crisis", "label": "Crisis", "parent": "feelings" } ] }
+        """;
+
+    private static readonly Dictionary<string, string> ClassOf = new()
+    {
+        ["study"] = "daily", ["sleep"] = "daily", ["gaming"] = "daily", ["friends"] = "relations", ["family"] = "relations",
+        ["anxiety"] = "feelings", ["mood"] = "feelings", ["anger"] = "feelings",
+    };
+
     private const string MethodScheme = """
         { "format": "openquote.scheme/0", "scheme": "method", "version": 1, "items": [
           { "code": "in-person", "label": "In person" }, { "code": "phone", "label": "Phone" }, { "code": "group", "label": "Group" } ] }
@@ -93,11 +110,11 @@ public class SuggestionQualityMeasurement
     /// <paramref name="fields"/>, each also has the fields a school form records that say nothing about the topic —
     /// class, length, date, who it was with — which make two sessions about the same thing read less alike.
     /// </summary>
-    private static List<VaultFile> Vault(int settledCount, Random random, bool fields)
+    private static List<VaultFile> Vault(int settledCount, Random random, bool fields, bool tree = false)
     {
         List<VaultFile> files =
         [
-            File("schemes/topic/v1.json", Scheme),
+            File("schemes/topic/v1.json", tree ? TreeScheme : Scheme),
             File("schemes/method/v1.json", MethodScheme),
             File("fields/care/session/v1.json", Fields),
             File("suggestions/care/v1.json", Says),
@@ -231,6 +248,60 @@ public class SuggestionQualityMeasurement
             }
             line += $" · rare shown {aboutShown}/{about} vs {notShown}/{notAbout}, with records {aboutEvidence}/{about} vs {notEvidence}/{notAbout}, answered {aboutTrusted}/{about} vs {notTrusted}/{notAbout}, nearest {aboutNearest}/{about} vs {notNearest}/{notAbout}";
             output.WriteLine(line);
+        }
+    }
+
+    /// <summary>
+    /// Where no code is answered: how often a class of codes is offered and trusted, and how often it is the class of the topic
+    /// the notes are about — against the first code, which is a guess then. Run with the same switches as the measurement above.
+    /// </summary>
+    [Theory(Explicit = true)]
+    [InlineData(60, false)]
+    [InlineData(240, false)]
+    [InlineData(1000, false)]
+    [InlineData(240, true)]
+    [InlineData(1000, true)]
+    public async Task Measure_the_class_offered_where_no_code_is_answered(int settledCount, bool fields)
+    {
+        var cancel = TestContext.Current.CancellationToken;
+        var content = VaultReader.Read(Vault(settledCount, new Random(1), fields, tree: true));
+        var suggester = await CodeSuggester.BuildAsync(content, "session", On, cancel);
+        var output = TestContext.Current.TestOutputHelper!;
+        output.WriteLine($"measure: {settledCount} settled{(fields ? " with unrelated fields" : "")} · 8 topics in 3 classes (chance for a class: 3 in 8 topics → 37.5% / 25% / 37.5%)");
+        foreach (var voice in new[] { "same", "other" })
+        {
+            var random = new Random(2);
+            int asked = 0, answered = 0, answeredRight = 0, unanswered = 0, classOffered = 0, classTrusted = 0, classTrustedRight = 0, classGuessRight = 0, firstRightUnanswered = 0;
+            foreach (var (code, same, other) in Topics)
+            {
+                for (var i = 0; i < 15; i++)
+                {
+                    var suggestion = (await suggester.SuggestAsync(Draft(random, voice == "same" ? same : other, fields), cancel)).FirstOrDefault(s => s.Field == "topic");
+                    var first = suggestion is { Codes.Count: > 0 } ? suggestion.Codes[0] : null;
+                    asked++;
+                    if (first is { Trusted: true })
+                    {
+                        answered++;
+                        answeredRight += first.Code == code ? 1 : 0;
+                        continue;
+                    }
+                    unanswered++;
+                    firstRightUnanswered += first?.Code == code ? 1 : 0;
+                    if (suggestion?.Coarse is { } coarse)
+                    {
+                        classOffered++;
+                        classGuessRight += coarse.Code == ClassOf[code] ? 1 : 0;
+                        if (coarse.Trusted)
+                        {
+                            classTrusted++;
+                            classTrustedRight += coarse.Code == ClassOf[code] ? 1 : 0;
+                        }
+                    }
+                }
+            }
+            output.WriteLine(
+                $"  {voice,-5}: code answered {answered}/{asked} (right {answeredRight}) · unanswered {unanswered} — first code right {firstRightUnanswered} ({100.0 * firstRightUnanswered / Math.Max(1, unanswered):F0}%), "
+                + $"class offered {classOffered} (right {classGuessRight}), class trusted {classTrusted} = {100.0 * classTrusted / Math.Max(1, unanswered):F0}% of unanswered, right {classTrustedRight} ({100.0 * classTrustedRight / Math.Max(1, classTrusted):F0}%)");
         }
     }
 

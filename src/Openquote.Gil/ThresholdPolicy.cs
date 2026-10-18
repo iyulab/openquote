@@ -68,7 +68,28 @@ internal sealed record ThresholdPolicy(double TargetPrecision, int MinimumAnswer
         var key = replay.Key.Chosen?.Threshold;
         // The floor goes with the threshold: a draft less like its voters than the replayed answers were only
         // guesses, though the voters agree (a single voter has none — its score is already the likeness).
-        return replay.Memory.Chosen is { } memory ? new(key, memory.Threshold, field.SimilarDocumentVotes, memory.SimilarityFloor) : NearlySame(key);
+        var thresholds = replay.Memory.Chosen is { } memory ? new FieldThresholds(key, memory.Threshold, field.SimilarDocumentVotes, memory.SimilarityFloor) : NearlySame(key);
+        return field.Coarse is null ? thresholds : thresholds with { Coarse = await ChooseCoarseAsync(form, field, thresholds, settled, cancellationToken).ConfigureAwait(false) };
+    }
+
+    /// <summary>
+    /// The thresholds of the field's class level, chosen on the lookups its code layers leave unanswered at the thresholds
+    /// they were just given: the class the keys back, then the class the similar records vote for.
+    /// </summary>
+    private async Task<CoarseLevel> ChooseCoarseAsync(FormDefinition form, FieldDefinition field, FieldThresholds codes, IReadOnlyList<SettledDocument> settled,
+        CancellationToken cancellationToken)
+    {
+        var judged = field with
+        {
+            KeyThreshold = codes.Key, MemoryThreshold = codes.Memory, MemorySimilarityFloor = codes.MemorySimilarityFloor, SimilarDocumentVotes = codes.SimilarDocumentVotes,
+        };
+        var with = new FormDefinition(form.Name, [.. form.Fields.Select(f => f.Name == judged.Name ? judged : f)], form.Language);
+        var chosen = await ThresholdSelection.SelectCoarseAsync(new FieldMemory(), new LexicalMemory(), with, field.Name, settled, TargetPrecision, MinimumAnswered,
+            cancellationToken).ConfigureAwait(false);
+        return field.Coarse! with
+        {
+            KeyThreshold = chosen.Key.Chosen?.Threshold, MemoryThreshold = chosen.Memory.Chosen?.Threshold, MemorySimilarityFloor = chosen.Memory.Chosen?.SimilarityFloor,
+        };
     }
 
     /// <summary>The nearest record answering alone, nearly the same as the draft — or never, with no such threshold.</summary>
@@ -82,4 +103,8 @@ internal sealed record ThresholdPolicy(double TargetPrecision, int MinimumAnswer
 /// A judged field's thresholds, how many similar records vote — the scale its memory threshold is on — and the
 /// likeness a draft needs to its voters for their vote to answer (none for a single voter).
 /// </summary>
-internal sealed record FieldThresholds(double? Key, double? Memory, int SimilarDocumentVotes, double? MemorySimilarityFloor);
+internal sealed record FieldThresholds(double? Key, double? Memory, int SimilarDocumentVotes, double? MemorySimilarityFloor)
+{
+    /// <summary>The field's class level with its thresholds, when it has one.</summary>
+    public CoarseLevel? Coarse { get; init; }
+}
