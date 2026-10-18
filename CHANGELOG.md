@@ -6,6 +6,8 @@ Versions before 0.16.0 are described by their tags and the package history on nu
 
 ## [Unreleased]
 
+## [0.23.0] - 2026-10-18
+
 ### Added
 - A field file of a type that closes a case may say which closings ended the work as planned — `completes`, a coded field and the codes of it that say so — and `SubjectCase.Completed` reads it: true or false for a closed case whose closing's type says, null otherwise (`FieldCatalog.Completes`; new catalog issues `CompletesWithoutClosing` and `CompletesNoCodedField`). An engine that predates it ignores it, and every count stays the same.
 
@@ -74,7 +76,8 @@ Versions before 0.16.0 are described by their tags and the package history on nu
 ### Added
 - `DefinitionWriter` writes report forms in the order a reader reads them.
 
-[Unreleased]: https://github.com/iyulab/openquote/compare/v0.22.0...HEAD
+[Unreleased]: https://github.com/iyulab/openquote/compare/v0.23.0...HEAD
+[0.23.0]: https://github.com/iyulab/openquote/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/iyulab/openquote/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/iyulab/openquote/compare/v0.20.0...v0.21.0
 [0.20.0]: https://github.com/iyulab/openquote/compare/v0.19.0...v0.20.0
