@@ -28,8 +28,11 @@ public sealed record FieldSuggestions(string Field, string Scheme, int Version, 
 /// </summary>
 public sealed record SuggestedCode(string Code, double Score, IReadOnlyList<string> Similar, bool Confirm, SuggestionBasis Basis, string? Field)
 {
-    /// <summary>Whether the layer that ranked it answered — its threshold was met — rather than guessed.</summary>
-    internal bool Trusted { get; init; }
+    /// <summary>
+    /// Whether the layer that ranked it answered — its threshold was met — rather than guessed. A code a person is
+    /// shown as an answer is the one a count of how often such answers are kept is about.
+    /// </summary>
+    public bool Trusted { get; init; }
 
     /// <summary>Whether the settled record nearest to the one being entered holds it.</summary>
     internal bool Nearest { get; init; }

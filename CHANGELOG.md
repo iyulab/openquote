@@ -6,6 +6,9 @@ Versions before 0.16.0 are described by their tags and the package history on nu
 
 ## [Unreleased]
 
+### Added
+- `SuggestedCode.Trusted` is public: whether the layer that ranked a suggested code answered — met its threshold — rather than guessed.
+
 ## [0.23.0] - 2026-10-18
 
 ### Added

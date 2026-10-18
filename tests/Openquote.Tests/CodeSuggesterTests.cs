@@ -117,6 +117,7 @@ public class CodeSuggesterTests
         var housing = Assert.Single(topic.Codes, c => c.Code == "housing");
         Assert.Equal((SuggestionBasis.Frequent, null), (housing.Basis, housing.Field));
         Assert.Empty(housing.Similar);
+        Assert.False(housing.Trusted, "a code chosen often is a guess, never an answer");
         var stress = Assert.Single(topic.Codes, c => c.Code == "stress");
         Assert.Equal(SuggestionBasis.SimilarRecords, stress.Basis);
         Assert.Equal(["s1"], stress.Similar);
