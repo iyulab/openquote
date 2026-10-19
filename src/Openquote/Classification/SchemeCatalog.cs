@@ -9,6 +9,10 @@ public sealed class SchemeCatalog
 {
     private readonly Dictionary<(string Name, int Version), Scheme> _schemes;
     private readonly Dictionary<(string Name, int From), List<Crosswalk>> _crosswalks;
+    // Looked up once per value: a large scheme (thousands of items, tens of thousands of links) would
+    // otherwise cost a walk over all of them for every value carried.
+    private readonly Dictionary<(string Name, int Version), Dictionary<string, SchemeItem>> _items;
+    private readonly Dictionary<Crosswalk, Dictionary<string, (IReadOnlyList<string> Codes, bool Review)>> _carried;
 
     /// <summary>Builds a catalog from the schemes and crosswalks a vault holds.</summary>
     public SchemeCatalog(IEnumerable<Scheme> schemes, IEnumerable<Crosswalk> crosswalks)
@@ -20,7 +24,18 @@ public sealed class SchemeCatalog
             .GroupBy(c => (c.Scheme, c.From))
             .ToDictionary(g => g.Key, g => g.OrderBy(c => c.TargetScheme == c.Scheme ? 0 : 1)
                 .ThenBy(c => c.TargetScheme, StringComparer.Ordinal).ThenBy(c => c.To).ToList());
+        _items = _schemes.ToDictionary(e => e.Key, e =>
+        {
+            var items = new Dictionary<string, SchemeItem>(StringComparer.Ordinal);
+            foreach (var item in e.Value.Items) items.TryAdd(item.Code, item);
+            return items;
+        });
+        _carried = _crosswalks.Values.SelectMany(c => c)
+            .ToDictionary(c => c, c => c.CarryAll(), ReferenceEqualityComparer.Instance as IEqualityComparer<Crosswalk>);
     }
+
+    private bool Holds(Scheme scheme, string code) =>
+        _items.TryGetValue((scheme.Name, scheme.Version), out var items) && items.ContainsKey(code);
 
     /// <summary>The scheme version, or null if the vault does not hold it.</summary>
     public Scheme? Find(string name, int version) => _schemes.GetValueOrDefault((name, version));
@@ -140,9 +155,9 @@ public sealed class SchemeCatalog
                     : null;
             if (Path((current.Scheme, current.Version), (targetScheme, targetVersion), sameScheme: false) is { } across)
                 return new Routed(current, across);
-            if (Find(current.Scheme, current.Version) is not { Extends: { } extended } scheme
-                || scheme.Items.FirstOrDefault(i => i.Code == current.Code)?.Anchor is not { } anchor
-                || Find(extended.Scheme, extended.Version) is not { } next || !next.Contains(anchor))
+            if (Find(current.Scheme, current.Version) is not { Extends: { } extended }
+                || _items[(current.Scheme, current.Version)].GetValueOrDefault(current.Code)?.Anchor is not { } anchor
+                || Find(extended.Scheme, extended.Version) is not { } next || !Holds(next, anchor))
                 return null;
             current = new CodedValue(extended.Scheme, extended.Version, anchor);
         }
@@ -151,7 +166,7 @@ public sealed class SchemeCatalog
 
     private Resolution Carry(CodedValue value, List<Crosswalk>? path)
     {
-        if (path is null || Find(value.Scheme, value.Version) is not { } own || !own.Contains(value.Code))
+        if (path is null || Find(value.Scheme, value.Version) is not { } own || !Holds(own, value.Code))
             return Unmapped([]);
 
         string[] codes = [value.Code];
@@ -159,12 +174,13 @@ public sealed class SchemeCatalog
         var applied = new List<string>();
         foreach (var crosswalk in path)
         {
-            var carried = codes.Select(crosswalk.Carry).ToList();
+            var lookup = _carried[crosswalk];
+            var carried = codes.Select(c => lookup.TryGetValue(c, out var to) ? to : ([], false)).ToList();
             review |= carried.Any(c => c.Review);
             codes = carried.SelectMany(c => c.Codes).Distinct(StringComparer.Ordinal).ToArray();
             // A link to a code the next version does not have is a defect in the crosswalk, not a
             // place to put a record.
-            if (Find(crosswalk.TargetScheme, crosswalk.To) is { } next) codes = codes.Where(next.Contains).ToArray();
+            if (Find(crosswalk.TargetScheme, crosswalk.To) is { } next) codes = codes.Where(c => Holds(next, c)).ToArray();
             applied.Add(crosswalk.Name);
             if (codes.Length == 0) return Unmapped(applied);
         }

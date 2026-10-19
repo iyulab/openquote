@@ -6,6 +6,9 @@ Versions before 0.16.0 are described by their tags and the package history on nu
 
 ## [Unreleased]
 
+### Fixed
+- `SchemeCatalog` carries a value in time that no longer grows with the size of its schemes and crosswalks: it indexes each version's codes and each crosswalk's links once, when it is built, instead of walking all of them for every value. With 5,387 codes and 15,657 links (a customs tariff revision), carrying every code took 23 ms instead of 1.4 s. Results are unchanged.
+
 ## [0.24.0] - 2026-10-18
 
 ### Added

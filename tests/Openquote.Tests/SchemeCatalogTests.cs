@@ -245,4 +245,50 @@ public class SchemeCatalogTests
         Assert.Equal("""{"scheme":"k","version":1,"code":"a"}""", one.ToJson().ToJsonString());
         Assert.Equal(marked.Values, CodedValues.From(System.Text.Json.JsonDocument.Parse(marked.ToJson().ToJsonString()).RootElement)!.Values);
     }
+
+    [Fact]
+    public void A_large_scheme_carries_each_value_as_its_crosswalk_says()
+    {
+        // 3,000 old codes: a third kept, a third merged in pairs, a third split in three — some splits
+        // broader, one link in fifty retired, and links listed out of order with repeats.
+        var random = new Random(7);
+        var old = Enumerable.Range(0, 3000).Select(i => $"o{i}").ToArray();
+        var links = new List<(string, string)>();
+        var relations = new Dictionary<(string From, string To), LinkRelation>();
+        foreach (var (code, i) in old.Select((c, i) => (c, i)))
+        {
+            var targets = (i % 3) switch { 0 => [$"n{i}"], 1 => [$"m{i / 2}"], _ => new[] { $"s{i}a", $"s{i}b", $"s{i}c" } };
+            foreach (var t in targets)
+            {
+                links.Add((code, t));
+                if (i % 50 == 0) relations[(code, t)] = LinkRelation.Retired;
+                else if (i % 3 == 2 && i % 7 == 0) relations[(code, t)] = LinkRelation.Broader;
+            }
+        }
+        links.AddRange(links.Take(500).ToList());
+        links = links.OrderBy(_ => random.Next()).ToList();
+        var crosswalk = new Crosswalk("kind", 1, 2, links) { Relations = relations };
+        var newer = links.Select(l => l.Item2).Distinct().Where((_, i) => i % 97 != 0).ToArray(); // a few links lead nowhere
+        var catalog = new SchemeCatalog([Scheme(1, [.. old, "unlinked"]), Scheme(2, newer)], [crosswalk]);
+
+        var all = crosswalk.CarryAll();
+        foreach (var code in old.Append("unlinked"))
+        {
+            var (codes, review) = crosswalk.Carry(code);
+            if (all.TryGetValue(code, out var indexed))
+            {
+                Assert.Equal(codes, indexed.Codes);
+                Assert.Equal(review, indexed.Review);
+            }
+            else Assert.Empty(codes);
+
+            var kept = codes.Where(newer.Contains).ToArray();
+            var r = catalog.Resolve(new CodedValue("kind", 1, code), 2);
+            var expected = kept.Length == 0 ? ResolutionKind.Unmapped
+                : kept.Length == 1 && !review ? ResolutionKind.Assigned : ResolutionKind.Pending;
+            Assert.Equal(expected, r.Kind);
+            if (expected == ResolutionKind.Assigned) Assert.Equal(kept[0], r.Code);
+            if (expected == ResolutionKind.Pending) Assert.Equal(kept.Order(StringComparer.Ordinal), r.Candidates);
+        }
+    }
 }

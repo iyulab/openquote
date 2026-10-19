@@ -105,6 +105,27 @@ public sealed record Crosswalk(string Scheme, int From, int To, IReadOnlyList<(s
         }
         return (codes, review);
     }
+
+    /// <summary>
+    /// <see cref="Carry"/> for every old code the links name, in one pass over them — what a catalog
+    /// carries values with, so a value costs a lookup instead of a walk over every link.
+    /// </summary>
+    internal Dictionary<string, (IReadOnlyList<string> Codes, bool Review)> CarryAll()
+    {
+        var carried = new Dictionary<string, (List<string> Codes, bool Review)>(StringComparer.Ordinal);
+        foreach (var (from, to) in Links)
+        {
+            if (!carried.TryGetValue(from, out var entry)) entry = ([], false);
+            if (!entry.Codes.Contains(to, StringComparer.Ordinal))
+            {
+                var relation = Relations.TryGetValue((from, to), out var stated) ? stated : (LinkRelation?)null;
+                if (relation == LinkRelation.Broader) entry.Review = true;
+                if (relation != LinkRelation.Retired) entry.Codes.Add(to);
+            }
+            carried[from] = entry;
+        }
+        return carried.ToDictionary(e => e.Key, e => ((IReadOnlyList<string>)e.Value.Codes, e.Value.Review), StringComparer.Ordinal);
+    }
 }
 
 /// <summary>A classified value as a record stores it: the scheme, the version in force when it was entered, and the code.</summary>
